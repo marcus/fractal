@@ -300,6 +300,14 @@ so the JSONL is the local machine-readable baseline that
 | observatory  | proposal               | 10    | 11    | 74.4     | 8.2        | `c92f643ab0b7` |
 | observatory  | show-all               | 13    | 10    | 73.0     | 7.9        | `1710aec1d3c9` |
 
+The headline number comes from `npm run bench:browser`, against a build it starts itself. On td,
+click to new geometry is 260 ms to expand, 180 ms to collapse and 265 ms for show-all; page open is
+1.85 s, of which `/api/models` alone is 915 ms. Frames hold 16.6 ms at p50 through every toggle and
+no long task appears, in the studio or in the portable document — the wait is server time, not the
+browser. The same run on the bundled delivery example: 129 ms expand, 132 ms collapse, 131 ms
+show-all, 855 ms page open; the portable document toggles the same view in 97 ms and 48 ms with no
+server at all.
+
 ## Open questions
 
 - Should the project list skip compiling models entirely and read titles from `fractal.json`?
