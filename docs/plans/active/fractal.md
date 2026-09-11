@@ -89,6 +89,12 @@ fold control. Self-return arrows share gently rounded geometry across the live c
 SVG, while sequence reload lives beside the permalink rather than in the sidebar. The sequence canvas holds its scale and position when the viewport changes
 instead of re-fitting.
 
+## Layout performance and engines
+
+[Layout performance and pluggable layout engines](layout-performance-and-engines.md) controls
+how architecture geometry is computed, benchmarked, and swapped. It keeps the current appearance
+as the fingerprinted default, adds a layout benchmark CLI, and opens a layout-engine seam.
+
 ## Saved workspace idea
 
 [Multi-diagram workspace canvas](../planning/multi-diagram-canvas.md) records an idea for
