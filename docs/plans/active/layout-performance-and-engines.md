@@ -6,6 +6,10 @@ computed, measured, and swapped. Tracked in td as `td-0b4264`.
 
 ## Intent
 
+The felt problem is the "Composing view" wait after expanding or collapsing a component: every
+toggle posts to the server, which re-compiles the model from disk and lays the view out again.
+Initial load is acceptable. The headline goal is that a toggle never shows perceptible lag.
+
 Keep the studio exactly as it behaves today while making it faster to respond, and open one seam
 so a different layout engine (a faster ELK preset, a top-down or portrait arrangement, an
 aspect-targeted slide layout, a manual-placement engine) is "write an adapter", never "refactor
@@ -24,9 +28,13 @@ Per render request on the installed studio, `POST /api/render` for the largest c
 | ELK layout (warm)                            | 6–25 ms    | 20–90 ms |
 | SVG export                                   | < 1 ms     | < 1 ms   |
 
+On a toggle, the wait is the first and third rows of that table plus network: for a typical scene
+roughly 100–250 ms, of which two thirds or more is the model re-parse, not layout. Show all on td
+takes ~410 ms from click to new geometry, almost all of it server time.
+
 Page open is three serial requests: the project list (`/api/models`, ~940 ms, because it parses
 all nine catalog models to read their titles), the model (~120 ms), then the first render
-(~170 ms). Show all on td takes ~410 ms from click to new geometry, almost all of it server time.
+(~170 ms). Page open is not the felt problem; it improves as a side effect of the same cache.
 
 The browser is not the bottleneck at current model sizes. With 74 nodes, 113 edges and ~1,450 SVG
 DOM nodes, the studio animates expand, collapse, zoom, and drag at a steady 60 fps with no long
@@ -146,8 +154,8 @@ Candidate engines after the seam exists, each an explicit id and never the defau
   `artifacts/` is already ignored by git. Milestone numbers are copied into this plan by hand.
 - `npm run bench:browser` (`scripts/bench-browser.ts`): Playwright against a `vite preview` or the
   installed service and against a freshly exported portable document. Records the page-open
-  request waterfall, click-to-geometry latency for show-all and one toggle, frame p50/p99, and long
-  tasks. Prints JSON; it is a proof tool, not part of CI.
+  request waterfall, click-to-geometry latency for one expand, one collapse, and show-all, frame
+  p50/p99, and long tasks. Toggle latency is the headline number. Prints JSON; it is a proof tool, not part of CI.
 
 Both tools regenerate the CLI reference through `npm run docs`, and `tests/docs.test.ts` keeps it
 current.
@@ -160,9 +168,12 @@ current.
 2. **Caches, no output change.** Parsed-model cache in `src/lib/server/models.ts` keyed by directory,
    invalidated by size and mtime of `model.c4`, `fractal.json`, and `sequences.json`, verified by
    the existing revision hash. A small LRU of layout results keyed by revision and canonical view
-   state. Warm the cache when the service starts. Fire the project-list and model requests in
-   parallel on page open. Expected: render round trip from 250–400 ms to well under 100 ms; page
-   open from ~1.2 s to a few hundred ms. Fingerprints identical.
+   state, so collapsing what was just expanded or revisiting a scene returns immediately. Warm the
+   cache when the service starts. Delay the "Composing view" badge by about 150 ms so a fast
+   request never flashes it; the badge still appears for genuinely slow requests. Lower priority
+   in the same step: fire the project-list and model requests in parallel on page open. Expected:
+   a toggle on the largest catalog model from 150–250 ms of wait to under 60 ms; page open from
+   ~1.2 s to a few hundred ms. Fingerprints identical.
 3. **The seam.** Extract `measure.ts`, `layout-engine.ts`, `layout.ts`, `layout-engines.ts`,
    move ELK to `adapters/layout/elk.ts`, add `state.layout`, `--layout`, `engines`, and the
    parametrized contract tests. Fingerprints identical for the default engine. Update the
@@ -200,11 +211,13 @@ and a service reinstall.
 
 - `bin/fractal bench --json` runs over the catalog and examples and reports every stage.
 - After step 2: benchmark shows load p50 under 5 ms on warm requests and identical fingerprints;
-  browser bench shows page open under 400 ms and show-all under 150 ms click-to-geometry on td.
+  browser bench shows expand and collapse under 60 ms click-to-geometry on td, show-all under
+  150 ms, and page open under 400 ms; the "Composing view" badge does not appear on a warm toggle.
 - After step 3: `bin/fractal engines --json` lists `elk-layered`; `--layout elk-layered` and no
   flag produce identical fingerprints; contract tests pass for every registered engine.
 - After step 4: browser bench on the portable document reports no long tasks during toggles.
 
 ## Changelog
 
-- 2026-09-11: Created from measurements on the installed studio and catalog.
+- 2026-09-11: Created from measurements on the installed studio and catalog; toggle latency made
+  the headline goal.
