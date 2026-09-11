@@ -1,0 +1,129 @@
+// Fictional example authored for Fractal. It does not describe a real organization or system.
+specification {
+  element subsystem
+  element component
+  element agent
+  element store
+  element adapter
+  relationship sends
+  relationship reads
+  relationship records
+  relationship authorizes
+  tag current
+  tag proposed
+}
+model {
+  intake = subsystem 'Order intake' {
+    description 'Customer and partner orders enter through two current channels.'
+    metadata { uid 'intake' fractalColor '#759EB5' }
+    checkout = adapter 'Web checkout' {
+      description 'Accept one customer order with delivery details and item selections.'
+      metadata { uid 'intake.checkout' fractalColor '#759EB5' }
+    }
+    partner = adapter 'Partner import' {
+      description 'Receive scheduled order batches from approved retail partners.'
+      metadata { uid 'intake.partner' fractalColor '#759EB5' }
+    }
+    events = adapter 'Marketplace feed' {
+      #proposed
+      description 'A future marketplace channel submits orders through the same intake contract.'
+      metadata { uid 'intake.events' fractalColor '#759EB5' }
+    }
+  }
+  queue = subsystem 'Fulfillment queue' {
+    description 'Accepted orders wait here until inventory and a delivery window are available.'
+    metadata { uid 'queue' fractalColor '#9A91C4' }
+    scheduler = component 'Fulfillment scheduler' {
+      description 'Prioritize ready orders and assign each one to a warehouse shift.'
+      metadata { uid 'queue.scheduler' fractalColor '#9A91C4' }
+    }
+    recovery = component 'Exception recovery' {
+      description 'Return paused orders to the queue after stock or address problems are resolved.'
+      metadata { uid 'queue.recovery' fractalColor '#9A91C4' }
+    }
+  }
+  core = subsystem 'Delivery Operations' {
+    description 'Coordinate fulfillment, verification, carrier handoff, and shipment history.'
+    metadata { uid 'core' fractalColor '#739886' }
+    shipments = component 'Shipment lifecycle' {
+      description 'Track each order from acceptance through delivery confirmation.'
+      metadata { uid 'core.shipments' fractalColor '#739886' }
+    }
+    routing = component 'Dispatch rules' {
+      description 'Choose allowed carriers and service levels for the destination and parcel.'
+      metadata { uid 'core.routing' fractalColor '#B59669' }
+    }
+    floor = subsystem 'Warehouse floor' {
+      description 'Picking and checking happen at separate stations before a parcel leaves.'
+      metadata { uid 'core.floor' fractalColor '#82A6B6' }
+      picker = agent 'Picker' {
+        description 'Collect the listed items and record substitutions or shortages.'
+        metadata { uid 'core.floor.picker' fractalColor '#82A6B6' }
+      }
+      check = agent 'Quality check' {
+        description 'Verify the sealed parcel against the order and shipping label.'
+        metadata { uid 'core.floor.check' fractalColor '#82A6B6' }
+      }
+    }
+    records = store 'Shipment records' {
+      description 'Keep order state, parcel measurements, carrier receipts, and delivery events.'
+      technology 'JSONL + files'
+      metadata { uid 'core.records' fractalColor '#9A91C4' }
+    }
+    carrier = adapter 'Carrier gateway' {
+      description 'Book an approved service and exchange labels and tracking events.'
+      metadata { uid 'core.carrier' fractalColor '#B59669' }
+    }
+  }
+  inputs = subsystem 'Fulfillment context' {
+    description 'Inventory and customer preferences shape how each order is prepared.'
+    metadata { uid 'inputs' fractalColor '#B59669' }
+    inventory = adapter 'Inventory snapshot' {
+      description 'Provide current stock and storage locations for requested items.'
+      metadata { uid 'inputs.inventory' fractalColor '#B59669' }
+    }
+    preferences = component 'Delivery preferences' {
+      description 'Capture the promised window, address constraints, and substitution policy.'
+      metadata { uid 'inputs.preferences' fractalColor '#B59669' }
+    }
+    forecast = adapter 'Demand forecast' {
+      #proposed
+      description 'Future forecasts help reserve popular items before demand peaks.'
+      metadata { uid 'inputs.forecast' fractalColor '#B59669' }
+    }
+  }
+  outputs = subsystem 'Customer outcomes' {
+    description 'Tracking and delivery updates close the current order journey.'
+    metadata { uid 'outputs' fractalColor '#89A579' }
+    tracking = adapter 'Tracking page' {
+      description 'Show the current shipment state and carrier tracking number.'
+      metadata { uid 'outputs.tracking' fractalColor '#89A579' }
+    }
+    updates = adapter 'Customer updates' {
+      description 'Send confirmation, dispatch, and delivery notifications.'
+      metadata { uid 'outputs.updates' fractalColor '#89A579' }
+    }
+    courier = adapter 'Courier handoff' {
+      #proposed
+      description 'A planned direct-courier option supports same-day local deliveries.'
+      metadata { uid 'outputs.courier' fractalColor '#89A579' }
+    }
+  }
+  intake.checkout .sends queue.scheduler 'Submit order' { metadata { uid 'checkout-order' } }
+  intake.partner .sends queue.scheduler 'Import orders' { metadata { uid 'partner-orders' } }
+  intake.events .sends queue.scheduler 'Submit marketplace order' { #proposed metadata { uid 'marketplace-order' } }
+  queue.scheduler .sends core.shipments 'Schedule fulfillment' { metadata { uid 'schedule-shipment' } }
+  queue.recovery .reads core.records 'Review order history' { metadata { uid 'recovery-records' } }
+  inputs.preferences .sends core.routing 'Set delivery constraints' { metadata { uid 'preferences-routing' } }
+  inputs.inventory .sends core.floor.picker 'Provide pick list' { metadata { uid 'inventory-pick-list' } }
+  core.shipments .sends core.floor.picker 'Start picking' { metadata { uid 'begin-picking' } }
+  core.floor.picker .records core.records 'Record packed parcel' { metadata { uid 'packed-parcel' } }
+  core.records .sends core.floor.check 'Present parcel record' { metadata { uid 'parcel-for-check' } }
+  core.floor.check .records core.records 'Record check result' { metadata { uid 'parcel-checked' } }
+  core.routing .authorizes core.carrier 'Allow carrier booking' { metadata { uid 'authorize-carrier' } }
+  core.records .sends core.carrier 'Provide shipment details' { metadata { uid 'shipment-booking' } }
+  core.carrier .sends outputs.tracking 'Publish tracking' { metadata { uid 'publish-tracking' } }
+  core.carrier .sends outputs.updates 'Send dispatch update' { metadata { uid 'dispatch-update' } }
+  core.routing .authorizes outputs.courier 'Allow courier dispatch' { #proposed metadata { uid 'authorize-courier' } }
+}
+views { view index { include * } }

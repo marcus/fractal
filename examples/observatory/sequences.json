@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "journeys": [
+    {
+      "id": "observation",
+      "title": "An observation becomes a signal",
+      "description": "A fictional authored path from a submitted batch to a delivered signal.",
+      "status": "current",
+      "provenance": "Demonstration scenario authored for the fictional Observatory example. Not evidence of a deployed implementation.",
+      "participants": [
+        {
+          "id": "browser",
+          "element": "browser"
+        },
+        {
+          "id": "gateway",
+          "element": "ingestion.gateway"
+        },
+        {
+          "id": "normalize",
+          "element": "ingestion.normalize"
+        },
+        {
+          "id": "signals",
+          "element": "processing.analytics.signals"
+        },
+        {
+          "id": "delivery",
+          "element": "delivery.live"
+        }
+      ],
+      "groups": [
+        {
+          "id": "intake",
+          "title": "Observation intake",
+          "participants": ["gateway", "normalize"]
+        }
+      ],
+      "steps": [
+        {
+          "type": "phase",
+          "id": "ingest",
+          "title": "Accept and normalize",
+          "description": "",
+          "steps": [
+            {
+              "type": "message",
+              "id": "upload",
+              "from": "browser",
+              "to": "gateway",
+              "title": "Upload observation batch",
+              "kind": "call",
+              "description": ""
+            },
+            {
+              "type": "message",
+              "id": "normalize-batch",
+              "from": "gateway",
+              "to": "normalize",
+              "title": "Normalize accepted observations",
+              "kind": "call",
+              "description": ""
+            },
+            {
+              "type": "message",
+              "id": "validate",
+              "from": "normalize",
+              "to": "normalize",
+              "title": "Validate observation shape",
+              "kind": "call",
+              "description": ""
+            }
+          ]
+        },
+        {
+          "type": "phase",
+          "id": "signal",
+          "title": "Produce a signal",
+          "description": "",
+          "steps": [
+            {
+              "type": "message",
+              "id": "analyze",
+              "from": "normalize",
+              "to": "signals",
+              "title": "Provide normalized observations",
+              "kind": "call",
+              "description": ""
+            },
+            {
+              "type": "message",
+              "id": "emit",
+              "from": "signals",
+              "to": "delivery",
+              "title": "Emit new signal",
+              "kind": "async",
+              "description": ""
+            },
+            {
+              "type": "message",
+              "id": "deliver",
+              "from": "delivery",
+              "to": "browser",
+              "title": "Deliver live signal",
+              "kind": "async",
+              "description": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

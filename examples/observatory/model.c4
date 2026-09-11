@@ -1,0 +1,84 @@
+// Fictional example authored for Fractal. It does not describe a real organization or system.
+specification {
+  element experience
+  element service
+  element component
+  element database
+  relationship sends
+  relationship reads
+  relationship writes
+  tag proposed
+}
+model {
+  browser = experience 'Browser' {
+    description 'Turn a stream of observations into a shared view of the world.'
+    metadata { uid 'browser' fractalColor '#759EB5' }
+  }
+  ingestion = service 'Ingestion' {
+    description 'Accept measurements and normalize them into a common event format.'
+    metadata { uid 'ingestion' fractalColor '#B59669' }
+    gateway = component 'Event gateway' {
+      description 'Authenticate producers and accept batches of measurements.'
+      metadata { uid 'ingestion.gateway' fractalColor '#B59669' }
+    }
+    normalize = component 'Normalize' {
+      description 'Validate units, timestamps and source identifiers before processing.'
+      metadata { uid 'ingestion.normalize' fractalColor '#B59669' }
+    }
+  }
+  processing = service 'Processing' {
+    description 'Clean, aggregate and interpret incoming measurements.'
+    metadata { uid 'processing' fractalColor '#739886' }
+    enrich = component 'Enrichment' {
+      description 'Join measurements with source context and location.'
+      metadata { uid 'processing.enrich' fractalColor '#739886' }
+    }
+    analytics = service 'Analysis pipeline' {
+      description 'Compute time windows and identify signals worth surfacing.'
+      metadata { uid 'processing.analytics' fractalColor '#9A91C4' }
+      windows = component 'Time windows' {
+        description 'Aggregate events into stable, comparable time intervals.'
+        metadata { uid 'processing.analytics.windows' fractalColor '#9A91C4' }
+      }
+      signals = component 'Signal detection' {
+        description 'Identify meaningful changes in the aggregated measurements.'
+        metadata { uid 'processing.analytics.signals' fractalColor '#9A91C4' }
+      }
+    }
+    forecast = component 'Forecasting' {
+      #proposed
+      description 'Proposed: forecast trends with visible uncertainty and model provenance.'
+      metadata { uid 'processing.forecast' fractalColor '#739886' }
+    }
+  }
+  archive = database 'Observation archive' {
+    description 'A managed store keeps observations and computed time series.'
+    technology 'Managed time-series storage'
+    metadata { uid 'archive' fractalColor '#9A91C4' }
+  }
+  delivery = service 'Delivery' {
+    description 'Serve concise answers and updates to the browser.'
+    metadata { uid 'delivery' fractalColor '#89A579' }
+    query = component 'Query API' {
+      description 'Read indexed observations for interactive exploration.'
+      metadata { uid 'delivery.query' fractalColor '#89A579' }
+    }
+    live = component 'Live updates' {
+      description 'Stream newly detected signals to active clients.'
+      metadata { uid 'delivery.live' fractalColor '#89A579' }
+    }
+  }
+  browser .sends ingestion.gateway 'Upload observations' { metadata { uid 'upload' } }
+  ingestion.gateway .sends ingestion.normalize 'Accepted batches' { metadata { uid 'normalize-batches' } }
+  ingestion.normalize .sends processing.enrich 'Valid events' { metadata { uid 'enrich-events' } }
+  processing.enrich .sends processing.analytics.windows 'Enriched events' { metadata { uid 'window-events' } }
+  processing.analytics.windows .sends processing.analytics.signals 'Aggregates' { metadata { uid 'detect-signals' } }
+  processing.analytics.windows .writes archive 'Time series' { metadata { uid 'store-series' } }
+  processing.analytics.signals .sends delivery.live 'New signals' { metadata { uid 'deliver-signals' } }
+  delivery.query .reads archive 'Read observations' { metadata { uid 'query-archive' } }
+  delivery.query .sends browser 'Query results' { metadata { uid 'query-results' } }
+  delivery.live .sends browser 'Live signals' { metadata { uid 'live-signals' } }
+  processing.analytics.windows .sends processing.forecast 'Historical context' { #proposed metadata { uid 'forecast-context' } }
+  processing.forecast .writes archive 'Forecasts & uncertainty' { #proposed metadata { uid 'forecast-archive' } }
+}
+views { view index { include * } }

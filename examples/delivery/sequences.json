@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "journeys": [
+    {
+      "id": "order-delivery",
+      "title": "From order to delivery",
+      "description": "Follow a fictional customer order through fulfillment, carrier dispatch, and delivery confirmation.",
+      "status": "current",
+      "provenance": "Fictional scenario authored for Fractal. The sequence demonstrates nested phases, grouped participants, calls, returns, and explicit handoffs without describing a real service.",
+      "participants": [
+        {
+          "id": "customer",
+          "title": "Customer",
+          "description": "A fictional shopper placing an order.",
+          "color": "#759EB5"
+        },
+        {
+          "id": "shipments",
+          "element": "core.shipments",
+          "title": "Shipment lifecycle"
+        },
+        {
+          "id": "picker",
+          "element": "core.floor.picker",
+          "title": "Picker"
+        },
+        {
+          "id": "checker",
+          "element": "core.floor.check",
+          "title": "Quality check"
+        },
+        {
+          "id": "carrier",
+          "element": "core.carrier",
+          "title": "Carrier gateway"
+        },
+        {
+          "id": "tracking",
+          "element": "outputs.tracking",
+          "title": "Tracking page"
+        }
+      ],
+      "groups": [
+        {
+          "id": "warehouse",
+          "title": "Warehouse team",
+          "participants": ["shipments", "picker", "checker"]
+        }
+      ],
+      "steps": [
+        {
+          "type": "phase",
+          "id": "order",
+          "title": "Accept the order",
+          "description": "",
+          "steps": [
+            {
+              "type": "message",
+              "id": "place-order",
+              "from": "customer",
+              "to": "shipments",
+              "title": "Place an order for an available delivery window",
+              "kind": "call",
+              "description": "The order includes a deliverable address, item selections, and substitution preferences."
+            },
+            {
+              "type": "message",
+              "id": "record-order",
+              "from": "shipments",
+              "to": "shipments",
+              "title": "Record the accepted order",
+              "kind": "call",
+              "description": ""
+            }
+          ]
+        },
+        {
+          "type": "phase",
+          "id": "fulfillment",
+          "title": "Prepare the parcel",
+          "description": "",
+          "steps": [
+            {
+              "type": "phase",
+              "id": "picking",
+              "title": "Pick the order",
+              "description": "The picker receives item locations and the customer's substitution preferences.",
+              "steps": [
+                {
+                  "type": "message",
+                  "id": "reserve-inventory",
+                  "from": "shipments",
+                  "to": "shipments",
+                  "title": "Reserve inventory and delivery window",
+                  "kind": "call",
+                  "description": ""
+                },
+                {
+                  "type": "message",
+                  "id": "begin-picking",
+                  "from": "shipments",
+                  "to": "picker",
+                  "title": "Send the pick list",
+                  "kind": "call",
+                  "description": ""
+                }
+              ]
+            },
+            {
+              "type": "message",
+              "id": "packed-parcel",
+              "from": "picker",
+              "to": "shipments",
+              "title": "Return the packed parcel record",
+              "kind": "return",
+              "description": "The parcel record lists packed items, substitutions, weight, and dimensions."
+            }
+          ]
+        },
+        {
+          "type": "phase",
+          "id": "dispatch",
+          "title": "Dispatch the parcel",
+          "description": "A checked parcel receives an allowed carrier service and a tracking number.",
+          "steps": [
+            {
+              "type": "message",
+              "id": "request-check",
+              "from": "shipments",
+              "to": "checker",
+              "title": "Request a parcel check",
+              "kind": "call",
+              "description": ""
+            },
+            {
+              "type": "message",
+              "id": "inspect-parcel",
+              "from": "checker",
+              "to": "checker",
+              "title": "Compare contents with the order and label",
+              "kind": "call",
+              "description": ""
+            },
+            {
+              "type": "message",
+              "id": "release-parcel",
+              "from": "checker",
+              "to": "carrier",
+              "title": "Release the checked parcel",
+              "kind": "call",
+              "description": ""
+            },
+            {
+              "type": "message",
+              "id": "dispatch-tracking",
+              "from": "carrier",
+              "to": "tracking",
+              "title": "Publish the tracking number",
+              "kind": "call",
+              "description": ""
+            },
+            {
+              "type": "message",
+              "id": "record-booking",
+              "from": "carrier",
+              "to": "shipments",
+              "title": "Return the carrier booking",
+              "kind": "return",
+              "description": ""
+            }
+          ]
+        },
+        {
+          "type": "phase",
+          "id": "delivery",
+          "title": "Confirm delivery",
+          "description": "The carrier reports the final outcome, and the shipment lifecycle closes the order.",
+          "steps": [
+            {
+              "type": "message",
+              "id": "await-delivery",
+              "from": "shipments",
+              "to": "carrier",
+              "title": "Wait for the delivery event",
+              "kind": "call",
+              "description": ""
+            },
+            {
+              "type": "message",
+              "id": "delivery-confirmed",
+              "from": "carrier",
+              "to": "shipments",
+              "title": "Return delivery confirmation",
+              "kind": "return",
+              "description": ""
+            },
+            {
+              "type": "message",
+              "id": "show-delivery",
+              "from": "shipments",
+              "to": "customer",
+              "title": "Show the completed delivery",
+              "kind": "return",
+              "description": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

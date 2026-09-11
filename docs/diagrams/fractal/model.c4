@@ -1,0 +1,78 @@
+// Authored architecture. Evidence paths are relative to this repository.
+specification {
+  element experience
+  element component
+  element adapter
+  element source
+  relationship calls
+  relationship supplies
+  relationship renders
+}
+model {
+  browser = experience 'Architecture & sequence studio' {
+    description 'Explore projects, reveal detail and present saved views.'
+    metadata { uid 'browser' fractalColor '#759EB5' evidence 'src/routes/+page.svelte' }
+    canvas = component 'Interactive canvas' {
+      description 'Animate shared geometry and navigate with spatial focus.'
+      metadata { uid 'browser.canvas' fractalColor '#759EB5' evidence 'src/lib/components/DiagramCanvas.svelte' }
+    }
+    sequences = component 'Sequence canvas' {
+      description 'Explore ordered journeys with folding, hidden-interaction summaries and stable animated geometry.'
+      metadata { uid 'browser.sequences' fractalColor '#759EB5' evidence ['src/routes/sequence/+page.svelte', 'src/lib/components/SequenceCanvas.svelte'] }
+    }
+    commands = component 'Command navigation' {
+      description 'Find projects and components through one discoverable keyboard registry.'
+      metadata { uid 'browser.commands' fractalColor '#759EB5' evidence 'src/lib/core/shortcuts.ts' }
+    }
+  }
+  api = adapter 'Local HTTP API' {
+    description 'Load models and request revision-bound rendering and export.'
+    metadata { uid 'api' fractalColor '#B59669' evidence 'src/routes/api' }
+  }
+  cli = adapter 'Agent CLI' {
+    description 'Validate, inspect, search and export the same authored models.'
+    metadata { uid 'cli' fractalColor '#B59669' evidence 'scripts/fractal.ts' }
+  }
+  sources = source 'Repository-owned models' {
+    description 'LikeC4 and companion JSON stay with each software project.'
+    metadata { uid 'sources' fractalColor '#9A91C4' evidence 'src/lib/server/models.ts' }
+  }
+  core = component 'Shared model pipeline' {
+    description 'Compile authored meaning, resolve a perspective and produce reusable geometry.'
+    metadata { uid 'core' fractalColor '#739886' evidence 'src/lib/core/types.ts' }
+    language = adapter 'Language adapter' {
+      description 'Compile LikeC4 and validate companion references and stable identities.'
+      metadata { uid 'core.language' fractalColor '#739886' evidence 'src/lib/adapters/likec4.ts' }
+    }
+    projection = component 'View projection' {
+      description 'Resolve mixed detail, proposed content and exact relationship provenance.'
+      metadata { uid 'core.projection' fractalColor '#739886' evidence 'src/lib/core/projection.ts' }
+    }
+    sequence = adapter 'Sequence model & layout' {
+      description 'Validate optional journey JSON and project temporal rows with exact original message identities.'
+      metadata { uid 'core.sequence' fractalColor '#739886' evidence ['src/lib/sequence/parse.ts', 'src/lib/sequence/layout.ts'] }
+    }
+    layout = adapter 'Layout adapter' {
+      description 'Measure text and arrange nested nodes and relationships using ELK.'
+      metadata { uid 'core.layout' fractalColor '#739886' evidence 'src/lib/adapters/elk-layout.ts' }
+    }
+  }
+  export = adapter 'Portable artwork' {
+    description 'Render presentation SVG and rasterize a fixed 4K PNG.'
+    metadata { uid 'export' fractalColor '#89A579' evidence ['src/lib/core/svg.ts', 'src/lib/sequence/svg.ts', 'src/lib/adapters/png.ts'] }
+  }
+  browser .calls api 'Request a view' { metadata { uid 'browser-api' } }
+  api .calls core 'Compose geometry' { metadata { uid 'api-core' } }
+  cli .calls core 'Inspect and compose' { metadata { uid 'cli-core' } }
+  sources .supplies core.language 'Authored model input' { metadata { uid 'language-sources' } }
+  core.language .calls core.projection 'Normalized model' { metadata { uid 'language-projection' } }
+  core.projection .calls core.layout 'Projected graph' { metadata { uid 'projection-layout' } }
+  sources .supplies core.sequence 'Optional authored journeys' { metadata { uid 'sequence-sources' } }
+  core.sequence .renders browser.sequences 'Sequence geometry' { metadata { uid 'sequence-canvas' } }
+  core.sequence .renders export 'Sequence artwork' { metadata { uid 'sequence-export' } }
+  core.layout .renders browser.canvas 'Vector geometry' { metadata { uid 'layout-canvas' } }
+  core.layout .renders export 'Export geometry' { metadata { uid 'layout-export' } }
+  api .calls export 'Download artwork' { metadata { uid 'api-export' } }
+  cli .calls export 'Write SVG or PNG' { metadata { uid 'cli-export' } }
+}
+views { view index { include * } }

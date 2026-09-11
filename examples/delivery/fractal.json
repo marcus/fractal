@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "id": "delivery",
+  "title": "Fictional Delivery Service",
+  "description": "From customer order to a tracked parcel and delivery confirmation.",
+  "provenance": "Fictional example authored for Fractal. It does not describe a real organization, implementation, or operating process.",
+  "boundaries": [
+    {
+      "id": "host",
+      "title": "Managed operations",
+      "description": "The delivery service coordinates order state, scheduling, dispatch rules, and shipment records.",
+      "kind": "permission",
+      "members": ["queue", "core.shipments", "core.routing", "core.records", "inputs.preferences"],
+      "color": "#739886"
+    },
+    {
+      "id": "sandbox",
+      "title": "Warehouse work",
+      "description": "Picking and quality checks happen at separate stations on the warehouse floor.",
+      "kind": "permission",
+      "members": ["core.floor"],
+      "color": "#82A6B6"
+    },
+    {
+      "id": "credentialed",
+      "title": "Carrier handoff",
+      "description": "The carrier gateway can book only services allowed by the dispatch rules.",
+      "kind": "permission",
+      "members": ["core.carrier"],
+      "color": "#B59669"
+    },
+    {
+      "id": "external",
+      "title": "Customer channels",
+      "description": "Tracking and notifications leave the managed delivery system through explicit adapters.",
+      "kind": "network",
+      "members": ["outputs"],
+      "color": "#89A579"
+    }
+  ],
+  "scenes": [
+    {
+      "id": "overview",
+      "title": "The big picture",
+      "description": "Five parts carry one fictional order from intake to customer updates.",
+      "expanded": [],
+      "proposed": false,
+      "lens": "structure"
+    },
+    {
+      "id": "execution",
+      "title": "Inside delivery operations",
+      "description": "Follow an order through picking, checking, and carrier booking.",
+      "expanded": ["core", "core.floor"],
+      "proposed": false,
+      "lens": "structure",
+      "scope": "core"
+    },
+    {
+      "id": "trust",
+      "title": "Where responsibility changes",
+      "description": "See the boundaries between managed operations, warehouse work, carrier booking, and customer channels.",
+      "expanded": ["core", "core.floor"],
+      "proposed": false,
+      "lens": "trust",
+      "scope": "core"
+    },
+    {
+      "id": "proposal",
+      "title": "The next chapter",
+      "description": "Explore a planned marketplace feed, demand forecast, and direct-courier option.",
+      "expanded": ["intake", "outputs"],
+      "proposed": true,
+      "lens": "structure"
+    }
+  ]
+}

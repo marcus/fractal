@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+FRACTAL_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if [ "${1:-}" = "service" ]; then
+  shift
+  exec node "$FRACTAL_ROOT/scripts/service.mjs" "$@"
+fi
+cd "$FRACTAL_ROOT"
+exec node --import tsx scripts/fractal.ts "$@"

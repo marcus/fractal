@@ -1,0 +1,324 @@
+<script lang="ts">
+  import InspectorShell from './InspectorShell.svelte';
+  import InspectorContent from './InspectorContent.svelte';
+  import InspectorDisclosure from './InspectorDisclosure.svelte';
+  import { ChevronRight, ArrowUpRight, Maximize } from '@marcusv/roc/svelte/outline';
+  import { inspectComponent } from '$lib/core/inspect';
+  import type { Model, Diagram, ViewState } from '$lib/core/types';
+  let {
+    model,
+    diagram,
+    selected,
+    selectedType,
+    view,
+    toggle,
+    focus,
+    inspectElement,
+    fullSystem,
+    onclose,
+    onsettled
+  }: {
+    model: Model;
+    diagram: Diagram | null;
+    selected: string;
+    selectedType: 'element' | 'relationship' | 'outside';
+    view: ViewState;
+    toggle: (id: string) => void;
+    focus: (id: string) => void;
+    inspectElement: (id: string) => void;
+    fullSystem: () => void;
+    onclose: () => void;
+    onsettled: () => void;
+  } = $props();
+  const selectedElement = $derived(
+    selectedType === 'element' ? model.elements.find((e) => e.id === selected) : undefined
+  );
+  const selectedEdge = $derived(
+    selectedType === 'relationship' ? diagram?.edges.find((e) => e.id === selected) : undefined
+  );
+  const details = $derived(
+    selectedElement ? inspectComponent(model, selectedElement.id, view) : null
+  );
+  const children = $derived(details?.children ?? []);
+  const selectedBoundaries = $derived(details?.boundaries ?? []);
+  const name = (id: string) => model.elements.find((e) => e.id === id)?.title ?? id;
+  const shadeLabel = $derived(
+    selectedElement?.title ??
+      (selectedType === 'outside'
+        ? 'Connected beyond this view'
+        : (selectedEdge?.title ?? 'Connection'))
+  );
+</script>
+
+<InspectorShell {onsettled} {onclose} label={shadeLabel}>
+  {#key `${model.id}:${selectedType}:${selected}`}
+    <InspectorContent
+      kind={selectedElement?.kind ?? (selectedType === 'outside' ? 'context' : 'relationship')}
+      title={selectedElement?.title ??
+        (selectedType === 'outside'
+          ? 'Connected beyond this view'
+          : (selectedEdge?.title ?? 'Connection'))}
+      proposed={(selectedElement ?? selectedEdge)?.status === 'proposed'}
+    >
+      {#if selectedElement}
+        {#if selectedElement.technology}<p class="meta">{selectedElement.technology}</p>{/if}
+        {#if selectedElement.description}<p class="description">
+            {selectedElement.description}
+          </p>{/if}
+        {#if children.length}
+          <section aria-label="Inside this component">
+            <h3>Inside this component <span>{children.length}</span></h3>
+            {#each children as child}
+              <button class="child-link" onclick={() => inspectElement(child.id)}>
+                <span>{child.title}</span>
+                {#if child.status === 'proposed'}<small class="status-chip proposed">Proposed</small
+                  >{/if}
+                <ChevronRight size={13} />
+              </button>
+            {/each}
+            <div class="component-actions">
+              <button class="button" onclick={() => focus(selectedElement!.id)}
+                >Focus this component<Maximize size={14} /></button
+              >
+              <button class="button" onclick={() => toggle(selectedElement!.id)}
+                >{view.expanded.includes(selectedElement.id)
+                  ? 'Collapse component'
+                  : 'Expand component'}<ArrowUpRight size={14} /></button
+              >
+            </div>
+          </section>
+        {/if}
+        {#if selectedBoundaries.length}
+          <section aria-label="Boundary membership">
+            <h3>Boundary membership</h3>
+            <div class="item-list">
+              {#each selectedBoundaries as boundary}
+                <InspectorDisclosure>
+                  {#snippet heading()}<span class="item-title boundary-name"
+                      ><i style={`background:${boundary.color}`}></i>{boundary.title}</span
+                    >{/snippet}
+                  <p class="detail-copy">{boundary.description}</p>
+                </InspectorDisclosure>
+              {/each}
+            </div>
+          </section>
+        {/if}
+        <section aria-label="Connections">
+          <h3>Connected to <span>{details?.relationships.length ?? 0}</span></h3>
+          <div class="item-list">
+            {#each details?.relationships ?? [] as relation}
+              <div class="connection-item">
+                <InspectorDisclosure>
+                  {#snippet heading()}
+                    <span class="item-summary"
+                      ><strong class="item-title">{relation.title}</strong
+                      >{#if relation.status === 'proposed'}<small class="status-chip proposed"
+                          >Proposed</small
+                        >{/if}</span
+                    >
+                  {/snippet}
+                  {#if relation.description}<p class="detail-copy">{relation.description}</p>{/if}
+                  <dl>
+                    <dt>Kind</dt>
+                    <dd>{relation.kind}</dd>
+                    <dt>Stable ID</dt>
+                    <dd><code>{relation.id}</code></dd>
+                    <dt>Endpoints</dt>
+                    <dd><code>{relation.source} → {relation.target}</code></dd>
+                  </dl>
+                </InspectorDisclosure>
+                <button
+                  class="inspect-link route"
+                  aria-label={`Inspect ${name(relation.source === selectedElement?.id ? relation.target : relation.source)}`}
+                  onclick={() =>
+                    inspectElement(
+                      relation.source === selectedElement?.id ? relation.target : relation.source
+                    )}
+                  >{name(relation.source)} → {name(relation.target)}<ArrowUpRight
+                    size={12}
+                  /></button
+                >
+              </div>
+            {:else}<p class="meta">No connections in this view.</p>{/each}
+          </div>
+        </section>
+      {:else if selectedType === 'outside'}
+        <p class="meta">{diagram?.outside?.length ?? 0} connections beyond this view</p>
+        <p class="description">
+          These authored relationships cross the focus boundary. They remain part of the model.
+        </p>
+        <section aria-label="Connections beyond this view">
+          <h3>Connections</h3>
+          <div class="item-list">
+            {#each diagram?.outside ?? [] as relation}
+              <div class="connection-item">
+                <InspectorDisclosure>
+                  {#snippet heading()}<span class="item-summary"
+                      ><strong class="item-title">{relation.title}</strong><span class="route"
+                        >{name(relation.source)} → {name(relation.target)}</span
+                      >{#if relation.status === 'proposed'}<small class="status-chip proposed"
+                          >Proposed</small
+                        >{/if}</span
+                    >{/snippet}
+                  {#if relation.description}<p class="detail-copy">{relation.description}</p>{/if}
+                  <dl>
+                    <dt>Stable ID</dt>
+                    <dd><code>{relation.id}</code></dd>
+                    <dt>Endpoints</dt>
+                    <dd><code>{relation.source} → {relation.target}</code></dd>
+                  </dl>
+                </InspectorDisclosure>
+                <button class="inspect-link" onclick={() => inspectElement(relation.source)}
+                  >Inspect {name(relation.source)}<ArrowUpRight size={12} /></button
+                >
+                <button class="inspect-link" onclick={() => inspectElement(relation.target)}
+                  >Inspect {name(relation.target)}<ArrowUpRight size={12} /></button
+                >
+              </div>
+            {/each}
+          </div>
+        </section>
+        <button class="button expand-button" onclick={fullSystem}>Show whole system</button>
+      {:else if selectedEdge}
+        <p class="meta">
+          {selectedEdge.kind} ·
+          <span class="status-chip" class:proposed={selectedEdge.status === 'proposed'}
+            >{selectedEdge.status === 'proposed' ? 'Proposed' : 'Current'}</span
+          >
+        </p>
+        <p class="description">
+          {selectedEdge.description || 'An authored connection between components.'}
+        </p>
+        <div class="connection-pair">
+          <button onclick={() => inspectElement(selectedEdge!.source)}
+            >{name(selectedEdge.source)}</button
+          ><span>↓</span><button onclick={() => inspectElement(selectedEdge!.target)}
+            >{name(selectedEdge.target)}</button
+          >
+        </div>
+        <section aria-label="Underlying relationships">
+          <h3>Underlying relationships <span>{selectedEdge.underlying.length}</span></h3>
+          <div class="item-list">
+            {#each selectedEdge.underlying as id}
+              {@const original = model.relationships.find((r) => r.id === id)}
+              {#if original}
+                <InspectorDisclosure>
+                  {#snippet heading()}<span class="item-summary"
+                      ><strong class="item-title">{original.title}</strong><span class="route"
+                        >{name(original.source)} → {name(original.target)}</span
+                      >{#if original.status === 'proposed'}<small class="status-chip proposed"
+                          >Proposed</small
+                        >{/if}</span
+                    >{/snippet}
+                  {#if original.description}<p class="detail-copy">{original.description}</p>{/if}
+                  <dl>
+                    <dt>Stable ID</dt>
+                    <dd><code>{id}</code></dd>
+                    <dt>Endpoints</dt>
+                    <dd><code>{original.source} → {original.target}</code></dd>
+                  </dl>
+                </InspectorDisclosure>
+              {/if}
+            {/each}
+          </div>
+        </section>
+      {/if}
+      <div class="secondary">
+        <InspectorDisclosure label="Technical details">
+          <dl>
+            {#if selectedElement}
+              <dt>Stable ID</dt>
+              <dd><code>{selectedElement.id}</code></dd>
+              <dt>Kind</dt>
+              <dd>{selectedElement.kind}</dd>
+              {#if selectedElement.parent}<dt>Parent ID</dt>
+                <dd><code>{selectedElement.parent}</code></dd>{/if}
+              {#if selectedBoundaries.length}<dt>Boundary IDs</dt>
+                <dd>
+                  <code>{selectedBoundaries.map((boundary) => boundary.id).join(', ')}</code>
+                </dd>{/if}
+            {:else if selectedEdge}
+              <dt>Stable ID</dt>
+              <dd><code>{selectedEdge.id}</code></dd>
+              <dt>Endpoints</dt>
+              <dd><code>{selectedEdge.source} → {selectedEdge.target}</code></dd>
+              <dt>Original IDs</dt>
+              <dd><code>{selectedEdge.underlying.join(', ')}</code></dd>
+            {:else}
+              <dt>Original IDs</dt>
+              <dd><code>{diagram?.outside?.map((relation) => relation.id).join(', ')}</code></dd>
+            {/if}
+          </dl>
+        </InspectorDisclosure>
+        {#if model.provenance || selectedElement?.evidence.length}
+          <InspectorDisclosure label="Sources & context">
+            {#if selectedElement?.evidence.length}
+              <h3>Source references</h3>
+              {#each selectedElement.evidence as evidence}<code class="evidence">{evidence}</code
+                >{/each}
+              <p class="detail-copy">Authored references, not automatic verification.</p>
+            {/if}
+            {#if model.provenance}<p class="context">{model.provenance}</p>{/if}
+          </InspectorDisclosure>
+        {/if}
+      </div>
+    </InspectorContent>
+  {/key}
+</InspectorShell>
+
+<style>
+  .meta {
+    padding-top: 3px;
+  }
+  .component-actions {
+    display: grid;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .component-actions button {
+    justify-content: space-between;
+  }
+  .child-link {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ui-text, #283d34);
+    gap: 8px;
+  }
+  .child-link > span {
+    flex: 1;
+    overflow-wrap: anywhere;
+  }
+  .child-link :global(svg) {
+    flex-shrink: 0;
+  }
+  .boundary-name {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .boundary-name i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .inspect-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    background: none;
+    padding: 8px 0;
+    font-size: 12px;
+    text-align: left;
+    color: var(--ui-accent, #365b42);
+    overflow-wrap: anywhere;
+  }
+  .inspect-link.route {
+    margin-top: 5px;
+    padding: 0;
+  }
+  .inspect-link :global(svg) {
+    flex-shrink: 0;
+  }
+</style>

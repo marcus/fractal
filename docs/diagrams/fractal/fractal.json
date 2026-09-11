@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "id": "fractal",
+  "title": "Fractal",
+  "description": "One authored model, shared by the studio, agents and presentation exports.",
+  "provenance": "Authored 2026-09-09 from the referenced Fractal source files. This is a concise explanation of the implemented rendering pipeline; it omits runtime installation details and does not imply automatic code verification.",
+  "boundaries": [
+    {
+      "id": "browser-device",
+      "title": "Browser experience",
+      "description": "The browser consumes normalized models and geometry; compilation remains on the local server.",
+      "kind": "network",
+      "members": ["browser"],
+      "color": "#759EB5"
+    },
+    {
+      "id": "local-process",
+      "title": "Local application",
+      "description": "CLI and HTTP adapters share the same compilation and export modules.",
+      "kind": "ownership",
+      "members": ["api", "cli", "core", "export"],
+      "color": "#739886"
+    },
+    {
+      "id": "authored-source",
+      "title": "Project ownership",
+      "description": "Each repository owns its architecture claims and their revision history.",
+      "kind": "ownership",
+      "members": ["sources"],
+      "color": "#9A91C4"
+    }
+  ],
+  "scenes": [
+    {
+      "id": "overview",
+      "title": "One model, shared understanding",
+      "description": "Follow architecture from repository-owned text to an explorable view and portable artwork.",
+      "expanded": [],
+      "proposed": false,
+      "lens": "structure"
+    },
+    {
+      "id": "pipeline",
+      "title": "From meaning to geometry",
+      "description": "Language, projection and layout each have one clear responsibility.",
+      "expanded": ["core"],
+      "proposed": false,
+      "lens": "structure"
+    },
+    {
+      "id": "boundaries",
+      "title": "Where the model lives",
+      "description": "Separate project ownership, the local application and its browser experience.",
+      "expanded": [],
+      "proposed": false,
+      "lens": "trust"
+    }
+  ]
+}

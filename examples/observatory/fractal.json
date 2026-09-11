@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "id": "observatory",
+  "title": "Observatory",
+  "description": "A fictional platform for turning observations into useful signals.",
+  "provenance": "A fictional architecture authored for Fractal on 2026-09-09. It demonstrates a data pipeline with a shared external store, nested analysis and a proposed forecasting capability. No implementation claims are made.",
+  "boundaries": [
+    {
+      "id": "device",
+      "title": "User device",
+      "description": "The browser runs outside the service's trust boundary.",
+      "kind": "network",
+      "members": ["browser"],
+      "color": "#759EB5"
+    },
+    {
+      "id": "private",
+      "title": "Private processing network",
+      "description": "Internal event processing is separate from the public ingestion and query surfaces.",
+      "kind": "network",
+      "members": ["processing", "ingestion.normalize"],
+      "color": "#739886"
+    },
+    {
+      "id": "managed",
+      "title": "Managed storage provider",
+      "description": "Storage is supplied through a replaceable external provider.",
+      "kind": "ownership",
+      "members": ["archive"],
+      "color": "#9A91C4"
+    },
+    {
+      "id": "readers",
+      "title": "Read authority",
+      "description": "The query service reads archived data; processing owns writes.",
+      "kind": "permission",
+      "members": ["delivery.query"],
+      "color": "#89A579"
+    }
+  ],
+  "scenes": [
+    {
+      "id": "overview",
+      "title": "From data to insight",
+      "description": "Follow observations from the browser through processing and back as useful signals.",
+      "expanded": [],
+      "proposed": false,
+      "lens": "structure"
+    },
+    {
+      "id": "execution",
+      "title": "Inside the pipeline",
+      "description": "Reveal enrichment, time windows and signal detection without losing the surrounding system.",
+      "expanded": ["processing", "processing.analytics"],
+      "proposed": false,
+      "lens": "structure",
+      "scope": "processing"
+    },
+    {
+      "id": "trust",
+      "title": "Across the boundaries",
+      "description": "Inspect the private processing network and the managed storage boundary around its immediate collaborators.",
+      "expanded": ["processing", "processing.analytics"],
+      "proposed": false,
+      "lens": "trust",
+      "scope": "processing"
+    },
+    {
+      "id": "proposal",
+      "title": "Looking ahead",
+      "description": "Add forecasting to the existing analysis pipeline and preserve uncertainty with every result.",
+      "expanded": ["processing", "processing.analytics"],
+      "proposed": true,
+      "lens": "structure"
+    }
+  ]
+}
