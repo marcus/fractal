@@ -32,6 +32,7 @@ Commands:
   layout     Resolve vector geometry for the selected view
   export     Write SVG, 4K PNG, or an interactive offline HTML document (--output FILE)
   themes     List available presentation themes (use --json for tokens)
+  bench      Time the layout pipeline and fingerprint its geometry (bin/fractal bench --help)
   shortcuts  List keyboard commands from the shared registry
   search     Search all components, connections and views, with resolved view state
 
@@ -99,3 +100,38 @@ Environment:
 ```
 
 `install`, `status`, `restart`, `logs`, `expose`, `unexpose`, `uninstall` print this same text with `--help`.
+
+## fractal bench
+
+```text
+Fractal · layout benchmark
+
+Usage: bin/fractal bench [options]
+
+Times the model pipeline over a set of models and views, fingerprints the geometry it produced,
+and reports composition quality. Deterministic order, no interaction, structured output.
+
+Stages: load (read and parse), project, layout (the engine call), svg, and sequence layout for
+models with journeys. A separate measure stage is reported once the layout seam lands.
+
+Options:
+  --catalog PATH                 Use a specific catalog.json instead of the resolved one
+  --model ID[,ID]                Measure only these models
+  --directory PATH[,PATH]        Measure these model directories instead of a catalog
+  --synthetic N[,N]              Also measure generated models of N elements (alone: only these)
+  --views scene|all|both         Authored scenes, show-all of the first scene, or both (default both)
+  --engine ID[,ID]               Layout engines to compare (default all: elk-layered)
+  --iterations N                 Measured runs after one discarded warm-up (default 5)
+  --json                         One JSON document on stdout
+  --output FILE                  Write JSONL, one row per model, view and engine
+  --baseline FILE                Compare against an earlier run and print deltas
+  --fail-on-geometry-change      Exit nonzero when any fingerprint differs from the baseline
+  -h, --help                     Show this text
+
+Examples:
+  bin/fractal bench
+  bin/fractal bench --model delivery --views scene --json
+  bin/fractal bench --synthetic 60,240 --iterations 3
+  bin/fractal bench --output artifacts/bench/today.jsonl
+  bin/fractal bench --baseline artifacts/bench/baseline.jsonl --fail-on-geometry-change
+```

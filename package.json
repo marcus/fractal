@@ -12,6 +12,8 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "cli": "tsx scripts/fractal.ts",
+    "bench": "tsx scripts/fractal.ts bench",
+    "bench:browser": "tsx scripts/bench-browser.ts",
     "test": "node --import tsx --import ./tests/setup.ts --test tests/*.test.ts",
     "test:browser": "playwright test",
     "start": "node build",
