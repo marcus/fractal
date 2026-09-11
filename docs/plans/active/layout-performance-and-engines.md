@@ -135,15 +135,18 @@ Candidate engines after the seam exists, each an explicit id and never the defau
 
 `bin/fractal bench` (also `npm run bench`). Agent-first, non-interactive, deterministic order.
 
-- Inputs: the resolved catalog by default (`--catalog`, `--model`, `--directory` narrow it, and
-  the bundled examples are always included); `--views scene|all|both` (default both: each authored
-  scene plus show-all of the first scene); `--engine ID[,ID]` (default: all registered);
-  `--iterations N` (default 5 warm runs after one discarded warm-up); `--synthetic N[,N]` generates
-  a deterministic model with N elements in a three-level hierarchy and proportional relationships,
-  so scaling is visible before a real model reaches it.
-- Stages timed per run: load (parse), project, measure, engine, assemble, SVG export, and sequence
-  layout for models with journeys. Reported as p50 and p95 with node and edge counts and diagram
-  width and height.
+- Inputs: the resolved catalog plus the bundled examples by default, deduped by directory
+  (`--catalog`, `--model` and `--directory` narrow it; naming directories measures exactly those);
+  `--views scene|all|both` (default both: each authored scene plus show-all of the first scene);
+  `--engine ID[,ID]` (default: all registered, and an unknown id is rejected); `--iterations N`
+  (default 5 measured runs after one discarded warm-up); `--synthetic N[,N]` generates a
+  deterministic model with N elements in a three-level hierarchy and proportional relationships,
+  so scaling is visible before a real model reaches it — on its own it replaces the model set,
+  alongside a narrowing flag it adds to it.
+- Stages timed per run: load (read and parse), project, layout, SVG export, and sequence layout
+  for models with journeys. Reported as p50 and p95 with node and edge counts and diagram width
+  and height. Layout is one engine call today; it splits into measure, engine and assemble when
+  the seam lands, and the `measure` stage stays absent rather than reported as zero until then.
 - Geometry fingerprint: a hash of every node and edge coordinate rounded to 0.01, per model, view,
   and engine. Identical fingerprints prove an optimization changed nothing visible.
 - Quality metrics for engine comparison: edge crossings, bend count, total edge length, area,
@@ -152,10 +155,12 @@ Candidate engines after the seam exists, each an explicit id and never the defau
   writes one row per model, view, engine; `--baseline FILE` compares against an earlier run and
   prints time deltas and any fingerprint change, exiting nonzero on `--fail-on-geometry-change`.
   `artifacts/` is already ignored by git. Milestone numbers are copied into this plan by hand.
-- `npm run bench:browser` (`scripts/bench-browser.ts`): Playwright against a `vite preview` or the
-  installed service and against a freshly exported portable document. Records the page-open
-  request waterfall, click-to-geometry latency for one expand, one collapse, and show-all, frame
-  p50/p99, and long tasks. Toggle latency is the headline number. Prints JSON; it is a proof tool, not part of CI.
+- `npm run bench:browser` (`scripts/bench-browser.ts`): Playwright against a studio at `--url`, or
+  against a build it makes and serves on a free port itself, and against a freshly exported
+  portable document. Records the page-open request waterfall, click-to-geometry latency for one
+  expand, one collapse, and show-all, frame p50/p99, and long tasks during each; the portable
+  document has no show-all, so it reports the two toggles. Toggle latency is the headline number.
+  Prints JSON; it is a proof tool, not part of CI.
 
 Both tools regenerate the CLI reference through `npm run docs`, and `tests/docs.test.ts` keeps it
 current.
@@ -190,11 +195,110 @@ Each step is a td ticket under `td-0b4264`, reviewed by an independent sub-agent
 any engine change, and finished with `npm run check`, `npm test`, `npm run build`, browser proof,
 and a service reinstall.
 
-## Baseline (to be filled by step 1)
+## Baseline
 
-| Model | View | Nodes | Edges | Load p50 | Engine p50 | Fingerprint |
-| ----- | ---- | ----- | ----- | -------- | ---------- | ----------- |
-|       |      |       |       |          |            |             |
+Recorded on 2026-09-11 (Apple Silicon) with
+`bin/fractal bench --output artifacts/bench/baseline-2026-09-11.jsonl`: the resolved catalog plus
+the bundled examples, every authored scene plus show-all of the first scene, five measured
+iterations after a discarded warm-up. Load is the full read-and-parse of the model, repeated every
+iteration because that is what the studio repeats on every request today; layout is the ELK call,
+which still projects, measures, places and assembles inside itself. `artifacts/` is not committed,
+so the JSONL is the local machine-readable baseline that
+`bin/fractal bench --baseline <file> --fail-on-geometry-change` compares against.
+
+| Model        | View                   | Nodes | Edges | Load p50 | Layout p50 | Fingerprint    |
+| ------------ | ---------------------- | ----- | ----- | -------- | ---------- | -------------- |
+| backstage    | overview               | 5     | 12    | 91.3     | 8.9        | `fb8fd14dabf7` |
+| backstage    | execution              | 12    | 18    | 94.1     | 19.7       | `6dfe2178c0d2` |
+| backstage    | activity-detail        | 5     | 4     | 80.8     | 5.9        | `e00c87596f47` |
+| backstage    | dispatch-detail        | 7     | 3     | 83.7     | 7.2        | `821b9208646d` |
+| backstage    | capture-detail         | 5     | 3     | 88.9     | 5.7        | `a68c9b433159` |
+| backstage    | trust                  | 12    | 18    | 85.2     | 15.3       | `6dfe2178c0d2` |
+| backstage    | proposal               | 11    | 14    | 84.5     | 11.3       | `74616e9f4282` |
+| backstage    | show-all               | 49    | 44    | 88.8     | 52.7       | `425dff5e3064` |
+| fractal      | overview               | 6     | 11    | 76.1     | 8.5        | `bf0db06ff479` |
+| fractal      | pipeline               | 10    | 13    | 76.4     | 12.7       | `2e1736eaa037` |
+| fractal      | boundaries             | 6     | 11    | 84.9     | 9.6        | `bf0db06ff479` |
+| fractal      | show-all               | 13    | 13    | 81.7     | 13.9       | `5e17b8a798f2` |
+| sidecar      | overview               | 11    | 25    | 84.5     | 16.5       | `775718923c94` |
+| sidecar      | panes-and-terminals    | 5     | 5     | 83.2     | 5.6        | `3fbdbb4a3749` |
+| sidecar      | agent-coordination     | 6     | 3     | 84.9     | 5.6        | `e276ea5033d7` |
+| sidecar      | shell-durability       | 5     | 3     | 81.2     | 5.1        | `eb0061cd3016` |
+| sidecar      | notifications-pipeline | 3     | 1     | 80.1     | 4.5        | `e3aa8c3c5c22` |
+| sidecar      | trust-boundaries       | 35    | 41    | 85.5     | 33.9       | `a21ba7e7e078` |
+| sidecar      | proposed-roadmap       | 18    | 29    | 83.7     | 20.2       | `01affb965a7b` |
+| sidecar      | show-all               | 47    | 46    | 86.0     | 37.5       | `972a220dd8ee` |
+| kindle-frame | overview               | 5     | 7     | 79.5     | 6.4        | `bff99a29996b` |
+| kindle-frame | content-delivery       | 8     | 12    | 77.6     | 9.0        | `c38629e65cf2` |
+| kindle-frame | device-playback        | 7     | 9     | 76.2     | 7.8        | `4b90b3627910` |
+| kindle-frame | prompt-strategy        | 8     | 9     | 78.1     | 6.8        | `0fe700b256af` |
+| kindle-frame | show-all               | 25    | 37    | 80.0     | 24.6       | `28133a67c9ba` |
+| ongoing      | overview               | 9     | 43    | 85.2     | 18.7       | `a30042b67a0e` |
+| ongoing      | one-api-two-clients    | 26    | 51    | 88.8     | 31.0       | `779de353e630` |
+| ongoing      | scan-pipeline          | 16    | 20    | 88.6     | 9.1        | `b2443619d8f6` |
+| ongoing      | catalog-and-rules      | 18    | 50    | 90.6     | 28.4       | `d91659740fc0` |
+| ongoing      | outside-the-process    | 31    | 63    | 92.6     | 45.5       | `1bf46e8cc4f9` |
+| ongoing      | operations             | 27    | 49    | 90.1     | 33.6       | `3c26a3f0ed10` |
+| ongoing      | trust-boundaries       | 61    | 79    | 87.2     | 69.0       | `c5de83a1ceea` |
+| ongoing      | proposed-tech-radar    | 37    | 74    | 90.9     | 52.9       | `a8e0dcba2aba` |
+| ongoing      | show-all               | 61    | 79    | 83.8     | 63.9       | `c5de83a1ceea` |
+| comms        | overview               | 11    | 27    | 84.5     | 15.1       | `18a365cffc52` |
+| comms        | command-path           | 19    | 33    | 81.9     | 22.2       | `41fdd8b31f07` |
+| comms        | serving-a-request      | 19    | 34    | 80.7     | 21.4       | `9e409e6845a9` |
+| comms        | zero-setup-daemon      | 20    | 32    | 83.8     | 21.7       | `e7bd9a1ec660` |
+| comms        | daemon-lifecycle       | 18    | 30    | 81.2     | 21.5       | `79c4bdf00102` |
+| comms        | inside-the-core        | 6     | 6     | 80.9     | 6.1        | `fc289fd9c610` |
+| comms        | store-seam             | 8     | 11    | 80.3     | 7.6        | `c1a83472898f` |
+| comms        | one-registry           | 17    | 30    | 81.9     | 24.6       | `b9e91d9ab509` |
+| comms        | trust-boundaries       | 40    | 53    | 81.5     | 34.5       | `77f036a3ef60` |
+| comms        | phase-9-consumers      | 19    | 31    | 90.8     | 28.7       | `237a17cbb2c2` |
+| comms        | show-all               | 43    | 53    | 87.2     | 38.2       | `b396224c547c` |
+| comms-web    | overview               | 6     | 14    | 79.2     | 8.1        | `812420f3a939` |
+| comms-web    | live-inbox             | 23    | 29    | 76.9     | 20.1       | `15d38e8f3e59` |
+| comms-web    | receipts               | 16    | 20    | 78.8     | 13.5       | `103133e35916` |
+| comms-web    | portraits              | 11    | 9     | 76.1     | 6.4        | `a2e74486e86c` |
+| comms-web    | trust-boundaries       | 26    | 29    | 77.0     | 21.1       | `f5d088c7ea51` |
+| comms-web    | show-all               | 26    | 29    | 77.5     | 20.9       | `f5d088c7ea51` |
+| naturally    | overview               | 9     | 18    | 80.9     | 10.5       | `360c492ae71d` |
+| naturally    | shell                  | 6     | 5     | 83.0     | 5.6        | `f1e6ffc29f7e` |
+| naturally    | engine                 | 8     | 8     | 81.1     | 6.4        | `863a3a8bcd94` |
+| naturally    | analyzers              | 8     | 2     | 82.5     | 5.3        | `53962d35ea64` |
+| naturally    | configuration          | 6     | 6     | 83.3     | 5.6        | `b053dd026f16` |
+| naturally    | packs                  | 4     | 1     | 80.3     | 4.6        | `5a0c870b80d3` |
+| naturally    | input                  | 6     | 4     | 81.6     | 5.2        | `e3e57f44d73e` |
+| naturally    | boundaries             | 34    | 44    | 80.7     | 31.0       | `e228d1901cf2` |
+| naturally    | proposed-surfaces      | 11    | 27    | 79.9     | 14.9       | `75040e203600` |
+| naturally    | show-all               | 44    | 47    | 80.5     | 32.5       | `774fdc486c0c` |
+| td           | overview               | 9     | 50    | 98.7     | 42.1       | `fe87d9db39b7` |
+| td           | cli-surface            | 12    | 7     | 91.2     | 6.4        | `04afa5a9f504` |
+| td           | core-and-store         | 28    | 70    | 97.1     | 61.7       | `fd06184de4d7` |
+| td           | monitor                | 8     | 6     | 93.2     | 5.6        | `bb2eaa845264` |
+| td           | serve-api              | 5     | 3     | 93.5     | 4.8        | `1704eace8550` |
+| td           | sync-client            | 7     | 6     | 94.3     | 5.4        | `5d8e7841d28f` |
+| td           | sync-server            | 14    | 24    | 97.5     | 15.0       | `f52384d9c1cf` |
+| td           | full-detail            | 74    | 123   | 103.1    | 126.0      | `c85ef028959a` |
+| td           | trust-boundaries       | 34    | 77    | 96.9     | 73.1       | `cf5b4a7a0d28` |
+| td           | proposed               | 55    | 115   | 98.6     | 105.8      | `4da565d61550` |
+| td           | show-all               | 74    | 123   | 100.0    | 120.6      | `c85ef028959a` |
+| avatars      | overview               | 9     | 28    | 93.1     | 14.8       | `7b0e588ab6e6` |
+| avatars      | agent-path             | 22    | 41    | 94.2     | 27.5       | `ae296db2d126` |
+| avatars      | generation             | 14    | 11    | 91.4     | 8.5        | `c13b133ed7d1` |
+| avatars      | service                | 21    | 36    | 85.8     | 23.4       | `996645c0357e` |
+| avatars      | web-client             | 12    | 15    | 82.4     | 9.1        | `350bd7597063` |
+| avatars      | web-client-api         | 24    | 45    | 87.5     | 24.4       | `8c43f78f5453` |
+| avatars      | trust                  | 26    | 43    | 84.6     | 30.9       | `efebee22a821` |
+| avatars      | requested-styles       | 16    | 38    | 85.7     | 18.8       | `08ec60eb4655` |
+| avatars      | show-all               | 49    | 62    | 86.9     | 43.5       | `573453c1b213` |
+| delivery     | overview               | 5     | 8     | 79.2     | 5.2        | `31927e3a3897` |
+| delivery     | execution              | 8     | 6     | 79.4     | 6.5        | `2bdb1694796b` |
+| delivery     | trust                  | 8     | 6     | 74.9     | 6.2        | `2bdb1694796b` |
+| delivery     | proposal               | 11    | 10    | 81.8     | 7.6        | `e0eb199268b8` |
+| delivery     | show-all               | 20    | 14    | 79.9     | 10.9       | `4b76e8443940` |
+| observatory  | overview               | 5     | 7     | 73.9     | 5.5        | `cee583ae5e65` |
+| observatory  | execution              | 5     | 2     | 75.7     | 5.1        | `bc003a4a7c0d` |
+| observatory  | trust                  | 5     | 2     | 76.7     | 5.3        | `bc003a4a7c0d` |
+| observatory  | proposal               | 10    | 11    | 74.4     | 8.2        | `c92f643ab0b7` |
+| observatory  | show-all               | 13    | 10    | 73.0     | 7.9        | `1710aec1d3c9` |
 
 ## Open questions
 
@@ -221,3 +325,4 @@ and a service reinstall.
 
 - 2026-09-11: Created from measurements on the installed studio and catalog; toggle latency made
   the headline goal.
+- 2026-09-11: Step 1 landed — `bin/fractal bench`, `npm run bench:browser`, and the baseline table.

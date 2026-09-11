@@ -151,6 +151,10 @@ async function measureClick(page: Page, selector: string, label: string): Promis
   return summarize(label, await watching);
 }
 
+async function longTasksSoFar(page: Page): Promise<number> {
+  return (await page.evaluate('window.__bench.longTasks.length')) as number;
+}
+
 /** The studio shows this badge while the server composes a view; it must be gone before timing. */
 async function settle(page: Page): Promise<void> {
   await page.locator('[data-node-id]').first().waitFor({ state: 'visible', timeout: 30000 });
@@ -166,10 +170,12 @@ const EXPAND = '[aria-label^="Expand "]:not([aria-label$="in outline"])';
 
 async function measureToggles(page: Page, showAll: boolean) {
   const expandTarget = await page.locator(EXPAND).first().getAttribute('aria-label');
-  const expand = await measureClick(page, EXPAND, expandTarget ?? 'expand');
+  if (expandTarget === null) throw new Error('No expandable component on the canvas');
+  const expand = await measureClick(page, EXPAND, expandTarget);
   await settle(page);
-  const collapseTarget = `[aria-label="${(expandTarget ?? '').replace('Expand ', 'Collapse ')}"]`;
-  const collapse = await measureClick(page, collapseTarget, collapseTarget);
+  // The same control, now labelled for the reverse action, so both toggles are the same component.
+  const collapseTarget = expandTarget.replace('Expand ', 'Collapse ');
+  const collapse = await measureClick(page, `[aria-label="${collapseTarget}"]`, collapseTarget);
   await settle(page);
   if (!showAll) return { expand, collapse };
   const all = await measureClick(page, 'button[aria-label="Show all structure"]', 'Show all');
@@ -189,9 +195,13 @@ async function freePort(): Promise<number> {
   });
 }
 
-function run(command: string, args: string[]): Promise<void> {
+function run(command: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<void> {
   return new Promise((done, fail) => {
-    const child = spawn(command, args, { cwd: ROOT, stdio: ['ignore', 'ignore', 'inherit'] });
+    const child = spawn(command, args, {
+      cwd: ROOT,
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
     child.on('error', fail);
     child.on('exit', (code) =>
       code === 0 ? done() : fail(new Error(`${command} ${args.join(' ')} exited with ${code}`))
@@ -213,8 +223,15 @@ async function waitForServer(url: string, timeoutMs: number): Promise<void> {
   }
 }
 
-/** The largest model in the resolved catalog: the one a reader waits longest for. */
-async function largestModel(): Promise<string> {
+/**
+ * The model to open: by default the largest in the resolved catalog, because that is the one a
+ * reader waits longest for. A named model may instead be one of the bundled examples, which the
+ * catalog does not have to list — the server this script starts is then pointed at the examples
+ * so it serves the same model the portable export was taken from.
+ */
+async function resolveModel(
+  requested: string | undefined
+): Promise<{ id: string; env: NodeJS.ProcessEnv }> {
   const catalog = await resolveCatalog();
   const sizes = await Promise.all(
     catalog.projects.map(async (project) => {
@@ -222,8 +239,15 @@ async function largestModel(): Promise<string> {
       return { id: project.id, size: model.elements.length };
     })
   );
-  if (!sizes.length) throw new Error('No projects in the resolved catalog');
-  return sizes.sort((a, b) => b.size - a.size || a.id.localeCompare(b.id))[0].id;
+  if (requested === undefined) {
+    if (!sizes.length) throw new Error('No projects in the resolved catalog');
+    return { id: sizes.sort((a, b) => b.size - a.size || a.id.localeCompare(b.id))[0].id, env: {} };
+  }
+  if (sizes.some((entry) => entry.id === requested)) return { id: requested, env: {} };
+  const examples = join(ROOT, 'examples');
+  if (!(await exists(join(examples, requested, 'model.c4'))))
+    throw new Error(`Unknown model: ${requested}`);
+  return { id: requested, env: { FRACTAL_CATALOG: '', FRACTAL_MODELS_DIR: examples } };
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -250,7 +274,7 @@ async function main(): Promise<void> {
     console.log(HELP);
     return;
   }
-  const model = values.model ?? (await largestModel());
+  const { id: model, env } = await resolveModel(values.model);
   let server: ChildProcess | undefined;
   let url = values.url;
   if (url === undefined) {
@@ -259,7 +283,7 @@ async function main(): Promise<void> {
     url = `http://127.0.0.1:${port}`;
     server = spawn('node', ['build'], {
       cwd: ROOT,
-      env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' },
+      env: { ...process.env, ...env, PORT: String(port), HOST: '127.0.0.1' },
       stdio: ['ignore', 'ignore', 'inherit']
     });
     await waitForServer(url, 30000);
@@ -271,18 +295,22 @@ async function main(): Promise<void> {
   try {
     if (!(await exists(join(ROOT, 'build', 'portable.json'))))
       await run('npm', ['run', 'build:portable']);
-    await run('node', [
-      '--import',
-      'tsx',
-      join(ROOT, 'scripts', 'fractal.ts'),
-      'export',
-      '--model',
-      model,
-      '--format',
-      'html',
-      '--output',
-      portablePath
-    ]);
+    await run(
+      'node',
+      [
+        '--import',
+        'tsx',
+        join(ROOT, 'scripts', 'fractal.ts'),
+        'export',
+        '--model',
+        model,
+        '--format',
+        'html',
+        '--output',
+        portablePath
+      ],
+      env
+    );
 
     browser = await chromium.launch();
     const context = await browser.newContext({
@@ -307,7 +335,14 @@ async function main(): Promise<void> {
           };
         })`
     )) as { name: string; startMs: number; durationMs: number }[];
-    const studio = { pageOpenMs, requests, ...(await measureToggles(page, true)) };
+    // Long tasks counted during page open: a nonzero count is also the proof that the observer
+    // is live, so "no long tasks during a toggle" is a measurement rather than a silent failure.
+    const studio = {
+      pageOpenMs,
+      requests,
+      longTasksDuringOpen: await longTasksSoFar(page),
+      ...(await measureToggles(page, true))
+    };
 
     const reader = await context.newPage();
     await reader.goto(`file://${portablePath}`, { waitUntil: 'load' });
@@ -317,6 +352,7 @@ async function main(): Promise<void> {
     const portable = {
       bytes: portableStat.size,
       ...(values['keep-portable'] ? { path: portablePath } : {}),
+      longTasksDuringOpen: await longTasksSoFar(reader),
       ...(await measureToggles(reader, false))
     };
 
