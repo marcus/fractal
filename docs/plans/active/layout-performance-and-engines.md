@@ -53,6 +53,24 @@ the benchmark can compare on time and quality.
 Layout uses a module-level ELK instance already; creating an instance costs ~3 ms, so instance
 reuse is not a lever.
 
+## What step 2 changed (2026-09-11, same machine, bundled examples, `node build`)
+
+The benchmark of step 1 does not exist yet, so these are hand-measured on the delivery example
+rather than the catalog. The shape of the result is what matters; the table above stays the
+reference for the larger catalog models.
+
+| Measurement                            | Before     | After    |
+| -------------------------------------- | ---------- | -------- |
+| `GET /api/models`                      | 152–198 ms | 1–3 ms   |
+| `POST /api/render`, repeated view      | 82–97 ms   | 1–2 ms   |
+| `POST /api/render`, first of its kind  | 85 ms      | 15–18 ms |
+| Click to new geometry, expand/collapse | 114–147 ms | 14–21 ms |
+| Page open to first node drawn          | 830 ms     | 237 ms   |
+| "Composing view" badge on fast work    | every time | never    |
+
+Geometry is unchanged: `bin/fractal layout` JSON for delivery, delivery show-all and observatory
+is byte-identical before and after, as is the `/api/render` payload over HTTP, cold and warm.
+
 ## Settled decisions
 
 - **No visible change without an explicit choice.** The default engine's geometry is fingerprinted
@@ -221,3 +239,6 @@ and a service reinstall.
 
 - 2026-09-11: Created from measurements on the installed studio and catalog; toggle latency made
   the headline goal.
+- 2026-09-11: Step 2 landed (td-5ca34f): parsed-model cache, layout-result cache, warm-up on
+  server start, a delayed "Composing view" badge, and a parallel model request on page open.
+  Step 1's benchmark is still outstanding, so the numbers above were measured by hand.
