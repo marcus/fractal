@@ -268,7 +268,18 @@
     if (!hash.size) return;
     try {
       const nextScene = model.scenes.find((item) => item.id === hash.get('scene'));
-      if (nextScene) sceneId = nextScene.id;
+      if (nextScene) {
+        sceneId = nextScene.id;
+        // A scene-only link is an authored view, independent of the last explored scope.
+        // Explicit view state below still wins for links to customized perspectives.
+        view = {
+          expanded: [...nextScene.expanded],
+          proposed: nextScene.proposed,
+          lens: nextScene.lens,
+          scope: nextScene.scope,
+          theme: nextScene.theme
+        };
+      }
       if (hash.has('view')) {
         const next = JSON.parse(hash.get('view')!);
         if (

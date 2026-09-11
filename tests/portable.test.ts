@@ -107,6 +107,34 @@ test(
         requests.every((url) => url === nested),
         `unexpected external requests: ${requests.join(', ')}`
       );
+      // Scene-only links restore authored state both on a fresh open and same-page navigation.
+      await page.goto('about:blank');
+      await page.goto(nested + '#scene=execution');
+      await expect(page.locator('[data-node-id="core.floor.picker"]')).toBeVisible();
+      await page.waitForFunction(() => {
+        const hash = new URLSearchParams(location.hash.slice(1));
+        return JSON.parse(hash.get('view') ?? '{}').scope === 'core';
+      });
+      await page.evaluate(() => {
+        location.hash = 'scene=overview';
+      });
+      await expect(page.locator('[data-node-id="intake"]')).toBeVisible();
+      await expect(page.locator('[data-node-id="core.floor.picker"]')).toHaveCount(0);
+      await page.waitForFunction(() => {
+        const hash = new URLSearchParams(location.hash.slice(1));
+        const view = JSON.parse(hash.get('view') ?? '{}');
+        return hash.get('scene') === 'overview' && view.expanded?.length === 0 && !view.scope;
+      });
+      const custom = { expanded: [], lens: 'trust', proposed: true, theme: 'graphite' };
+      await page.goto(
+        nested + '#' + new URLSearchParams({ scene: 'execution', view: JSON.stringify(custom) })
+      );
+      await expect(page.locator('[data-node-id="intake"]')).toBeVisible();
+      await expect(page.locator('.studio')).toHaveAttribute('data-theme', 'graphite');
+      assert.deepEqual(
+        JSON.parse(new URLSearchParams(new URL(page.url()).hash.slice(1)).get('view')!),
+        custom
+      );
       assert.deepEqual(errors, []);
       await page.setViewportSize({ width: 390, height: 844 });
       await expect(page.getByRole('button', { name: 'Explore', exact: true })).toBeVisible();
