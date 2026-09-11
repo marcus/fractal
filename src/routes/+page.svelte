@@ -72,6 +72,13 @@
   let selected = $state<string | null>(null);
   let selectedType = $state<'element' | 'relationship' | 'outside'>('element');
   let busy = $state(true);
+  /**
+   * Waiting long enough to be worth saying so. `busy` still governs what a reader may do; this
+   * governs only what the canvas shows about it, so a warm toggle that answers in a few
+   * milliseconds never flashes a badge and never dims the diagram the reader is looking at.
+   */
+  let slow = $state(false);
+  const SLOW_REQUEST_MS = 150;
   let error = $state('');
   let toast = $state('');
   let presentation = $state(false);
@@ -126,6 +133,14 @@
   let initialSelection: string | null = null;
   /** A theme carried in from another surface wins once, then saved scenes decide again. */
   let initialTheme: ViewState['theme'] | null = null;
+  $effect(() => {
+    if (!busy) {
+      slow = false;
+      return;
+    }
+    const timer = setTimeout(() => (slow = true), SLOW_REQUEST_MS);
+    return () => clearTimeout(timer);
+  });
   const theme = $derived(getTheme(isThemeId(view.theme) ? view.theme : undefined));
   $effect(() => rememberTheme(theme.id));
   const themeStyle = $derived(
@@ -240,7 +255,16 @@
       if (token === requestId) busy = false;
     }
   }
-  async function changeModel(id: string, requestedScene: string | null = null) {
+  /**
+   * `preloaded` is a request for this same model that was already in flight — on page open the
+   * model named in the link does not have to wait for the catalog to come back. Everything else,
+   * including how a failure is reported, is unchanged: the response is read here as always.
+   */
+  async function changeModel(
+    id: string,
+    requestedScene: string | null = null,
+    preloaded: Promise<Response> | null = null
+  ) {
     const token = ++modelRequestId;
     ++requestId;
     busy = true;
@@ -253,7 +277,9 @@
     revision = '';
     diagramKey?.close();
     try {
-      const result = await readJson(await fetch(`/api/models/${encodeURIComponent(id)}`));
+      const result = await readJson(
+        await (preloaded ?? fetch(`/api/models/${encodeURIComponent(id)}`))
+      );
       if (token !== modelRequestId) return;
       model = result.model;
       journeys = result.sequences ?? [];
@@ -295,6 +321,14 @@
     const requestedTheme = params.get('theme');
     if (!initialView && isThemeId(requestedTheme)) initialTheme = requestedTheme;
     initialSelection = params.get('selected');
+    const requested = params.get('model');
+    // A link that names its project can ask for the model while the catalog is still loading.
+    // The catalog still decides whether that project exists, and still chooses the project when
+    // the link names none, so only this one path starts early.
+    const preloaded = requested ? fetch(`/api/models/${encodeURIComponent(requested)}`) : null;
+    // Nothing awaits this request when the catalog turns the project down; keep that from
+    // surfacing as an unhandled rejection.
+    preloaded?.catch(() => {});
     refreshCatalog().then(async (items) => {
       if (!items) {
         busy = false;
@@ -305,7 +339,6 @@
         busy = false;
         return;
       }
-      const requested = params.get('model');
       if (requested && !items.some((item) => item.id === requested)) {
         error = `Project "${requested}" is not in the catalog. Choose an available project.`;
         busy = false;
@@ -313,7 +346,7 @@
       }
       const recent = lastProject();
       const id = requested ?? (items.some((item) => item.id === recent) ? recent! : items[0].id);
-      await changeModel(id, params.get('scene'));
+      await changeModel(id, params.get('scene'), id === requested ? preloaded : null);
     });
     return () => {
       clearTimeout(toastTimer);
@@ -836,7 +869,7 @@
           </div>
           <p title={subtitle}>{subtitle}</p>
         </div>
-        <div class="diagram-area" class:loading={busy}>
+        <div class="diagram-area" class:loading={slow}>
           {#if model}{#key model.id}<DiagramCanvas
                 bind:this={canvas}
                 onexitlayer={goOut}
@@ -858,7 +891,7 @@
                 select(OUTSIDE, 'outside');
               }}
             />{/if}
-          {#if busy}<div class="loading-badge"><span></span>Composing view</div>{/if}
+          {#if slow}<div class="loading-badge"><span></span>Composing view</div>{/if}
           {#if !model && !busy && !error}<p class="empty">No model loaded.</p>{/if}
         </div>
       </div>
