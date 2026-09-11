@@ -1,13 +1,14 @@
 import { json } from '@sveltejs/kit';
 import { loadModel } from '$lib/server/models';
-import { layout } from '$lib/adapters/elk-layout';
+import { renderDiagram } from '$lib/server/render';
 import { exportHtml } from '$lib/adapters/html';
 import { exportSvg } from '$lib/core/svg';
 import type { RequestHandler } from './$types';
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const input = await request.json();
-    const { model, revision, sequences } = await loadModel(input.model);
+    const loaded = await loadModel(input.model);
+    const { model, revision, sequences } = loaded;
     if (input.revision !== undefined && input.revision !== revision)
       throw new Error(
         'The model changed on disk. Reload the model from Model source before continuing.'
@@ -15,8 +16,15 @@ export const POST: RequestHandler = async ({ request }) => {
     if (input.format !== undefined && !['svg', 'html'].includes(input.format))
       throw new Error('Format must be svg or html');
     if (input.format === 'html') {
+      // The document embeds the same geometry the reader is looking at, so it can reuse the
+      // layout the studio just computed.
       return new Response(
-        await exportHtml(model, { state: input.state, scene: input.scene, sequences }),
+        await exportHtml(model, {
+          state: input.state,
+          scene: input.scene,
+          sequences,
+          diagram: () => renderDiagram(loaded, input.state)
+        }),
         {
           headers: {
             'content-type': 'text/html; charset=utf-8',
@@ -25,7 +33,7 @@ export const POST: RequestHandler = async ({ request }) => {
         }
       );
     }
-    const diagram = await layout(model, input.state);
+    const diagram = await renderDiagram(loaded, input.state);
     return new Response(
       exportSvg(model, diagram, { title: input.title, subtitle: input.subtitle }),
       {
