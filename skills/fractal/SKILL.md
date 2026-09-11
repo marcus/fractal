@@ -114,6 +114,8 @@ when the exact 3840 x 2160 appearance should be frozen:
   --theme midnight --format png --output /absolute/path/to/project/artifacts/SCENE_ID.png
 ```
 
+For a self-contained browser document, use `export --format html --output architecture.html` with the same model and scene options. This includes the full model, all scenes, sequences, and authored evidence; the scene is a starting view, not a publication filter. Read the [portable HTML guide](../../docs/guides/active/portable-html.md) for hosting, stable view links, and updates.
+
 Keep exports with the modeled project or in a temporary review directory. Open and visually inspect
 the actual export before handoff: check title and subtitle, current/proposed labeling, clipped or
 tiny text, node containment, crossings, spacing, and the story's reading order. Revise the model or

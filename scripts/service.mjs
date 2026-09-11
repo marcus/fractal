@@ -753,6 +753,7 @@ async function spawnChecked(file, args, options = {}, quiet = false) {
 async function validateRelease(stage) {
   const entrypoint = join(stage, 'build', 'index.js');
   await access(entrypoint, constants.R_OK);
+  await access(join(stage, 'build', 'portable.json'), constants.R_OK);
   await access(join(stage, 'examples'), constants.R_OK);
   await access(join(stage, 'node_modules', '@playwright', 'test'), constants.R_OK);
   await run(process.execPath, ['--check', entrypoint]);

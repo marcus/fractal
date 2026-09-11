@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "vite build && npm run build:portable",
     "preview": "vite preview",
     "prepare": "svelte-kit sync",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -18,7 +18,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "record:demo": "tsx scripts/record-demo.ts",
-    "docs": "tsx scripts/docs.ts"
+    "docs": "tsx scripts/docs.ts",
+    "build:portable": "tsx scripts/build-portable.ts",
+    "predev": "npm run build:portable"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

@@ -113,21 +113,22 @@ bin/fractal export --directory examples/observatory --scene overview --output ob
 `npm run cli -- <command>` runs model commands from the checkout, with npm’s usual script banner.
 Use `bin/fractal service ...` for service management.
 
-| Commands                      | Purpose                                              |
-| ----------------------------- | ---------------------------------------------------- |
-| `projects`, `validate`        | Discover models and validate all saved scenes        |
-| `inspect`, `search`           | Read elements, relationships and provenance          |
-| `project`, `layout`, `export` | Project a view, compute geometry, produce SVG or PNG |
-| `journeys`, `journey`         | Discover and inspect sequence journeys               |
-| `sequence`, `sequence-export` | Lay out and export sequences                         |
-| `themes`, `shortcuts`         | Discover themes and keyboard controls                |
-| `service`                     | Manage the persistent macOS studio                   |
+| Commands                      | Purpose                                                                |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `projects`, `validate`        | Discover models and validate all saved scenes                          |
+| `inspect`, `search`           | Read elements, relationships and provenance                            |
+| `project`, `layout`, `export` | Project a view, compute geometry, produce SVG, PNG or interactive HTML |
+| `journeys`, `journey`         | Discover and inspect sequence journeys                                 |
+| `sequence`, `sequence-export` | Lay out and export sequences                                           |
+| `themes`, `shortcuts`         | Discover themes and keyboard controls                                  |
+| `service`                     | Manage the persistent macOS studio                                     |
 
 The [CLI reference](docs/guides/active/cli.md) documents the full command contract. Errors use JSON
 on stderr and a nonzero exit status.
 
 ## Learn more and contribute
 
+- [Portable HTML documents](docs/guides/active/portable-html.md)
 - [Using the studio](docs/guides/active/studio.md)
 - [Model format](docs/guides/active/model-format.md) and [sequence journeys](docs/guides/active/sequences.md)
 - [Architecture](docs/guides/active/architecture.md) and [product direction](docs/plans/active/fractal.md)

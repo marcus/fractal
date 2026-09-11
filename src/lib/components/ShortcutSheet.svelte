@@ -8,7 +8,7 @@
     onclose
   }: {
     presentation?: boolean;
-    surface?: 'architecture' | 'sequence';
+    surface?: 'architecture' | 'sequence' | 'portable';
     onclose: () => void;
   } = $props();
   const mode = $derived(presentation ? 'presentation' : 'studio');
@@ -45,7 +45,10 @@
     <h2 id="shortcuts-title">{presentation ? 'Presentation shortcuts' : 'Keyboard shortcuts'}</h2>
   </header>
   <p class="shortcut-note">
-    {#if surface === 'sequence'}
+    {#if surface === 'portable'}
+      Explore perspectives and sequences, inspect a selection with Enter, and fold or unfold it with
+      Space. Use the same keys on the canvas as in the studio.
+    {:else if surface === 'sequence'}
       In presentation, left/right arrows change journeys. HJKL or WASD move through participants and
       interactions. Space folds a phase or participant group; Enter selects it.
     {:else}

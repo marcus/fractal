@@ -30,7 +30,7 @@ Commands:
   inspect    Read the normalized model, or --element ID and its relationships
   project    Resolve a mixed-depth view with underlying relationship IDs
   layout     Resolve vector geometry for the selected view
-  export     Write a self-contained 16:9 SVG or 4K PNG (--output FILE)
+  export     Write SVG, 4K PNG, or an interactive offline HTML document (--output FILE)
   themes     List available presentation themes (use --json for tokens)
   shortcuts  List keyboard commands from the shared registry
   search     Search all components, connections and views, with resolved view state
@@ -39,7 +39,7 @@ Options:
   --model ID                     Catalog model (default delivery)
   --catalog PATH                 Use a specific catalog.json
   --directory PATH               Read model.c4 + fractal.json from a directory
-  --surface architecture|sequence Shortcut surface (default architecture)
+  --surface architecture|sequence|portable Shortcut surface (default architecture)
   --journey ID                   Sequence journey identifier
   --collapsed-phases ID,ID        Fold sequence phases
   --collapsed-groups ID,ID        Combine participant columns
@@ -56,7 +56,7 @@ Options:
   --json                         Structured output
   --element ID                   Inspect a stable element ID
   --query TEXT                   Search titles, identifiers and descriptions
-  --format svg|png               Export format (PNG needs Playwright Chromium)
+  --format svg|png|html          Export format (HTML includes the full model; PNG needs Chromium)
   --output PATH                  Write result to a file
 
 Examples:

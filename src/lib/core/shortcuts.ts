@@ -203,9 +203,24 @@ export const SHORTCUTS = [
 
 /** Surface-specific wording uses the same commands and bindings. */
 export function shortcutsForSurface(
-  surface: 'architecture' | 'sequence' = 'architecture'
+  surface: 'architecture' | 'sequence' | 'portable' = 'architecture'
 ): readonly Shortcut[] {
   if (surface === 'architecture') return SHORTCUTS;
+  if (surface === 'portable')
+    return SHORTCUTS.filter(
+      (command) =>
+        ![
+          'projects',
+          'toggle-presentation',
+          'previous-scene',
+          'next-scene',
+          'activate',
+          'info'
+        ].includes(command.id)
+    ).map((command) => ({
+      ...command,
+      label: command.id === 'jump' ? 'Find a component, connection or perspective' : command.label
+    }));
   const labels: Partial<Record<CommandId, string>> = {
     jump: 'Jump to project, component, connection, view, or journey',
     'previous-scene': 'Previous journey',

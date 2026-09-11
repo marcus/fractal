@@ -609,7 +609,7 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  async function exportDiagram(format: 'svg' | 'png') {
+  async function exportDiagram(format: 'svg' | 'png' | 'html') {
     exporting = true;
     error = '';
     previewError = '';
@@ -621,13 +621,16 @@
           model: modelId,
           state: view,
           revision,
+          format: format === 'html' ? 'html' : 'svg',
+          scene: sceneId ?? sceneAnchor,
           title: `${model?.title} / ${title}`,
           subtitle
         })
       });
       if (!response.ok) throw new Error((await response.json()).error);
       const blob = await response.blob();
-      if (format === 'svg') download(blob, `${modelId}-${sceneId ?? 'custom'}.svg`);
+      if (format === 'svg' || format === 'html')
+        download(blob, `${modelId}-${sceneId ?? 'custom'}.${format}`);
       else {
         const url = URL.createObjectURL(blob);
         try {
@@ -1000,6 +1003,14 @@
               >{/if}
           </div>
           <div class="export-options">
+            <button disabled={exporting} onclick={() => exportDiagram('html')}
+              ><div>
+                <strong>Interactive HTML</strong><span
+                  >One offline file · full model, perspectives, sequences and sources</span
+                >
+              </div>
+              <Download size={18} /></button
+            >
             <button disabled={exporting} onclick={() => exportDiagram('svg')}
               ><div>
                 <strong>Vector SVG</strong><span>Scalable artwork for proposals and slides</span>

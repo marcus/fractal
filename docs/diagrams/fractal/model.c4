@@ -57,9 +57,9 @@ model {
       metadata { uid 'core.layout' fractalColor '#739886' evidence 'src/lib/adapters/elk-layout.ts' }
     }
   }
-  export = adapter 'Portable artwork' {
-    description 'Render presentation SVG and rasterize a fixed 4K PNG.'
-    metadata { uid 'export' fractalColor '#89A579' evidence ['src/lib/core/svg.ts', 'src/lib/sequence/svg.ts', 'src/lib/adapters/png.ts'] }
+  export = adapter 'Portable documents' {
+    description 'Render SVG and 4K PNG, or bundle an interactive offline HTML reader with the shared canvas and core.'
+    metadata { uid 'export' fractalColor '#89A579' evidence ['src/lib/core/svg.ts', 'src/lib/sequence/svg.ts', 'src/lib/adapters/png.ts', 'src/lib/adapters/html.ts', 'scripts/portable-assets.ts'] }
   }
   browser .calls api 'Request a view' { metadata { uid 'browser-api' } }
   api .calls core 'Compose geometry' { metadata { uid 'api-core' } }
@@ -73,6 +73,6 @@ model {
   core.layout .renders browser.canvas 'Vector geometry' { metadata { uid 'layout-canvas' } }
   core.layout .renders export 'Export geometry' { metadata { uid 'layout-export' } }
   api .calls export 'Download artwork' { metadata { uid 'api-export' } }
-  cli .calls export 'Write SVG or PNG' { metadata { uid 'cli-export' } }
+  cli .calls export 'Write SVG, PNG or HTML' { metadata { uid 'cli-export' } }
 }
 views { view index { include * } }

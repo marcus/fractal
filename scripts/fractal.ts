@@ -8,6 +8,8 @@ import { project } from '../src/lib/core/projection';
 import { showAllStructure } from '../src/lib/core/navigation';
 import { layout } from '../src/lib/adapters/elk-layout';
 import { renderPng } from '../src/lib/adapters/png';
+import { buildPortableAssets } from './portable-assets';
+import { exportHtml } from '../src/lib/adapters/html';
 import { exportSvg } from '../src/lib/core/svg';
 import { shortcutsForSurface } from '../src/lib/core/shortcuts';
 import { searchModel, revealSearchResult } from '../src/lib/core/search';
@@ -48,15 +50,19 @@ async function main() {
   const command = positionals[0] ?? 'help';
   if (values.help || command === 'help') {
     console.log(
-      `Fractal · an explorable model of software\n\nUsage: npm run cli -- <command> [options]\n\nCommands:\n  service    Manage the installed local studio (bin/fractal service --help)\n  projects   List catalog projects and their resolved model metadata\n  journeys   List available sequence journeys\n  journey    Inspect one authored journey (--journey ID)\n  sequence   Lay out an explorable sequence as JSON\n  sequence-export  Export the sequence as SVG or PNG\n  validate   Compile and validate a model and its scenes\n  inspect    Read the normalized model, or --element ID and its relationships\n  project    Resolve a mixed-depth view with underlying relationship IDs\n  layout     Resolve vector geometry for the selected view\n  export     Write a self-contained 16:9 SVG or 4K PNG (--output FILE)\n  themes     List available presentation themes (use --json for tokens)\n  shortcuts  List keyboard commands from the shared registry\n  search     Search all components, connections and views, with resolved view state\n\nOptions:\n  --model ID                     Catalog model (default delivery)\n  --catalog PATH                 Use a specific catalog.json\n  --directory PATH               Read model.c4 + fractal.json from a directory\n  --surface architecture|sequence Shortcut surface (default architecture)\n  --journey ID                   Sequence journey identifier\n  --collapsed-phases ID,ID        Fold sequence phases\n  --collapsed-groups ID,ID        Combine participant columns\n  --hidden-participants ID,ID     Hide columns with explicit interaction summaries\n  --scope-phase ID               Focus a sequence phase\n  --visible-phases ID,ID         Show exact phases with ancestor context (empty shows none)\n  --scene ID                     Start from a saved scene\n  --expanded ID,ID                Override expanded elements (empty collapses all)\n  --show-all                     Expand all structure within the selected scope\n  --proposed                     Include proposed elements and relationships\n  --lens structure|trust         Boundary lens\n  --scope ID                     Focus one component; retain external connection inventory\n  --theme grove|graphite|midnight Presentation theme (default Grove)\n  --json                         Structured output\n  --element ID                   Inspect a stable element ID\n  --query TEXT                   Search titles, identifiers and descriptions\n  --format svg|png               Export format (PNG needs Playwright Chromium)\n  --output PATH                  Write result to a file\n\nExamples:\n  npm run cli -- projects --json\n  npm run cli -- validate --model delivery --json\n  npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg`
+      `Fractal · an explorable model of software\n\nUsage: npm run cli -- <command> [options]\n\nCommands:\n  service    Manage the installed local studio (bin/fractal service --help)\n  projects   List catalog projects and their resolved model metadata\n  journeys   List available sequence journeys\n  journey    Inspect one authored journey (--journey ID)\n  sequence   Lay out an explorable sequence as JSON\n  sequence-export  Export the sequence as SVG or PNG\n  validate   Compile and validate a model and its scenes\n  inspect    Read the normalized model, or --element ID and its relationships\n  project    Resolve a mixed-depth view with underlying relationship IDs\n  layout     Resolve vector geometry for the selected view\n  export     Write SVG, 4K PNG, or an interactive offline HTML document (--output FILE)\n  themes     List available presentation themes (use --json for tokens)\n  shortcuts  List keyboard commands from the shared registry\n  search     Search all components, connections and views, with resolved view state\n\nOptions:\n  --model ID                     Catalog model (default delivery)\n  --catalog PATH                 Use a specific catalog.json\n  --directory PATH               Read model.c4 + fractal.json from a directory\n  --surface architecture|sequence|portable Shortcut surface (default architecture)\n  --journey ID                   Sequence journey identifier\n  --collapsed-phases ID,ID        Fold sequence phases\n  --collapsed-groups ID,ID        Combine participant columns\n  --hidden-participants ID,ID     Hide columns with explicit interaction summaries\n  --scope-phase ID               Focus a sequence phase\n  --visible-phases ID,ID         Show exact phases with ancestor context (empty shows none)\n  --scene ID                     Start from a saved scene\n  --expanded ID,ID                Override expanded elements (empty collapses all)\n  --show-all                     Expand all structure within the selected scope\n  --proposed                     Include proposed elements and relationships\n  --lens structure|trust         Boundary lens\n  --scope ID                     Focus one component; retain external connection inventory\n  --theme grove|graphite|midnight Presentation theme (default Grove)\n  --json                         Structured output\n  --element ID                   Inspect a stable element ID\n  --query TEXT                   Search titles, identifiers and descriptions\n  --format svg|png|html          Export format (HTML includes the full model; PNG needs Chromium)\n  --output PATH                  Write result to a file\n\nExamples:\n  npm run cli -- projects --json\n  npm run cli -- validate --model delivery --json\n  npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg`
     );
     return;
   }
   if (command === 'shortcuts') {
-    if (!['architecture', 'sequence'].includes(values.surface!))
-      throw new Error('Surface must be architecture or sequence');
+    if (!['architecture', 'sequence', 'portable'].includes(values.surface!))
+      throw new Error('Surface must be architecture, sequence or portable');
     console.log(
-      JSON.stringify(shortcutsForSurface(values.surface as 'architecture' | 'sequence'), null, 2)
+      JSON.stringify(
+        shortcutsForSurface(values.surface as 'architecture' | 'sequence' | 'portable'),
+        null,
+        2
+      )
     );
     return;
   }
@@ -201,7 +207,29 @@ async function main() {
       result = await layout(model, state);
       break;
     case 'export': {
-      if (!['svg', 'png'].includes(values.format!)) throw new Error('Format must be svg or png');
+      if (!['svg', 'png', 'html'].includes(values.format!))
+        throw new Error('Format must be svg, png or html');
+      if (values.format === 'html') {
+        if (!values.output) throw new Error('HTML export requires --output');
+        await writeFile(
+          values.output,
+          await exportHtml(model, {
+            state,
+            scene: scene.id,
+            sequences,
+            assets: await buildPortableAssets()
+          })
+        );
+        console.log(
+          JSON.stringify({
+            output: resolve(values.output),
+            format: 'html',
+            model: model.id,
+            scene: scene.id
+          })
+        );
+        return;
+      }
       const svg = exportSvg(model, await layout(model, state), {
         title: `${model.title} / ${scene.title}`,
         subtitle: scene.description
