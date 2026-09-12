@@ -231,31 +231,35 @@
             onchange={(e) => onproposed?.(e.currentTarget.checked)}
           /><span class="toggle-track"></span>Proposed</label
         >
-        <button
-          class="icon-button flow-toggle"
-          class:down={flowDown}
-          role="switch"
-          aria-checked={flowDown}
-          aria-label="Flow top to bottom"
-          aria-keyshortcuts={shortcutLabel(flowShortcut, mac)}
-          use:tip={{
-            title: 'Flow',
-            text: `Lay the diagram out top to bottom instead of left to right. Useful on tall screens, portrait pages and embeds. ${shortcutLabel(flowShortcut, mac)}`
-          }}
-          onclick={() => onflow?.(flowDown ? undefined : 'elk-layered-down')}
-          >{#if flowDown}<ArrowDown size={15} />{:else}<ArrowRight size={15} />{/if}</button
-        >
       {/if}
-      <button
-        class="icon-button jump-button"
-        aria-label="Jump to…"
-        aria-keyshortcuts={shortcutLabel(jumpShortcut, mac)}
-        use:tip={{
-          title: 'Jump to…',
-          text: `Search elements, perspectives and sequences. ${shortcutLabel(jumpShortcut, mac)}`
-        }}
-        onclick={onjump}><Search size={15} /></button
-      >
+      <div class="view-control-actions">
+        {#if surface === 'architecture'}
+          <button
+            class="icon-button flow-toggle"
+            class:down={flowDown}
+            role="switch"
+            aria-checked={flowDown}
+            aria-label="Flow top to bottom"
+            aria-keyshortcuts={shortcutLabel(flowShortcut, mac)}
+            use:tip={{
+              title: 'Flow',
+              text: `Lay the diagram out top to bottom instead of left to right. Useful on tall screens, portrait pages and embeds. ${shortcutLabel(flowShortcut, mac)}`
+            }}
+            onclick={() => onflow?.(flowDown ? undefined : 'elk-layered-down')}
+            >{#if flowDown}<ArrowDown size={15} />{:else}<ArrowRight size={15} />{/if}</button
+          >
+        {/if}
+        <button
+          class="icon-button jump-button"
+          aria-label="Jump to…"
+          aria-keyshortcuts={shortcutLabel(jumpShortcut, mac)}
+          use:tip={{
+            title: 'Jump to…',
+            text: `Search elements, perspectives and sequences. ${shortcutLabel(jumpShortcut, mac)}`
+          }}
+          onclick={onjump}><Search size={15} /></button
+        >
+      </div>
     </div>
     <section class="nav-section" class:architecture-perspectives={surface === 'architecture'}>
       <button
@@ -445,6 +449,15 @@
   }
   .flow-toggle.down {
     color: var(--ui-accent, #8b9d62);
+  }
+  /* Flow and search are the row's two icon controls. They stay together at its right edge, and
+     drop to a second line together when the two named switches leave no room for them — which
+     the default sidebar width does. Widening the panel pulls the row back onto one line. */
+  .view-control-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
   }
   .proposed-label {
     display: block;

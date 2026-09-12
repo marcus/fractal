@@ -289,7 +289,9 @@ test('a scene may name its engine and the model rejects an unknown one', async (
       }
     ]
   });
-  const model = await parseModel(source, companion('elk-layered'));
-  assert.equal(model.scenes[0].layout, 'elk-layered');
+  for (const id of LAYOUT_ENGINES.map((engine) => engine.id)) {
+    const model = await parseModel(source, companion(id));
+    assert.equal(model.scenes[0].layout, id);
+  }
   await assert.rejects(parseModel(source, companion('bogus')), /Unknown layout engine: bogus/);
 });

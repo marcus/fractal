@@ -130,10 +130,54 @@ project(model, state) → measure(projection) → engine.layout(measured, reques
 Candidate engines after the seam exists, each an explicit id and never the default:
 
 - `elk-layered-fast`: thoroughness and crossing-minimization presets for very large views.
-- `elk-layered-down`: top-to-bottom direction for portrait screens and tall documents.
 - An aspect-targeted variant that biases toward a 16:9 slide or a phone viewport.
 - A placement engine that honors authored positions with collision avoidance (product plan
   question 4).
+
+## The second engine: `elk-layered-down`
+
+Registered as the seam's first proof that "another engine" is a registry entry, not a refactor:
+metadata in `core/layout-engines.ts`, one line in `adapters/layout/index.ts` passing the ELK
+factory `direction: 'down'`, and nothing else in the pipeline. Connections leave the south side
+and arrive on the north side; nested containers, label placement and the contract tests are
+unchanged, and the contract file needed no weakening because it was already direction-agnostic.
+
+The default stays `elk-layered`. `elk-layered-down` is reached the same way a theme is: `--layout
+elk-layered-down` on `layout`, `export`, `project` and `search`; `"layout": "elk-layered-down"` in
+a scene; the `layout` field of the view JSON in a link; the same field on `POST /api/render` and
+`/api/export`, where the render cache keys on it like every other field of the view state. In the
+studio it is the **Flow** arrow in the left rail's view-control row, with the `F` shortcut; the
+portable document has the same choice as a switch beside Trust and Proposed and runs it locally.
+
+Quality on the delivery example, `bin/fractal bench --model delivery --engine
+elk-layered,elk-layered-down --json` (2026-09-11, Apple Silicon, 5 iterations):
+
+| View      | Engine             | Crossings | Bends | Area   | Aspect | Layout p50 |
+| --------- | ------------------ | --------- | ----- | ------ | ------ | ---------- |
+| overview  | `elk-layered`      | 0         | 18    | 0.50 M | 4.52   | 7.5 ms     |
+| overview  | `elk-layered-down` | 0         | 18    | 0.49 M | 0.53   | 5.9 ms     |
+| execution | `elk-layered`      | 0         | 8     | 0.90 M | 2.94   | 7.9 ms     |
+| execution | `elk-layered-down` | 6         | 14    | 1.04 M | 0.68   | 7.6 ms     |
+| trust     | `elk-layered`      | 0         | 8     | 0.90 M | 2.94   | 7.0 ms     |
+| trust     | `elk-layered-down` | 6         | 14    | 1.04 M | 0.68   | 6.8 ms     |
+| proposal  | `elk-layered`      | 0         | 22    | 0.96 M | 2.83   | 7.5 ms     |
+| proposal  | `elk-layered-down` | 5         | 34    | 1.82 M | 1.00   | 7.4 ms     |
+| show-all  | `elk-layered`      | 0         | 24    | 2.74 M | 3.44   | 12.2 ms    |
+| show-all  | `elk-layered-down` | 16        | 64    | 6.29 M | 0.83   | 11.5 ms    |
+
+Read honestly: the down flow buys aspect ratio and pays for it in crossings, bends and area. Nodes
+are wide and short, so turning the flow makes the long axis the one the cards are widest on; a
+view that was 3–4.5 times wider than tall becomes roughly square or taller. That is the whole
+point on a portrait page or a phone, and it is the wrong trade for a 16:9 slide: a scene-sized
+export stays legible, but `--show-all` in the down flow scales to about a quarter size in the
+slide area. Time is the same or slightly better.
+
+One known characteristic: ELK's orthogonal router leaves a slanted interior segment on some
+connections that cross a container boundary in the down direction — 6 of 78 segments on delivery
+show-all, 151 of 3,876 across td's views, against none in the default engine. Endpoints stay
+exactly on the bottom and top borders and the contract holds; the slants are ELK's hierarchical
+routing under `INCLUDE_CHILDREN`, not an adapter coordinate error. Tuning them away is a separate
+decision, with its own before/after fingerprints, and belongs to whoever needs it.
 
 ## Benchmark tool
 
@@ -191,9 +235,10 @@ current.
 4. **Worker ELK for the portable document.** Inline the worker script in the single-file export,
    select it in the portable viewer, keep the main-thread engine as fallback when workers are
    unavailable. Long tasks during toggles drop to zero; geometry identical.
-5. **Engine presets, each a decision.** Only after 1–4: add `elk-layered-fast` and
-   `elk-layered-down` behind explicit ids, compare with the benchmark's quality metrics, and show
-   real catalog models in the studio before either is recommended anywhere.
+5. **Engine presets, each a decision.** `elk-layered-down` has landed (see below);
+   `elk-layered-fast` remains a candidate, to be added behind an explicit id, compared with the
+   benchmark's quality metrics, and shown on real catalog models in the studio before it is
+   recommended anywhere.
 
 Each step is a td ticket under `td-0b4264`, reviewed by an independent sub-agent for the seam and
 any engine change, and finished with `npm run check`, `npm test`, `npm run build`, browser proof,
@@ -254,9 +299,9 @@ server at all.
 - Should the project list skip compiling models entirely and read titles from `fractal.json`?
   Faster on a cold start, but an invalid model would no longer fail the listing. The plan keeps
   validation and relies on the cache; revisit if cold start still matters.
-- Should `layout` in a scene be allowed to name a non-default engine before step 5 ships an
-  alternative? The field exists from step 3 with one valid value; scenes naming an unknown engine
-  fail validation like an unknown theme.
+- ~~Should `layout` in a scene be allowed to name a non-default engine before step 5 ships an
+  alternative?~~ Settled: `elk-layered-down` is the second valid value, and a scene naming an
+  unknown engine still fails validation like an unknown theme.
 - Is the server-side ELK run worth moving off the request thread? Single-reader local service
   today; not until concurrent readers or models several times larger appear.
 
@@ -269,9 +314,15 @@ server at all.
 - After step 3: `bin/fractal engines --json` lists `elk-layered`; `--layout elk-layered` and no
   flag produce identical fingerprints; contract tests pass for every registered engine.
 - After step 4: browser bench on the portable document reports no long tasks during toggles.
+- After a new engine lands: `engines --json` lists it, the contract tests pass for it unweakened,
+  the benchmark reports quality metrics for it beside the default, and every default-engine
+  fingerprint is unchanged (`--engine elk-layered --baseline <file> --fail-on-geometry-change`).
 
 ## Changelog
 
+- 2026-09-11: Step 5 began (td-79513f): `elk-layered-down` registered as the second engine, with
+  CLI, scene, link, API, cache, studio Flow control and portable switch, plus the quality
+  comparison above. Default-engine fingerprints identical across all 118 benchmark rows.
 - 2026-09-11: Created from measurements on the installed studio and catalog; toggle latency made
   the headline goal.
 - 2026-09-11: Step 3 landed (td-c5936b): measurement, engine contract, registry, pipeline,

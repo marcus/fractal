@@ -1718,3 +1718,57 @@ test('architecture inspector shares progressive disclosure and resets on selecti
   await expect(inspector.locator('code').first()).toBeHidden();
   await expect(inspector).toBeVisible();
 });
+
+test('the Flow control lays the view out top to bottom, by pointer, by key, and on reload', async ({
+  page
+}) => {
+  /** How far apart the nodes sit horizontally against how far apart they sit vertically. */
+  const spread = () =>
+    page.locator('[data-node-id]').evaluateAll((nodes) => {
+      const points = nodes.map((node) => {
+        const parts = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(node.getAttribute('transform') ?? '');
+        return { x: Number(parts![1]), y: Number(parts![2]) };
+      });
+      const extent = (values: number[]) => Math.max(...values) - Math.min(...values);
+      return {
+        x: extent(points.map((point) => point.x)),
+        y: extent(points.map((point) => point.y))
+      };
+    });
+  const layoutInUrl = () => JSON.parse(new URL(page.url()).searchParams.get('view')!).layout;
+
+  await page.goto('/?model=delivery&scene=overview');
+  await ready(page);
+  const flow = page.locator('.sidebar').getByRole('switch', { name: 'Flow top to bottom' });
+  await expect(flow).toHaveAttribute('aria-checked', 'false');
+  const across = await spread();
+  expect(across.x).toBeGreaterThan(across.y);
+  expect(layoutInUrl()).toBeUndefined();
+
+  await flow.click();
+  await ready(page);
+  await expect(flow).toHaveAttribute('aria-checked', 'true');
+  expect(layoutInUrl()).toBe('elk-layered-down');
+  const down = await spread();
+  expect(down.y).toBeGreaterThan(down.x);
+
+  // The link carries the flow: reopening it reproduces the same arrangement.
+  await page.reload();
+  await ready(page);
+  expect(layoutInUrl()).toBe('elk-layered-down');
+  await expect(flow).toHaveAttribute('aria-checked', 'true');
+  const reloaded = await spread();
+  expect(reloaded.y).toBeGreaterThan(reloaded.x);
+
+  // The registered shortcut is the keyboard path to the same command.
+  await page.locator('.canvas > svg').click({ position: { x: 20, y: 20 } });
+  await page.keyboard.press('f');
+  await ready(page);
+  await expect(flow).toHaveAttribute('aria-checked', 'false');
+  expect(layoutInUrl()).toBeUndefined();
+  const again = await spread();
+  expect(again.x).toBeGreaterThan(again.y);
+  await page.keyboard.press('f');
+  await ready(page);
+  expect(layoutInUrl()).toBe('elk-layered-down');
+});

@@ -1693,11 +1693,11 @@ h1 {
 .sidebar-view-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 2px 8px;
   padding: 0 10px 14px;
 }
 .sidebar-view-controls .jump-button {
-  margin-left: auto;
   width: 28px;
   height: 28px;
   color: var(--ui-muted, #7d886f);

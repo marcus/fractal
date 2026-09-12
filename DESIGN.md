@@ -49,6 +49,13 @@ diagram. Fitted diagrams use the uncovered area; selections reveal clear of the 
   refresh or a shared link reopens the inspector on the same element, connection, phase, or lane.
 - Trust and Proposed are compact switches on one row with the search at the far right. They are
   independent choices, not modes; Structure is the ordinary Trust-off view.
+- Flow is the third control on that row, an arrow that points the way the diagram runs: right for
+  the default left-to-right placement, down for the top-to-bottom one, tinted with the accent only
+  when the view has left the default. The arrow is the whole signal — no label repeats it — and the
+  delayed tooltip, the accessible name and the registered key carry the explanation. It sits with
+  the search in the row's icon cluster, which wraps to a second line rather than clipping when the
+  two named switches leave it no room. Flow is view state like the lens: it rides in the link, the
+  scene and the export, and switching it re-renders through the ordinary path.
 - Search opens straight on its input. No heading, no close button: Escape and a click outside
   dismiss it, and the footer shows the keys. The shortcut sheet closes the same way. The project
   switcher opens on the project you are in, so Enter and Escape both leave you where you were.

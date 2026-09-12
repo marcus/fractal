@@ -185,7 +185,8 @@ test('the view-state key ignores the order of expanded and nothing else', async 
     { ...STATE, lens: 'trust' as const },
     { ...STATE, theme: 'midnight' as const },
     { ...STATE, scope: 'root' },
-    { ...STATE, expanded: ['root'] }
+    { ...STATE, expanded: ['root'] },
+    { ...STATE, layout: 'elk-layered-down' as const }
   ])
     assert.notEqual(renderKey('rev-1', STATE), renderKey('rev-1', other));
 
@@ -208,6 +209,23 @@ test('a different view state or a changed model is laid out again', async () => 
   await renderDiagram({ model, revision: 'rev-2' }, STATE);
   assert.equal(renderCacheStats().misses, 3, 'a model edited on disk misses');
   assert.equal(renderCacheStats().hits, 0);
+});
+
+test('the engine is part of a rendered view, so two flows never share one entry', async () => {
+  clearRenderCache();
+  const loaded = { model: tinyModel(3), revision: 'rev-1' };
+  const across = await renderDiagram(loaded, { ...STATE, expanded: ['root'] });
+  const down = await renderDiagram(loaded, {
+    ...STATE,
+    expanded: ['root'],
+    layout: 'elk-layered-down'
+  });
+  assert.equal(renderCacheStats().misses, 2, 'the second engine is laid out, not served');
+  assert.notDeepEqual(down.nodes, across.nodes, 'and it produced its own geometry');
+  assert.equal(down.state.layout, 'elk-layered-down');
+  await renderDiagram(loaded, { ...STATE, expanded: ['root'], layout: 'elk-layered-down' });
+  await renderDiagram(loaded, { ...STATE, expanded: ['root'] });
+  assert.deepEqual(renderCacheStats(), { hits: 2, misses: 2, size: 2 });
 });
 
 test('the layout cache evicts the least recently used view', async () => {

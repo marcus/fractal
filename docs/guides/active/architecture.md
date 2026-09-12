@@ -93,7 +93,9 @@ is the contract an engine implements: a measured graph in, absolute placement ou
 the CLI (`engines`, `--layout`) and links know every engine without loading one. `core/layout.ts`
 runs the pipeline for a view and assembles the `Diagram` every renderer consumes, applying the
 same containment and provenance guarantees to every engine. Implementations live in
-`adapters/layout/`; registering an engine is one metadata entry plus one adapter file. A view names
+`adapters/layout/`; registering an engine is one metadata entry plus one adapter file. Two engines
+are registered: `elk-layered`, the left-to-right default, and `elk-layered-down`, the same ELK
+layered placement flowing top to bottom with connections on the north and south sides. A view names
 its engine in the optional `layout` field of its view state; absent means the default, so
 existing scenes, links and exports keep their look. `tests/layout-engines.test.ts` holds the
 contract every registered engine must pass.
