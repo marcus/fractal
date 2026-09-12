@@ -95,7 +95,8 @@
       diagram = next;
       saveLink();
     } catch (cause) {
-      if (id === renderId) error = String(cause);
+      // Layout runs in a worker here; a browser without one says so in its own words.
+      if (id === renderId) error = cause instanceof Error ? cause.message : String(cause);
     } finally {
       if (id === renderId) busy = false;
     }

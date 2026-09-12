@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
+import ELK from 'elkjs/lib/elk.bundled.js';
 import { allLayoutEngines, getLayoutEngine } from '../src/lib/adapters/layout';
+import { elkLayeredEngine } from '../src/lib/adapters/layout/elk';
 import { layout } from '../src/lib/core/layout';
 import {
   DEFAULT_LAYOUT_ENGINE,
@@ -236,6 +238,28 @@ for (const info of LAYOUT_ENGINES) {
     }
   });
 }
+
+/**
+ * The ELK instance is injected so the portable document can run the same engine in a worker while
+ * Node keeps the bundled main-thread build. Two instances standing in for the two environments
+ * must place a view identically, or that swap would move geometry.
+ */
+test('the ELK engine places identically whichever ELK instance it is given', async () => {
+  const info = getLayoutEngineInfo('elk-layered');
+  const first = elkLayeredEngine({ ...info, direction: 'right', elk: new ELK() });
+  const second = elkLayeredEngine({ ...info, direction: 'right', elk: new ELK() });
+  const lazy = elkLayeredEngine({ ...info, direction: 'right', elk: () => new ELK() });
+  for (const view of fixtureViews) {
+    const expected = await layout(fixture, view, first);
+    assert.deepEqual(await layout(fixture, view, second), expected);
+    assert.deepEqual(await layout(fixture, view, lazy), expected);
+    // And the registered engine, on whatever instance this environment provides.
+    assert.deepEqual(await layout(fixture, view, getLayoutEngine('elk-layered')), expected);
+  }
+  const { model } = await loadDirectory('examples/delivery');
+  for (const scene of [...model.scenes, showAllStructure(model, model.scenes[0])])
+    assert.deepEqual(await layout(model, scene, second), await layout(model, scene, first));
+});
 
 test('the default engine is what an unnamed view gets, on every surface', async () => {
   const explicit = await layout(fixture, { ...base, expanded: ['core'], layout: 'elk-layered' });

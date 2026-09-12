@@ -1,5 +1,5 @@
-import ELK from 'elkjs/lib/elk.bundled.js';
-import type { ElkNode, ElkExtendedEdge } from 'elkjs/lib/elk-api';
+import { elkInstance } from './elk-instance';
+import type { ELK, ElkNode, ElkExtendedEdge } from 'elkjs/lib/elk-api';
 import type {
   LayoutEngine,
   LayoutRequest,
@@ -9,15 +9,25 @@ import type {
 } from '../../core/layout-engine';
 import type { LayoutEngineId } from '../../core/types';
 
+/**
+ * The elkjs instance an engine places with. Which one it is decides where ELK runs, never what it
+ * computes: the bundled main-thread build in Node, the CLI, the server and the tests; a
+ * worker-backed one inside the portable document. Same options, same graph, same geometry.
+ */
+export type ElkLayout = Pick<ELK, 'layout'>;
+
 /** How the flow runs and which node sides connections leave from and arrive at. */
 export interface ElkLayeredOptions {
   id: LayoutEngineId;
   title: string;
   description: string;
   direction: 'right' | 'down';
+  /**
+   * Where ELK runs. Omitted means the environment's shared instance, so callers that do not care
+   * stay unaware of workers; a factory is resolved once, on the first layout.
+   */
+  elk?: ElkLayout | (() => ElkLayout);
 }
-
-const elk = new ELK();
 
 /**
  * ELK layered placement. ELK owns geometry; the measured graph and the diagram are independent
@@ -26,6 +36,10 @@ const elk = new ELK();
  */
 export function elkLayeredEngine(options: ElkLayeredOptions): LayoutEngine {
   const down = options.direction === 'down';
+  const provided = options.elk ?? elkInstance;
+  let resolved: ElkLayout | undefined;
+  const elk = (): ElkLayout =>
+    (resolved ??= typeof provided === 'function' ? provided() : provided);
   return {
     id: options.id,
     title: options.title,
@@ -121,7 +135,7 @@ export function elkLayeredEngine(options: ElkLayeredOptions): LayoutEngine {
         const owner = common ? containers.get(common)! : input;
         (owner.edges ??= []).push(elkEdge);
       }
-      const result = await elk.layout<ElkNode>(input);
+      const result = await elk().layout<ElkNode>(input);
       const placement: Placement = {
         nodes: {},
         edges: {},

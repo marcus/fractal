@@ -11,10 +11,42 @@ import { exportHtml } from '../src/lib/adapters/html';
 import { loadDirectory } from '../src/lib/server/models';
 import { scriptJson } from '../src/lib/portable/document';
 
+/** Bundling the reader is the slow part of this file; every test here reads the same build. */
+let built: ReturnType<typeof buildPortableAssets> | undefined;
+const assets = () => (built ??= buildPortableAssets());
+
 test('script data preserves authored closing tags and Unicode without executable markup', () => {
   const value = { text: '</ScRiPt><script>alert(1)</script>&<>\u2028\u2029' };
   assert(!scriptJson(value).includes('<'));
   assert.deepEqual(JSON.parse(scriptJson(value)), value);
+});
+
+/**
+ * The reader lays views out in a worker, so it embeds elkjs's worker script and elkjs's thin API,
+ * never the bundled main-thread build. Two copies of ELK would be a megabyte and a half of waste.
+ */
+test('the exported document carries one ELK, as a worker', { timeout: 180000 }, async () => {
+  const lib = (name: string) => readFile(`node_modules/elkjs/lib/${name}`, 'utf8');
+  const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+  // A token from ELK's own algorithm code, so counting it counts copies of ELK.
+  const elkCore = 'RegEx/Token/UnionToken';
+  // Text that only elkjs's Node entry point carries, and only elk.bundled.js bundles it.
+  const mainThreadElk = 'Web worker requested but';
+  assert.equal(occurrences(await lib('elk-worker.min.js'), elkCore), 1);
+  assert.equal(occurrences(await lib('elk.bundled.js'), elkCore), 1);
+  assert.equal(occurrences(await lib('elk.bundled.js'), mainThreadElk), 1);
+
+  const { model, sequences } = await loadDirectory(resolve('examples/delivery'));
+  const html = await exportHtml(model, {
+    state: model.scenes[0],
+    sequences,
+    assets: await assets()
+  });
+  assert.equal(occurrences(html, elkCore), 1, 'the document must carry exactly one copy of ELK');
+  assert.equal(occurrences(html, mainThreadElk), 0, 'the bundled main-thread ELK must be absent');
+  // From src/lib/adapters/layout/elk-instance.portable.ts: the worker module is the one that shipped.
+  assert.equal(occurrences(html, 'cannot run web workers'), 1);
+  assert(html.includes('createObjectURL'), 'the worker must start from a blob, not a request');
 });
 
 test(
@@ -30,7 +62,7 @@ test(
       state: model.scenes[0],
       scene: 'overview',
       sequences,
-      assets: await buildPortableAssets()
+      assets: await assets()
     });
     assert(!html.includes(process.cwd()), 'export must not leak the source checkout');
     assert(!html.includes('sourceMappingURL'), 'export must not expose source maps');
@@ -52,7 +84,11 @@ test(
       const errors: string[] = [];
       const requests: string[] = [];
       page.on('pageerror', (error) => errors.push(error.message));
-      page.on('request', (request) => requests.push(request.url()));
+      // A blob URL is the document's own bytes — the layout worker starts from one — so only
+      // requests that could leave the document are collected here.
+      page.on('request', (request) => {
+        if (!request.url().startsWith('blob:')) requests.push(request.url());
+      });
       await context.setOffline(true);
       await page.goto(pathToFileURL(file).href);
       await expect(page.locator('[data-node-id="core"]')).toBeVisible();

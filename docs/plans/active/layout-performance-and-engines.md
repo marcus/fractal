@@ -114,7 +114,10 @@ project(model, state) → measure(projection) → engine.layout(measured, reques
 - `src/lib/adapters/layout/index.ts`: implementations by id (`getLayoutEngine`,
   `allLayoutEngines`). `src/lib/adapters/layout/elk.ts` is a factory for ELK layered placement
   with a flow direction; the default engine is `elk-layered`, left to right, with the options
-  and geometry the studio always had.
+  and geometry the studio always had. The factory also takes the ELK instance to place with, so
+  where ELK runs is a deployment choice rather than an engine: `elk-instance.ts` is the bundled
+  main-thread build for Node, the CLI, the server and the tests, and `elk-instance.portable.ts`
+  is a worker, substituted by the reader build. Same options, same graph, same geometry.
 - `src/lib/core/layout.ts`: `layout(model, state, engine?)` runs the pipeline, choosing the engine
   from `state.layout` when none is passed, and `assembleDiagram` re-wraps expanded titles to their
   placed width, enforces visible authored parents, and echoes the view state. The canvas, SVG,
@@ -188,9 +191,14 @@ current.
    parametrized contract tests. Fingerprints identical for the default engine. Update the
    architecture guide, the CLI reference, the model-format guide (scene `layout`), and the Fractal
    skill.
-4. **Worker ELK for the portable document.** Inline the worker script in the single-file export,
-   select it in the portable viewer, keep the main-thread engine as fallback when workers are
-   unavailable. Long tasks during toggles drop to zero; geometry identical.
+4. **Worker ELK for the portable document.** Landed (td-1ff679). The ELK engine takes its ELK
+   instance rather than importing one, so the same engine code runs on the bundled main-thread
+   build in Node and on a worker inside the reader. `adapters/layout/elk-instance.ts` provides the
+   first; `elk-instance.portable.ts` starts elkjs's worker script, inlined by the reader build and
+   run from a blob URL, so the document still makes no request from `file://` or a nested HTTP
+   path. The reader ships one copy of ELK, not two: a browser without workers reports that through
+   the viewer's error path rather than falling back to a second embedded ELK. Long tasks during
+   toggles drop to zero; geometry identical.
 5. **Engine presets, each a decision.** Only after 1–4: add `elk-layered-fast` and
    `elk-layered-down` behind explicit ids, compare with the benchmark's quality metrics, and show
    real catalog models in the studio before either is recommended anywhere.
@@ -244,8 +252,10 @@ every catalog project stays in that gitignored JSONL, which is what a comparison
 The headline number comes from `npm run bench:browser`, against a build it starts itself. On td,
 click to new geometry is 260 ms to expand, 180 ms to collapse and 265 ms for show-all; page open is
 1.85 s, of which `/api/models` alone is 915 ms. Frames hold 16.6 ms at p50 through every toggle and
-no long task appears, in the studio or in the portable document — the wait is server time, not the
-browser. The same run on the bundled delivery example: 129 ms expand, 132 ms collapse, 131 ms
+no long task appears in the studio — the wait is server time, not the browser. The portable
+document is the exception, and that run under-reported it: measured again for step 4 on the same
+machine and model, the reader blocked its main thread for 106 ms on page open, 128 ms on expand and
+51 ms on collapse. The same run on the bundled delivery example: 129 ms expand, 132 ms collapse, 131 ms
 show-all, 855 ms page open; the portable document toggles the same view in 97 ms and 48 ms with no
 server at all.
 
@@ -280,3 +290,11 @@ server at all.
 - 2026-09-11: Step 1 landed (td-45b8a9): `bin/fractal bench`, `npm run bench:browser`, and the
   baseline table. Step 2 landed (td-5ca34f): parsed-model cache, layout-result cache, warm-up on
   server start, a delayed "Composing view" badge, and a parallel model request on page open.
+- 2026-09-11: Step 4 landed (td-1ff679): the ELK engine takes its ELK instance, and the portable
+  document runs elkjs's worker from an inlined blob URL instead of the bundled main-thread build.
+  On td, long tasks in the reader went from 106 ms on page open, 128 ms on expand and 51 ms on
+  collapse to none at all; click to new geometry went from 158.7 to 146.9 ms expanding and from
+  99.9 to 81.2 ms collapsing. `npm run bench:browser -- --model td` agrees: 147.4 ms and 81.2 ms,
+  no long task in either toggle or on open, frames at 16.7 ms p50. The document shrank from
+  2,121,424 to 2,116,535 bytes, because it now ships one copy of ELK rather than elkjs's bundle.
+  Node fingerprints are unchanged and the reader's node transforms match `fractal layout --json`.

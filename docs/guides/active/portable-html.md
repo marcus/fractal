@@ -11,6 +11,8 @@ The command prints JSON containing `output`, `format`, `model`, and `scene`. It 
 
 The file contains the full normalized model, all perspectives, optional sequence journeys, the reader, layout engine, styles, fonts, and reader license notices. It works offline through `file://` and at arbitrary nested HTTP paths. It makes no requests for assets or layout. Recipients need a modern browser with JavaScript enabled; no Fractal installation is needed.
 
+Expanding or collapsing in the document lays the view out again inside a web worker started from the embedded script, so scrolling, panning, and zooming stay responsive while ELK works. The document carries exactly one copy of ELK and still makes no network request; a browser without web workers reports that instead of arranging a new view.
+
 Use **Explore** to change perspective, find a component, expand or collapse structure, inspect provenance, or open a sequence. Click a component or connection for the same evidence and technical details shown by the studio. The reader also supports pan, zoom, explicit zoom buttons for touch screens, theme changes, phase and participant-group folding, and SVG download of the current view. `?` opens keyboard help; `bin/fractal shortcuts --surface portable --json` exposes its command registry.
 
 **Copy link** carries perspective, expansion, scope, theme, selection, and sequence state in the URL fragment. A hosted link reopens that view at the same document URL. A `file://` link is useful on the same machine; send the HTML file itself to another reader or host it first. Camera position and inspector panel preferences remain local presentation state.
@@ -22,6 +24,8 @@ A perspective is not a publication filter. Hidden components, proposals, sequenc
 ## Maintaining the export
 
 The portable reader reuses `DiagramCanvas`, `SequenceCanvas`, inspectors, themes, navigation, projection, and layout from the studio. `src/lib/portable/Viewer.svelte` is the browser shell, `src/lib/portable/document.ts` owns safe embedding, and `src/lib/adapters/html.ts` assembles the artifact. `scripts/portable-assets.ts` bundles the shared reader without a runtime server or CDN.
+
+The reader runs the same layout engine as the CLI and the studio; only the ELK instance differs. `src/lib/adapters/layout/elk-instance.ts` provides the bundled main-thread ELK that Node, the server, and the tests use, and `elk-instance.portable.ts` provides the worker-backed one. The `fractal-portable-elk` plugin in `scripts/portable-assets.ts` substitutes the second for the first when it builds the reader, which is also what keeps the main-thread build out of the document.
 
 `npm run build` generates `build/portable.json` alongside the production server. Service installation copies it with the build, so the installed studio exports HTML without source files or development dependencies. `npm run dev` prepares the reader bundle before starting; rerun `npm run build:portable` after changing reader components during a development server session. CLI exports always build the current checkout's reader.
 
