@@ -114,7 +114,10 @@ project(model, state) → measure(projection) → engine.layout(measured, reques
 - `src/lib/adapters/layout/index.ts`: implementations by id (`getLayoutEngine`,
   `allLayoutEngines`). `src/lib/adapters/layout/elk.ts` is a factory for ELK layered placement
   with a flow direction; the default engine is `elk-layered`, left to right, with the options
-  and geometry the studio always had.
+  and geometry the studio always had. The factory also takes the ELK instance to place with, so
+  where ELK runs is a deployment choice rather than an engine: `elk-instance.ts` is the bundled
+  main-thread build for Node, the CLI, the server and the tests, and `elk-instance.portable.ts`
+  is a worker, substituted by the reader build. Same options, same graph, same geometry.
 - `src/lib/core/layout.ts`: `layout(model, state, engine?)` runs the pipeline, choosing the engine
   from `state.layout` when none is passed, and `assembleDiagram` re-wraps expanded titles to their
   placed width, enforces visible authored parents, and echoes the view state. The canvas, SVG,
@@ -188,9 +191,14 @@ current.
    parametrized contract tests. Fingerprints identical for the default engine. Update the
    architecture guide, the CLI reference, the model-format guide (scene `layout`), and the Fractal
    skill.
-4. **Worker ELK for the portable document.** Inline the worker script in the single-file export,
-   select it in the portable viewer, keep the main-thread engine as fallback when workers are
-   unavailable. Long tasks during toggles drop to zero; geometry identical.
+4. **Worker ELK for the portable document.** Landed (td-1ff679). The ELK engine takes its ELK
+   instance rather than importing one, so the same engine code runs on the bundled main-thread
+   build in Node and on a worker inside the reader. `adapters/layout/elk-instance.ts` provides the
+   first; `elk-instance.portable.ts` starts elkjs's worker script, inlined by the reader build and
+   run from a blob URL, so the document still makes no request from `file://` or a nested HTTP
+   path. The reader ships one copy of ELK, not two: a browser without workers reports that through
+   the viewer's error path rather than falling back to a second embedded ELK. Long tasks during
+   toggles drop to zero; geometry identical.
 5. **Engine presets, each a decision.** Only after 1–4: add `elk-layered-fast` and
    `elk-layered-down` behind explicit ids, compare with the benchmark's quality metrics, and show
    real catalog models in the studio before either is recommended anywhere.
