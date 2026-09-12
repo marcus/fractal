@@ -136,6 +136,40 @@ test('mixed-depth layout contains children, separates siblings and routes real e
   }
 });
 
+test('the down engine flows every connection downward, between bottom and top ports', async () => {
+  for (const expanded of [[], ['core'], ['core', 'future']]) {
+    const current = { ...state, proposed: true, expanded, layout: 'elk-layered-down' as const };
+    const diagram = await layout(model, current);
+    assert.deepEqual(diagram, await layout(model, current));
+    const across = await layout(model, { ...current, layout: undefined });
+    assert.ok(
+      diagram.height / diagram.width > across.height / across.width,
+      `down is the taller arrangement for ${expanded}`
+    );
+    for (const connection of diagram.edges) {
+      const source = diagram.nodes.find((node) => node.id === connection.source)!;
+      const target = diagram.nodes.find((node) => node.id === connection.target)!;
+      const first = connection.points[0];
+      const last = connection.points.at(-1)!;
+      // This fixture is acyclic, so the layered order never has to route a connection back up.
+      assert.ok(last.y >= first.y, `${connection.id} runs downward`);
+      assert.ok(
+        Math.abs(first.y - (source.y + source.height)) <= 2,
+        `${connection.id} leaves the bottom of ${source.id}`
+      );
+      assert.ok(
+        Math.abs(last.y - target.y) <= 2,
+        `${connection.id} arrives on top of ${target.id}`
+      );
+    }
+  }
+  // The default engine keeps its left-to-right ports; the choice is per view, never global.
+  const sideways = await layout(model, { ...state, expanded: ['core'] });
+  const wide = sideways.edges[0];
+  const source = sideways.nodes.find((node) => node.id === wide.source)!;
+  assert.ok(Math.abs(wide.points[0].x - (source.x + source.width)) <= 2);
+});
+
 test('SVG export is portable, escaped and marks exact members without a synthetic envelope', async () => {
   const diagram = await layout(model, { ...state, expanded: ['core'], lens: 'trust' });
   const svg = exportSvg(model, diagram);

@@ -133,10 +133,88 @@ project(model, state) → measure(projection) → engine.layout(measured, reques
 Candidate engines after the seam exists, each an explicit id and never the default:
 
 - `elk-layered-fast`: thoroughness and crossing-minimization presets for very large views.
-- `elk-layered-down`: top-to-bottom direction for portrait screens and tall documents.
 - An aspect-targeted variant that biases toward a 16:9 slide or a phone viewport.
 - A placement engine that honors authored positions with collision avoidance (product plan
   question 4).
+
+## The second engine: `elk-layered-down`
+
+Registered as the seam's first proof that "another engine" is a registry entry, not a refactor:
+metadata in `core/layout-engines.ts`, one line in `adapters/layout/index.ts` passing the ELK
+factory `direction: 'down'`, and nothing else in the pipeline. Connections leave the south side
+and arrive on the north side; nested containers, label placement and the contract tests are
+unchanged, and the contract file needed no weakening because it was already direction-agnostic.
+
+The default stays `elk-layered`. `elk-layered-down` is reached the same way a theme is: `--layout
+elk-layered-down` on `layout`, `export`, `project` and `search`; `"layout": "elk-layered-down"` in
+a scene; the `layout` field of the view JSON in a link; the same field on `POST /api/render` and
+`/api/export`, where the render cache keys on it like every other field of the view state. In the
+studio it is the **Flow** arrow in the bar's action cluster beside the theme, with the `F`
+shortcut; the portable document carries the same control in its own bar and runs it locally.
+
+Quality on the delivery example, `bin/fractal bench --model delivery --engine
+elk-layered,elk-layered-down --json` (2026-09-11, Apple Silicon, 5 iterations):
+
+| View      | Engine             | Crossings | Bends | Area   | Aspect | Layout p50 |
+| --------- | ------------------ | --------- | ----- | ------ | ------ | ---------- |
+| overview  | `elk-layered`      | 0         | 18    | 0.50 M | 4.52   | 7.5 ms     |
+| overview  | `elk-layered-down` | 0         | 18    | 0.49 M | 0.53   | 5.9 ms     |
+| execution | `elk-layered`      | 0         | 8     | 0.90 M | 2.94   | 7.7 ms     |
+| execution | `elk-layered-down` | 2         | 14    | 1.04 M | 0.68   | 6.9 ms     |
+| trust     | `elk-layered`      | 0         | 8     | 0.90 M | 2.94   | 6.9 ms     |
+| trust     | `elk-layered-down` | 2         | 14    | 1.04 M | 0.68   | 6.8 ms     |
+| proposal  | `elk-layered`      | 0         | 22    | 0.96 M | 2.83   | 7.5 ms     |
+| proposal  | `elk-layered-down` | 3         | 34    | 1.82 M | 1.00   | 7.5 ms     |
+| show-all  | `elk-layered`      | 0         | 24    | 2.74 M | 3.44   | 12.5 ms    |
+| show-all  | `elk-layered-down` | 11        | 62    | 6.29 M | 0.83   | 12.1 ms    |
+
+Read honestly: the down flow buys aspect ratio and pays for it in crossings, bends and area. Nodes
+are wide and short, so turning the flow makes the long axis the one the cards are widest on; a
+view that was 3–4.5 times wider than tall becomes roughly square or taller. That is the whole
+point on a portrait page or a phone, and it is the wrong trade for a 16:9 slide: a scene-sized
+export stays legible, but `--show-all` in the down flow scales to about a quarter size in the
+slide area. Time is the same or slightly better.
+
+### The slanted-segment defect, diagnosed and repaired
+
+The first working version of the engine drew several connections as long diagonals — 6 of 78
+polyline steps on delivery show-all, 151 of 3,876 across td's views, against none in the default
+flow. Dumping ELK's raw output settled where it came from: each affected edge returns **one**
+section, so nothing was being concatenated across containers, no junction points were dropped, and
+the coordinates were not relative to the wrong node. ELK's orthogonal router simply hands back a
+bend sequence containing one step that is neither horizontal nor vertical when the flow runs
+downward. Two shapes appear: a centred edge label's dummy contributes a corner a few pixels off the
+route (its point sits exactly at the label box's right edge plus 2 and its bottom plus the
+edge-node spacing), and an edge crossing container boundaries jumps between two routing corridors
+without the corner that would join them. Removing every label drops it from 6 steps to 2, so both
+shapes are real. No option changes it: `mergeEdges`, `mergeHierarchyEdges`,
+`crossingMinimization.hierarchicalSweepiness`, `nodePlacement.strategy`, `thoroughness`,
+`edgeLabels.sideSelection` and `unnecessaryBendpoints` all leave the count at 6.
+
+The repair is `orthogonalRoute` in the ELK adapter, applied as the route is read back: at a slanted
+step it turns the corner that continues the direction the route was already travelling, then drops
+interior points that have become redundant — including those that now double back along a line they
+already ran. Endpoints never move, so an edge still meets its nodes exactly where ELK put it.
+Non-orthogonal steps go to **0 of 3,876 on td**, 0 on fractal, 0 on both bundled examples, and the
+down flow's crossings fall with them (delivery show-all 16 → 11).
+
+Squaring a step up is not free, though, and review caught the cost: a diagonal can cut past a card
+that no right-angled path can, so choosing the corner by travelled axis alone sent 31 segments
+straight through collapsed cards across delivery, observatory and td (`recovery-records` ran down
+the middle of the Fulfillment scheduler card on delivery show-all). The repair therefore computes
+both candidate corners and takes the other one when the preferred corner's two segments would cross
+the interior of a collapsed card that is not the edge's own source or target; every node is placed
+before any route is read, so the obstacle set is the whole diagram rather than whatever the
+traversal reached first. That gives **0 through-card segments over 21 views and 680 edges**, still
+0 diagonal steps, and fewer foreign-container crossings than the naive corner. The contract tests
+now assert both properties — orthogonal steps, and no step through a card that is not an
+endpoint — for every registered engine.
+
+Only the downward engine repairs. Every route the default engine has been measured on is already
+orthogonal — 0 of 3,016 steps on td, 0 on fractal, ongoing and both examples — so the repair would
+be a no-op there, but its geometry is fingerprinted and frozen and switching a repair on for it is
+exactly the kind of change this plan insists be explicit. The contract assertion covers both
+engines, so a default route that ever needs the repair fails a test rather than changing quietly.
 
 ## Benchmark tool
 
@@ -199,9 +277,10 @@ current.
    path. The reader ships one copy of ELK, not two: a browser without workers reports that through
    the viewer's error path rather than falling back to a second embedded ELK. Long tasks during
    toggles drop to zero; geometry identical.
-5. **Engine presets, each a decision.** Only after 1–4: add `elk-layered-fast` and
-   `elk-layered-down` behind explicit ids, compare with the benchmark's quality metrics, and show
-   real catalog models in the studio before either is recommended anywhere.
+5. **Engine presets, each a decision.** `elk-layered-down` has landed (see below);
+   `elk-layered-fast` remains a candidate, to be added behind an explicit id, compared with the
+   benchmark's quality metrics, and shown on real catalog models in the studio before it is
+   recommended anywhere.
 
 Each step is a td ticket under `td-0b4264`, reviewed by an independent sub-agent for the seam and
 any engine change, and finished with `npm run check`, `npm test`, `npm run build`, browser proof,
@@ -264,9 +343,9 @@ server at all.
 - Should the project list skip compiling models entirely and read titles from `fractal.json`?
   Faster on a cold start, but an invalid model would no longer fail the listing. The plan keeps
   validation and relies on the cache; revisit if cold start still matters.
-- Should `layout` in a scene be allowed to name a non-default engine before step 5 ships an
-  alternative? The field exists from step 3 with one valid value; scenes naming an unknown engine
-  fail validation like an unknown theme.
+- ~~Should `layout` in a scene be allowed to name a non-default engine before step 5 ships an
+  alternative?~~ Settled: `elk-layered-down` is the second valid value, and a scene naming an
+  unknown engine still fails validation like an unknown theme.
 - Is the server-side ELK run worth moving off the request thread? Single-reader local service
   today; not until concurrent readers or models several times larger appear.
 
@@ -279,9 +358,16 @@ server at all.
 - After step 3: `bin/fractal engines --json` lists `elk-layered`; `--layout elk-layered` and no
   flag produce identical fingerprints; contract tests pass for every registered engine.
 - After step 4: browser bench on the portable document reports no long tasks during toggles.
+- After a new engine lands: `engines --json` lists it, the contract tests pass for it unweakened,
+  the benchmark reports quality metrics for it beside the default, and every default-engine
+  fingerprint is unchanged (`--engine elk-layered --baseline <file> --fail-on-geometry-change`).
 
 ## Changelog
 
+- 2026-09-11: Step 5 began (td-79513f): `elk-layered-down` registered as the second engine, with
+  CLI, scene, link, API, cache, studio and portable Flow controls, the diagnosis and repair of
+  ELK's slanted downward routes, orthogonality and through-card assertions in the engine contract,
+  and the quality comparison above. Default-engine fingerprints unchanged.
 - 2026-09-11: Created from measurements on the installed studio and catalog; toggle latency made
   the headline goal.
 - 2026-09-11: Step 3 landed (td-c5936b): measurement, engine contract, registry, pipeline,

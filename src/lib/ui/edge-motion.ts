@@ -13,6 +13,37 @@ const mix = (a: Point, b: Point, t: number): Point => ({
   y: a.y + (b.y - a.y) * t
 });
 
+/**
+ * Where a connection between two boxes would meet them, when no engine route is known yet — a
+ * new edge that has to morph in from somewhere. Each end sits on the border facing the other
+ * box, so a left-to-right engine gets right/left ports and a top-to-bottom engine gets
+ * bottom/top ones without either being named here. Reading the geometry rather than the engine
+ * id keeps a future engine's routes moving correctly too.
+ */
+export function facingBorderPoints(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number }
+): [Point, Point] {
+  const centre = (box: typeof a): Point => ({
+    x: box.x + box.width / 2,
+    y: box.y + box.height / 2
+  });
+  const from = centre(a);
+  const to = centre(b);
+  if (Math.abs(to.y - from.y) > Math.abs(to.x - from.x)) {
+    const downward = to.y >= from.y;
+    return [
+      { x: from.x, y: downward ? a.y + a.height : a.y },
+      { x: to.x, y: downward ? b.y : b.y + b.height }
+    ];
+  }
+  const rightward = to.x >= from.x;
+  return [
+    { x: rightward ? a.x + a.width : a.x, y: from.y },
+    { x: rightward ? b.x : b.x + b.width, y: to.y }
+  ];
+}
+
 /** Same 12px rounded route used at rest, expressed entirely as quadratic curves. */
 export function roundedEdgeCurve(points: Point[]): EdgeCurve {
   const start = points[0] ?? { x: 0, y: 0 };

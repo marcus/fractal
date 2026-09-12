@@ -3,6 +3,7 @@
   import { onMount, untrack } from 'svelte';
   import {
     roundedEdgeCurve,
+    facingBorderPoints,
     prepareEdgeMorph,
     interpolateEdgeCurve,
     edgeCurvePath,
@@ -387,12 +388,7 @@
       const a = fromById.get(edge.source) ?? anchor(nextById.get(edge.source)!, fromById, parents);
       const b = fromById.get(edge.target) ?? anchor(nextById.get(edge.target)!, fromById, parents);
       const curve = roundedEdgeCurve(edge.points);
-      const fromCurve =
-        old?.curve ??
-        roundedEdgeCurve([
-          { x: a.x + a.width, y: a.y + a.height / 2 },
-          { x: b.x, y: b.y + b.height / 2 }
-        ]);
+      const fromCurve = old?.curve ?? roundedEdgeCurve(facingBorderPoints(a, b));
       return {
         target: { ...edge, opacity: 1, curve, path: edgeCurvePath(curve) },
         morph: prepareEdgeMorph(fromCurve, curve),

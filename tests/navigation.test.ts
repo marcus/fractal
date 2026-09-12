@@ -18,6 +18,24 @@ test('spatial navigation follows geometry and retains focus at an edge', async (
   assert.equal(directionalNeighbor([], null, 'down'), null);
 });
 
+test('spatial navigation follows a stacked arrangement as readily as a wide one', async () => {
+  const { model } = await loadModel('delivery');
+  const diagram = await layout(model, {
+    expanded: [],
+    proposed: false,
+    lens: 'structure',
+    layout: 'elk-layered-down'
+  });
+  const byId = new Map(diagram.nodes.map((node) => [node.id, node]));
+  const top = [...diagram.nodes].sort((a, b) => a.y - b.y)[0];
+  const below = directionalNeighbor(diagram.nodes, top.id, 'down')!;
+  assert.notEqual(below, top.id);
+  assert.ok(byId.get(below)!.y > top.y, 'down reaches a node further down the flow');
+  assert.equal(directionalNeighbor(diagram.nodes, below, 'up'), top.id, 'and up comes back');
+  const bottom = [...diagram.nodes].sort((a, b) => b.y - a.y)[0];
+  assert.equal(directionalNeighbor(diagram.nodes, bottom.id, 'down'), bottom.id);
+});
+
 test('Escape collapses a parent or leaves a focused scope without losing theme', async () => {
   const { model } = await loadModel('delivery');
   const state = {

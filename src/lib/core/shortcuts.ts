@@ -7,6 +7,7 @@ export type CommandId =
   | 'help'
   | 'info'
   | 'toggle-sidebar'
+  | 'toggle-flow'
   | 'toggle-presentation'
   | 'export'
   | 'copy-link'
@@ -71,6 +72,13 @@ export const SHORTCUTS = [
     group: 'View',
     keys: ['mod+b'],
     contexts: ['studio']
+  },
+  {
+    id: 'toggle-flow',
+    label: 'Flow top to bottom',
+    group: 'View',
+    keys: ['f'],
+    contexts: ['studio', 'presentation']
   },
   {
     id: 'toggle-presentation',
@@ -230,10 +238,13 @@ export function shortcutsForSurface(
     activate: 'Select participant or interaction',
     outward: 'Clear canvas focus'
   };
-  return SHORTCUTS.filter((command) => command.id !== 'info').map((command) => ({
-    ...command,
-    label: labels[command.id] ?? command.label
-  }));
+  // Flow direction belongs to architecture placement; the sequence surface has no engine to swap.
+  return SHORTCUTS.filter((command) => command.id !== 'info' && command.id !== 'toggle-flow').map(
+    (command) => ({
+      ...command,
+      label: labels[command.id] ?? command.label
+    })
+  );
 }
 
 export interface ShortcutEvent {

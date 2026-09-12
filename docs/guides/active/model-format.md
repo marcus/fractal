@@ -154,7 +154,9 @@ Each scene stores a named perspective on the same model:
   retains its selected theme when a scene omits this field. Explicit scene themes override it.
 - `scope`: optional element ID that anchors a focused view. Omit it for the whole model.
 - `layout`: optional layout engine id, from `bin/fractal engines --json`. Omit it for the default
-  left-to-right layered layout (`elk-layered`). An unknown id fails validation.
+  left-to-right layered layout (`elk-layered`); `elk-layered-down` lays the same view out top to
+  bottom, which suits portrait pages, tall screens and README embeds. An unknown id fails
+  validation.
 
 A scope must exist and be visible under the scene's proposed setting. Expanded
 nodes must be the scope itself or its descendants. Include each ancestor needed to

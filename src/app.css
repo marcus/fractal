@@ -146,6 +146,11 @@ a {
   min-height: 28px;
   padding: 4px 10px;
 }
+/* Flow direction sits with the other presentation actions. The arrow points the way the diagram
+   runs and is the only signal of the state; the accent marks a view that has left the default. */
+.flow-button.flowing-down {
+  color: var(--ui-accent, #345b46);
+}
 .present-button {
   margin-left: 4px;
   background: var(--ui-accent, #345b46);

@@ -122,7 +122,7 @@ Options:
   --directory PATH[,PATH]        Measure these model directories instead of a catalog
   --synthetic N[,N]              Also measure generated models of N elements (alone: only these)
   --views scene|all|both         Authored scenes, show-all of the first scene, or both (default both)
-  --engine ID[,ID]               Layout engines to compare (default all: elk-layered)
+  --engine ID[,ID]               Layout engines to compare (default all: elk-layered, elk-layered-down)
   --iterations N                 Measured runs after one discarded warm-up (default 5)
   --json                         One JSON document on stdout
   --output FILE                  Write JSONL, one row per model, view and engine

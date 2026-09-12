@@ -18,6 +18,12 @@ export const LAYOUT_ENGINES: readonly LayoutEngineInfo[] = Object.freeze([
     id: 'elk-layered',
     title: 'Layered, left to right',
     description: 'ELK layered placement with orthogonal routing; the studio default.'
+  }),
+  Object.freeze({
+    id: 'elk-layered-down',
+    title: 'Top to bottom',
+    description:
+      'The same layered placement flowing downward, for tall viewports, portrait pages and README embeds.'
   })
 ]);
 

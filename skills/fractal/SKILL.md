@@ -54,7 +54,8 @@ Scenes may set `"theme": "grove"`, `"graphite"`, or `"midnight"`. Omit it for th
 appearance. Use `"$FRACTAL_ROOT/bin/fractal" themes --json` to inspect the shipped choices rather
 than copying palette values into a project model. Scenes may also set `"layout"` to a layout
 engine id from `"$FRACTAL_ROOT/bin/fractal" engines --json`; omit it for the default layered
-left-to-right layout.
+left-to-right layout, or set `"elk-layered-down"` for a top-to-bottom arrangement that reads
+better in a portrait page, a tall screen or a README embed.
 
 ## Deepen an existing model
 
@@ -93,7 +94,7 @@ Run commands from any directory through the repository wrapper:
 "$FRACTAL_ROOT/bin/fractal" project --directory "$MODEL_DIR" --scope ELEMENT_ID --show-all --json
 "$FRACTAL_ROOT/bin/fractal" layout --directory "$MODEL_DIR" --scene SCENE_ID --json
 "$FRACTAL_ROOT/bin/fractal" engines --json
-"$FRACTAL_ROOT/bin/fractal" layout --directory "$MODEL_DIR" --scene SCENE_ID --layout ENGINE_ID --json
+"$FRACTAL_ROOT/bin/fractal" layout --directory "$MODEL_DIR" --scene SCENE_ID --layout elk-layered-down --json
 ```
 
 Search returns matching elements, relationships and scenes with resolved view state and selection.
