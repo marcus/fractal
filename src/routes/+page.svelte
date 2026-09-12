@@ -294,7 +294,8 @@
         proposed: scene.proposed,
         lens: scene.lens,
         theme: initialTheme ?? scene.theme ?? view.theme,
-        ...(scene.scope ? { scope: scene.scope } : {})
+        ...(scene.scope ? { scope: scene.scope } : {}),
+        ...(scene.layout ? { layout: scene.layout } : {})
       };
       initialView = null;
       initialTheme = null;
@@ -388,7 +389,8 @@
       proposed: scene.proposed,
       lens: scene.lens,
       theme: scene.theme ?? view.theme,
-      ...(scene.scope ? { scope: scene.scope } : {})
+      ...(scene.scope ? { scope: scene.scope } : {}),
+      ...(scene.layout ? { layout: scene.layout } : {})
     };
     menuOpen = false;
     renderView();

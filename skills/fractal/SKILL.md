@@ -52,7 +52,9 @@ presentation copy, so write them for the audience rather than as implementation 
 
 Scenes may set `"theme": "grove"`, `"graphite"`, or `"midnight"`. Omit it for the default Grove
 appearance. Use `"$FRACTAL_ROOT/bin/fractal" themes --json` to inspect the shipped choices rather
-than copying palette values into a project model.
+than copying palette values into a project model. Scenes may also set `"layout"` to a layout
+engine id from `"$FRACTAL_ROOT/bin/fractal" engines --json`; omit it for the default layered
+left-to-right layout.
 
 ## Deepen an existing model
 
@@ -90,6 +92,8 @@ Run commands from any directory through the repository wrapper:
 "$FRACTAL_ROOT/bin/fractal" project --directory "$MODEL_DIR" --scene SCENE_ID --json
 "$FRACTAL_ROOT/bin/fractal" project --directory "$MODEL_DIR" --scope ELEMENT_ID --show-all --json
 "$FRACTAL_ROOT/bin/fractal" layout --directory "$MODEL_DIR" --scene SCENE_ID --json
+"$FRACTAL_ROOT/bin/fractal" engines --json
+"$FRACTAL_ROOT/bin/fractal" layout --directory "$MODEL_DIR" --scene SCENE_ID --layout ENGINE_ID --json
 ```
 
 Search returns matching elements, relationships and scenes with resolved view state and selection.

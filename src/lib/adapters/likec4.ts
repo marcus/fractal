@@ -1,6 +1,7 @@
 import { LikeC4 } from 'likec4';
 import type { Boundary, Element, Model, Scene, Status } from '../core/types';
 import { getTheme } from '../core/themes';
+import { getLayoutEngineInfo } from '../core/layout-engines';
 
 type RecordValue = Record<string, unknown>;
 const fallbackColor = '#647D72';
@@ -194,6 +195,10 @@ export async function parseModel(source: string, companion: unknown): Promise<Mo
       const scope = scene.scope === undefined ? undefined : identity(scene.scope, `${path}.scope`);
       const theme =
         scene.theme === undefined ? undefined : getTheme(string(scene.theme, `${path}.theme`)).id;
+      const layout =
+        scene.layout === undefined
+          ? undefined
+          : getLayoutEngineInfo(string(scene.layout, `${path}.layout`)).id;
       if (scope !== undefined) {
         const scopedElement = elements.find((element) => element.id === scope);
         if (!scopedElement) throw new Error(`${path}.scope references unknown element ${scope}`);
@@ -230,7 +235,8 @@ export async function parseModel(source: string, companion: unknown): Promise<Mo
         proposed: scene.proposed,
         lens: scene.lens,
         ...(scope ? { scope } : {}),
-        ...(theme ? { theme } : {})
+        ...(theme ? { theme } : {}),
+        ...(layout ? { layout } : {})
       };
     });
     unique(

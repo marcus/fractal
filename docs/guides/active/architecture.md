@@ -7,8 +7,10 @@ Fractal has four separate representations:
 2. **Normalized model**: versioned TypeScript records with no UI, filesystem, or layout types.
 3. **Projection**: which components are visible, where hidden endpoints roll up, and which exact
    relationships cross a focused view. A projection never changes the source.
-4. **Geometry**: node bounds, wrapped labels, ports, routes and canvas extent. ELK owns this step;
-   the renderer receives geometry and adds interaction or an editorial frame.
+4. **Geometry**: node bounds, wrapped labels, routes and canvas extent. Core measures every
+   visible node and label from the shared density profile, a layout engine places the measured
+   graph, and core assembles the diagram; the renderer receives geometry and adds interaction or
+   an editorial frame. ELK layered placement is the default engine.
 
 The source is the authority. Its hash binds browser render/export requests to the loaded model.
 When files change, the operator reloads; Fractal refuses to combine old inspector data with new
@@ -71,7 +73,8 @@ The canvas is two-dimensional SVG with finite, interruptible interpolation. It h
 Physics is not responsible for layout. Whole-system deep graphs may need pan/zoom; focused views
 are the first solution to useful slide proportions.
 
-LikeC4 is the compiler adapter; ELK is the geometry adapter; SvelteKit is the local shell. Playwright
+LikeC4 is the compiler adapter; layout engines are adapters behind one placement contract, with
+ELK layered as the default; SvelteKit is the local shell. Playwright
 is used for verification and headless PNG export. Roc supplies UI icons. A cookie package override
 updates SvelteKit's transitive serializer to the patched compatible 0.7 series; this prototype does
 not implement sessions or authentication.
@@ -79,15 +82,30 @@ not implement sessions or authentication.
 ## Where things live
 
 ```text
-LikeC4 + companion JSON → language adapter → model → view projection → ELK layout
-                                            ↑                         ↓
-                                    CLI / local HTTP API       canvas / SVG / PNG
+LikeC4 + companion JSON → language adapter → model → projection → measure → layout engine → diagram
+                                            ↑                                              ↓
+                                    CLI / local HTTP API                          canvas / SVG / PNG
 ```
 
-- `src/lib/core`: model records, projection, text fitting, search, shortcuts, portable SVG.
+`core/measure.ts` sizes nodes and labels from the shared density profile. `core/layout-engine.ts`
+is the contract an engine implements: a measured graph in, absolute placement out.
+`core/layout-engines.ts` is the registry of engine ids and copy, mirroring themes, so validation,
+the CLI (`engines`, `--layout`) and links know every engine without loading one. `core/layout.ts`
+runs the pipeline for a view and assembles the `Diagram` every renderer consumes, applying the
+same containment and provenance guarantees to every engine. Implementations live in
+`adapters/layout/`; registering an engine is one metadata entry plus one adapter file. A view names
+its engine in the optional `layout` field of its view state; absent means the default, so
+existing scenes, links and exports keep their look. `tests/layout-engines.test.ts` holds the
+contract every registered engine must pass.
+
+- `src/lib/core`: model records, projection, text fitting, measurement, the layout-engine
+  contract and registry, the layout pipeline, search, shortcuts, portable SVG.
 - `src/lib/sequence`: the separate temporal model, layout and SVG for sequence journeys.
-- `src/lib/adapters`: LikeC4 compilation, ELK geometry, headless PNG rasterization.
-- `src/lib/server`: file-backed model loading, catalog resolution and revision identity.
+- `src/lib/adapters`: LikeC4 compilation, layout engines (`layout/`), headless PNG rasterization.
+- `src/lib/bench`: the layout benchmark core; `scripts/bench.ts` and `scripts/bench-browser.ts`
+  are its shells.
+- `src/lib/server`: file-backed model loading with a parsed-model cache, catalog resolution,
+  revision identity, and the layout-result cache behind the render and export routes.
 - `src/routes/api`: thin model, render and export endpoints.
 - `src/lib/components`: the animated canvas and studio shell; geometry comes from the shared core.
 - `scripts/fractal.ts`: the noninteractive CLI; `scripts/service.mjs`: the installed local service.

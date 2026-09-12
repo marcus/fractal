@@ -36,8 +36,8 @@ Usage: bin/fractal bench [options]
 Times the model pipeline over a set of models and views, fingerprints the geometry it produced,
 and reports composition quality. Deterministic order, no interaction, structured output.
 
-Stages: load (read and parse), project, layout (the engine call), svg, and sequence layout for
-models with journeys. A separate measure stage is reported once the layout seam lands.
+Stages: load (read and parse), project, measure (node content), layout (the engine call and
+assembly), svg, and sequence layout for models with journeys.
 
 Options:
   --catalog PATH                 Use a specific catalog.json instead of the resolved one
