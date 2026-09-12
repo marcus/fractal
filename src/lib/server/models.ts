@@ -5,6 +5,7 @@ import { resolve, join } from 'node:path';
 import { parseModel } from '../adapters/likec4';
 import { parseSequences } from '../sequence/parse';
 import { parseCatalog, type CatalogEntry, type ProjectSummary } from '../core/catalog';
+import { createCache } from './cache';
 
 export interface CatalogOptions {
   catalog?: string;
@@ -111,7 +112,7 @@ async function optionalSequenceSource(directory: string): Promise<string | null>
   }
 }
 
-export async function loadDirectory(directory: string) {
+async function parseDirectory(directory: string) {
   const [source, companion, sequenceSource] = await Promise.all([
     readFile(join(directory, 'model.c4'), 'utf8'),
     readFile(join(directory, 'fractal.json'), 'utf8'),
@@ -123,6 +124,68 @@ export async function loadDirectory(directory: string) {
   const hash = createHash('sha256').update(source).update('\0').update(companion);
   if (sequenceSource !== null) hash.update('\0sequences\0').update(sequenceSource);
   return { model, sequences, source, sequenceSource, revision: hash.digest('hex') };
+}
+
+/** The files a parsed model is made of. `sequences.json` is optional; its absence is part of the stamp. */
+const MODEL_FILES = ['model.c4', 'fractal.json', 'sequences.json'] as const;
+const MODEL_CACHE_LIMIT = 64;
+const parsedModels = createCache<ReturnType<typeof parseDirectory>>(MODEL_CACHE_LIMIT);
+
+/**
+ * Size and modification time of every file a model is parsed from. Any change — an edit, a
+ * rewrite of the same length, an added or removed `sequences.json` — produces a different stamp,
+ * so the cache key changes and the model is parsed again. The content hash in `revision` remains
+ * the authority on what a reader is looking at.
+ */
+async function directoryStamp(directory: string): Promise<string> {
+  const stamps = await Promise.all(
+    MODEL_FILES.map(async (name) => {
+      try {
+        const info = await stat(join(directory, name), { bigint: true });
+        return `${name}:${info.size}:${info.mtimeNs}`;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return `${name}:absent`;
+        throw error;
+      }
+    })
+  );
+  return stamps.join('\0');
+}
+
+/**
+ * Parse a model directory, reusing the previous parse while its files are untouched.
+ *
+ * Only successful parses are cached: an invalid model is read and fails on every call, so the
+ * project list keeps failing loudly rather than remembering that it once failed. The parse in
+ * flight is what is stored, so the nine models of a project list — or a warm-up racing the first
+ * reader — are each compiled once.
+ */
+export async function loadDirectory(directory: string) {
+  // A stamp that cannot be taken (an unreadable directory) skips the cache entirely, so the
+  // parse below reports the same error it always did.
+  const stamp = await directoryStamp(directory).catch(() => null);
+  if (stamp === null) return parseDirectory(directory);
+  const key = `${directory}\0${stamp}`;
+  const cached = parsedModels.get(key);
+  if (cached) return cached;
+  const pending = parseDirectory(directory);
+  parsedModels.set(key, pending);
+  try {
+    return await pending;
+  } catch (error) {
+    parsedModels.delete(key);
+    throw error;
+  }
+}
+
+/** Forget every parsed model. Tests use this to start from a cold cache. */
+export function clearModelCache(): void {
+  parsedModels.clear();
+}
+
+/** Parses skipped and parses performed since the last clear. A test seam, not a metric. */
+export function modelCacheStats(): { hits: number; misses: number; size: number } {
+  return { ...parsedModels.stats, size: parsedModels.size };
 }
 export async function loadModel(id: string, options: CatalogOptions = {}) {
   if (!/^[a-z0-9-]+$/.test(id)) throw new Error('Invalid model identifier');

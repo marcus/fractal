@@ -84,6 +84,21 @@
     if (diagram) untrack(updateUrl);
   });
   let busy = $state(true);
+  /**
+   * Waiting long enough to be worth saying so. `busy` still governs what a reader may do; this
+   * governs only what the canvas shows about it, so a fast update never flashes a badge and never
+   * dims the diagram the reader is looking at.
+   */
+  let slow = $state(false);
+  const SLOW_REQUEST_MS = 150;
+  $effect(() => {
+    if (!busy) {
+      slow = false;
+      return;
+    }
+    const timer = setTimeout(() => (slow = true), SLOW_REQUEST_MS);
+    return () => clearTimeout(timer);
+  });
   let error = $state('');
   let exportError = $state('');
   let toast = $state('');
@@ -726,7 +741,7 @@
             {journey?.description ?? 'Choose an authored journey to explore its interactions.'}
           </p>
         </div>
-        <div class="diagram-area" class:loading={busy}>
+        <div class="diagram-area" class:loading={slow}>
           {#if diagram && model}<SequenceCanvas
               bind:this={canvas}
               {diagram}
@@ -744,7 +759,7 @@
               No phases shown <button onclick={clearPhaseFocus}>Show all</button>
             </div>
           {/if}
-          {#if busy}<div class="loading-badge"><span></span>Updating sequence</div>{/if}
+          {#if slow}<div class="loading-badge"><span></span>Updating sequence</div>{/if}
         </div>
       </div>
       {#if !presentation}
