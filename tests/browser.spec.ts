@@ -970,6 +970,7 @@ test('the floating bar carries the title and actions over a full-bleed canvas', 
     'Copy view link',
     'Keyboard Shortcuts',
     'Export',
+    'Flow top to bottom',
     'Theme',
     'Present',
     'Switch project: Fictional Delivery Service'
@@ -1739,7 +1740,9 @@ test('the Flow control lays the view out top to bottom, by pointer, by key, and 
 
   await page.goto('/?model=delivery&scene=overview');
   await ready(page);
-  const flow = page.locator('.sidebar').getByRole('switch', { name: 'Flow top to bottom' });
+  const flow = page.locator('.appbar').getByRole('switch', { name: 'Flow top to bottom' });
+  // Flow is a presentation choice, so it lives with the theme, not with the model lenses.
+  await expect(page.locator('.sidebar').getByRole('switch')).toHaveCount(0);
   await expect(flow).toHaveAttribute('aria-checked', 'false');
   const across = await spread();
   expect(across.x).toBeGreaterThan(across.y);

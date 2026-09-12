@@ -7,7 +7,52 @@ import type {
   MeasuredNode,
   Placement
 } from '../../core/layout-engine';
-import type { LayoutEngineId } from '../../core/types';
+import type { LayoutEngineId, Point } from '../../core/types';
+
+/**
+ * Make one ELK route orthogonal.
+ *
+ * ELK's orthogonal router returns clean right-angled routes flowing right, but when the flow runs
+ * downward it occasionally hands back a single section whose bend points include one step that is
+ * neither horizontal nor vertical: an edge crossing a container boundary picks up the corner of a
+ * centred label's dummy, or jumps between two routing corridors, without the corner that would
+ * join them. It is one section, so nothing is being concatenated or dropped on the way in — the
+ * points ELK gives are simply not a right-angled path.
+ *
+ * The repair is local and deterministic: at a slanted step, turn the corner that continues the
+ * direction the route was already travelling, then drop interior points that have become
+ * redundant — including the ones that now double back along a line they already ran. Endpoints are
+ * never moved, so an edge still meets its nodes exactly where the engine put it. A route that is
+ * already orthogonal is returned untouched, so an engine that never produces one of these keeps
+ * byte-identical geometry.
+ */
+export function orthogonalRoute(points: Point[], firstAxis: 'h' | 'v'): Point[] {
+  const apart = (a: number, b: number) => Math.abs(a - b) > 0.5;
+  if (!points.some((p, i) => i > 0 && apart(p.x, points[i - 1].x) && apart(p.y, points[i - 1].y)))
+    return points;
+  const route: Point[] = [points[0]];
+  let axis = firstAxis;
+  for (const point of points.slice(1)) {
+    const last = route[route.length - 1];
+    const horizontal = apart(point.x, last.x);
+    const vertical = apart(point.y, last.y);
+    if (!horizontal && !vertical) continue;
+    if (horizontal && vertical) {
+      route.push(axis === 'h' ? { x: point.x, y: last.y } : { x: last.x, y: point.y });
+      axis = axis === 'h' ? 'v' : 'h';
+    } else axis = horizontal ? 'h' : 'v';
+    route.push(point);
+  }
+  for (let i = route.length - 2; i > 0; i--) {
+    const [before, at, after] = [route[i - 1], route[i], route[i + 1]];
+    if (
+      (!apart(before.x, at.x) && !apart(at.x, after.x)) ||
+      (!apart(before.y, at.y) && !apart(at.y, after.y))
+    )
+      route.splice(i, 1);
+  }
+  return route;
+}
 
 /** How the flow runs and which node sides connections leave from and arrive at. */
 export interface ElkLayeredOptions {
@@ -155,7 +200,14 @@ export function elkLayeredEngine(options: ElkLayeredOptions): LayoutEngine {
             .map((point) => ({ x: point.x + x, y: point.y + y }));
           const label = edge.labels?.[0];
           placement.edges[edge.id] = {
-            points,
+            // A route leaves its source on the side this engine's ports sit on, so that is the
+            // direction a repaired corner continues. Only the downward engine repairs. Every
+            // route the default engine has been measured on is already orthogonal, so the repair
+            // would be a no-op there — but its geometry is fingerprinted and frozen, and turning
+            // a repair loose on it is the kind of change this plan insists be explicit. The
+            // contract test asserts orthogonality for both engines, so a default route that ever
+            // needs it will fail loudly rather than change quietly.
+            points: down ? orthogonalRoute(points, 'v') : points,
             ...(label
               ? {
                   label: {

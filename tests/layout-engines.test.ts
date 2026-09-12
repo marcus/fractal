@@ -150,6 +150,15 @@ function assertContract(diagram: Diagram, label: string): void {
       onBorder(connection.points.at(-1)!, target),
       `${label}: ${connection.id} ends on the border of ${target.id}`
     );
+    // Routes are orthogonal: every step runs along one axis. An engine that hands back a slanted
+    // step has to repair it before the diagram is assembled, whatever its flow direction.
+    for (let index = 1; index < connection.points.length; index++) {
+      const [from, to] = [connection.points[index - 1], connection.points[index]];
+      assert.ok(
+        Math.abs(to.x - from.x) <= 0.5 || Math.abs(to.y - from.y) <= 0.5,
+        `${label}: ${connection.id} step ${index} runs diagonally, ${JSON.stringify(from)} to ${JSON.stringify(to)}`
+      );
+    }
     if (!connection.labelLines.length) continue;
     const width = Math.max(...connection.labelLines.map((line) => textWidth(line, 11))) + 14;
     const box: Box = {
@@ -194,6 +203,56 @@ test('the registry lists engines with metadata and rejects unknown ids everywher
     assert.equal(engine.title, info.title);
     assert.equal(engine.description, info.description);
   }
+});
+
+test('a slanted ELK step becomes a corner, and an orthogonal route is left alone', async () => {
+  const { orthogonalRoute } = await import('../src/lib/adapters/layout/elk');
+  // Routes ELK returned for delivery show-all flowing downward: one section each, with a step
+  // that is neither horizontal nor vertical. The first is a centred label's dummy corner; the
+  // second jumps between two routing corridors.
+  const labelSpur = [
+    { x: 398, y: 200 },
+    { x: 398, y: 258 },
+    { x: 537, y: 258 },
+    { x: 518, y: 382 },
+    { x: 537, y: 382 },
+    { x: 537, y: 554 },
+    { x: 676, y: 554 },
+    { x: 676, y: 676 }
+  ];
+  const corridorJump = [
+    { x: 1343, y: 714 },
+    { x: 1343, y: 772 },
+    { x: 1482, y: 772 },
+    { x: 937, y: 1315.5 },
+    { x: 1076, y: 1315.5 },
+    { x: 1076, y: 1540.5 }
+  ];
+  for (const points of [labelSpur, corridorJump]) {
+    const route = orthogonalRoute(points, 'v');
+    for (let index = 1; index < route.length; index++) {
+      const [from, to] = [route[index - 1], route[index]];
+      assert.ok(Math.abs(to.x - from.x) <= 0.5 || Math.abs(to.y - from.y) <= 0.5, 'orthogonal');
+    }
+    assert.deepEqual(route[0], points[0], 'the source endpoint does not move');
+    assert.deepEqual(route.at(-1), points.at(-1), 'the target endpoint does not move');
+  }
+  // A corridor jump turns the corner that continues the direction it was already going, and the
+  // detour it doubled back along collapses.
+  assert.deepEqual(orthogonalRoute(corridorJump, 'v'), [
+    { x: 1343, y: 714 },
+    { x: 1343, y: 772 },
+    { x: 937, y: 772 },
+    { x: 937, y: 1315.5 },
+    { x: 1076, y: 1315.5 },
+    { x: 1076, y: 1540.5 }
+  ]);
+  const clean = [
+    { x: 0, y: 0 },
+    { x: 0, y: 40 },
+    { x: 90, y: 40 }
+  ];
+  assert.equal(orthogonalRoute(clean, 'v'), clean, 'an orthogonal route is the same array');
 });
 
 test('measurement is engine-neutral, deterministic and depth-first', () => {

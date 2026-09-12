@@ -11,7 +11,9 @@
   import TooltipHost from '../components/TooltipHost.svelte';
   import WordmarkFlyout from '../components/WordmarkFlyout.svelte';
   import { getTheme, isThemeId } from '../core/themes';
-  import { resolveShortcut } from '../core/shortcuts';
+  import { resolveShortcut, shortcutLabel, SHORTCUTS } from '../core/shortcuts';
+  import { tip } from '../ui/tooltip.svelte';
+  import { ArrowRight, ArrowDown } from '@marcusv/roc/svelte/outline';
   import { outwardView, showAllStructure } from '../core/navigation';
   import { searchModel, revealSearchResult } from '../core/search';
   import { layout } from '../core/layout';
@@ -246,11 +248,7 @@
         break;
       case 'toggle-flow':
         if (journey) return;
-        view = {
-          ...view,
-          layout: view.layout === 'elk-layered-down' ? undefined : 'elk-layered-down'
-        };
-        void render();
+        toggleFlow();
         break;
       case 'copy-link':
         void copyLink();
@@ -333,8 +331,17 @@
         'This view link could not be restored. The published starting view is available from Perspectives.';
     }
   }
+  const flowShortcut = SHORTCUTS.find((shortcut) => shortcut.id === 'toggle-flow')!;
+  let mac = $state(false);
+  const flowDown = $derived(view.layout === 'elk-layered-down');
+  /** Flow direction is a presentation choice, beside the theme, and rides in the saved link. */
+  function toggleFlow() {
+    view = { ...view, layout: flowDown ? undefined : 'elk-layered-down' };
+    void render();
+  }
   onMount(() => {
     ready = true;
+    mac = /Mac|iPhone|iPad/.test(navigator.platform);
     restoreLink();
   });
 </script>
@@ -364,6 +371,22 @@
       {#if selected}<button class="button" aria-label="Close details" onclick={clearSelection}
           >×</button
         >{/if}
+      {#if !journey}
+        <button
+          class="icon-button flow-button"
+          class:flowing-down={flowDown}
+          role="switch"
+          aria-checked={flowDown}
+          aria-label="Flow top to bottom"
+          aria-keyshortcuts={shortcutLabel(flowShortcut, mac)}
+          use:tip={{
+            title: 'Flow',
+            text: `Lay the diagram out top to bottom instead of left to right. Useful on tall screens, portrait pages and embeds. ${shortcutLabel(flowShortcut, mac)}`
+          }}
+          onclick={toggleFlow}
+          >{#if flowDown}<ArrowDown size={17} />{:else}<ArrowRight size={17} />{/if}</button
+        >
+      {/if}
       <ThemeMenu
         theme={theme.id}
         onchoose={(id) => {
@@ -458,18 +481,6 @@
                 void render();
               }}
             />Proposed</label
-          ><label
-            ><input
-              type="checkbox"
-              checked={view.layout === 'elk-layered-down'}
-              onchange={(e) => {
-                view = {
-                  ...view,
-                  layout: e.currentTarget.checked ? 'elk-layered-down' : undefined
-                };
-                void render();
-              }}
-            />Top to bottom</label
           >
         </div>
         <button

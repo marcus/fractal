@@ -11,8 +11,6 @@
     ChevronDown,
     Grid,
     Route,
-    ArrowRight,
-    ArrowDown,
     X
   } from '@marcusv/roc/svelte/outline';
   import { architectureLink, sequenceLink } from '$lib/core/links';
@@ -27,7 +25,7 @@
     SIDEBAR_MIN_WIDTH,
     type NavigationSection
   } from '$lib/ui/preferences';
-  import type { Model, LayoutNode, LayoutEngineId, ThemeId } from '$lib/core/types';
+  import type { Model, LayoutNode, ThemeId } from '$lib/core/types';
 
   type Journey = { id: string; title: string; status: 'current' | 'proposed' };
   let {
@@ -58,8 +56,6 @@
     proposed = false,
     onlens,
     onproposed,
-    flow,
-    onflow,
     sourceLabel = '.c4',
     sections
   }: {
@@ -91,9 +87,6 @@
     proposed?: boolean;
     onlens?: (lens: 'structure' | 'trust') => void;
     onproposed?: (proposed: boolean) => void;
-    /** The engine placing the view; absent is the default left-to-right flow. */
-    flow?: LayoutEngineId;
-    onflow?: (layout: LayoutEngineId | undefined) => void;
     sourceLabel?: string;
     /** Surface-specific navigation, shown where the architecture outline sits. */
     sections?: Snippet;
@@ -120,8 +113,6 @@
     };
   });
   const jumpShortcut = SHORTCUTS.find((s) => s.id === 'jump')!;
-  const flowShortcut = SHORTCUTS.find((s) => s.id === 'toggle-flow')!;
-  const flowDown = $derived(flow === 'elk-layered-down');
   const label = (index: number) => String(index + 1).padStart(2, '0');
   function toggleSection(section: NavigationSection) {
     if (section === 'perspectives') {
@@ -232,34 +223,16 @@
           /><span class="toggle-track"></span>Proposed</label
         >
       {/if}
-      <div class="view-control-actions">
-        {#if surface === 'architecture'}
-          <button
-            class="icon-button flow-toggle"
-            class:down={flowDown}
-            role="switch"
-            aria-checked={flowDown}
-            aria-label="Flow top to bottom"
-            aria-keyshortcuts={shortcutLabel(flowShortcut, mac)}
-            use:tip={{
-              title: 'Flow',
-              text: `Lay the diagram out top to bottom instead of left to right. Useful on tall screens, portrait pages and embeds. ${shortcutLabel(flowShortcut, mac)}`
-            }}
-            onclick={() => onflow?.(flowDown ? undefined : 'elk-layered-down')}
-            >{#if flowDown}<ArrowDown size={15} />{:else}<ArrowRight size={15} />{/if}</button
-          >
-        {/if}
-        <button
-          class="icon-button jump-button"
-          aria-label="Jump to…"
-          aria-keyshortcuts={shortcutLabel(jumpShortcut, mac)}
-          use:tip={{
-            title: 'Jump to…',
-            text: `Search elements, perspectives and sequences. ${shortcutLabel(jumpShortcut, mac)}`
-          }}
-          onclick={onjump}><Search size={15} /></button
-        >
-      </div>
+      <button
+        class="icon-button jump-button"
+        aria-label="Jump to…"
+        aria-keyshortcuts={shortcutLabel(jumpShortcut, mac)}
+        use:tip={{
+          title: 'Jump to…',
+          text: `Search elements, perspectives and sequences. ${shortcutLabel(jumpShortcut, mac)}`
+        }}
+        onclick={onjump}><Search size={15} /></button
+      >
     </div>
     <section class="nav-section" class:architecture-perspectives={surface === 'architecture'}>
       <button
@@ -440,25 +413,6 @@
 </aside>
 
 <style>
-  /* The arrow is the state: it points the way the diagram flows, and turns accent when the
-     view is no longer on the default engine. Quiet until hovered, like the row's other controls. */
-  .flow-toggle {
-    width: 26px;
-    height: 26px;
-    color: var(--ui-muted, #7d886f);
-  }
-  .flow-toggle.down {
-    color: var(--ui-accent, #8b9d62);
-  }
-  /* Flow and search are the row's two icon controls. They stay together at its right edge, and
-     drop to a second line together when the two named switches leave no room for them — which
-     the default sidebar width does. Widening the panel pulls the row back onto one line. */
-  .view-control-actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    margin-left: auto;
-  }
   .proposed-label {
     display: block;
     color: var(--proposed);

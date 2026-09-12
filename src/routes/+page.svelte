@@ -5,7 +5,8 @@
   import ModelNavigation from '$lib/components/ModelNavigation.svelte';
   import JumpDialog from '$lib/components/JumpDialog.svelte';
   import ShortcutSheet from '$lib/components/ShortcutSheet.svelte';
-  import { resolveShortcut, type CommandId } from '$lib/core/shortcuts';
+  import { resolveShortcut, shortcutLabel, SHORTCUTS, type CommandId } from '$lib/core/shortcuts';
+  import { tip } from '$lib/ui/tooltip.svelte';
   import { revealSearchResult, type SearchResult } from '$lib/core/search';
   import DiagramKey from '$lib/components/DiagramKey.svelte';
   import InspectorPanel from '$lib/components/InspectorPanel.svelte';
@@ -25,7 +26,9 @@
     Link,
     Keyboard,
     Check,
-    ChevronDown
+    ChevronDown,
+    ArrowRight,
+    ArrowDown
   } from '@marcusv/roc/svelte/outline';
   import { THEMES, getTheme, isThemeId } from '$lib/core/themes';
   import { sequenceLink } from '$lib/core/links';
@@ -313,6 +316,7 @@
     }
   }
   onMount(() => {
+    mac = /Mac|iPhone|iPad/.test(navigator.platform);
     const params = new URL(location.href).searchParams;
     try {
       if (params.has('view')) initialView = JSON.parse(params.get('view')!);
@@ -425,12 +429,17 @@
     renderView();
   }
   /**
-   * The flow direction is the view's layout engine, so it travels in the link, the export and
-   * the API exactly like the lens does. Absent is the default left-to-right engine, which keeps
-   * every older link meaning what it meant.
+   * Flow direction is a presentation choice, like the theme beside it: it changes how the same
+   * model is arranged, not which parts of it are shown. It is the view's layout engine, so it
+   * travels in the link, the export and the API exactly like the theme does, and absent means the
+   * default left-to-right engine — every older link keeps its meaning.
    */
-  function chooseFlow(id: ViewState['layout']) {
-    view = { ...view, layout: id };
+  const flowShortcut = SHORTCUTS.find((shortcut) => shortcut.id === 'toggle-flow')!;
+  let mac = $state(false);
+  const flowDown = $derived(view.layout === 'elk-layered-down');
+  function toggleFlow() {
+    if (!diagram || busy) return;
+    view = { ...view, layout: flowDown ? undefined : 'elk-layered-down' };
     sceneId = null;
     renderView();
   }
@@ -571,8 +580,7 @@
         if (!presentation) toggleSidebar();
         break;
       case 'toggle-flow':
-        if (diagram && !busy)
-          chooseFlow(view.layout === 'elk-layered-down' ? undefined : 'elk-layered-down');
+        toggleFlow();
         break;
       case 'toggle-presentation':
         if (diagram) togglePresentation();
@@ -828,6 +836,21 @@
             disabled={!diagram || busy}
             onclick={() => (modal = 'export')}><Download size={17} /></button
           >
+          <button
+            class="icon-button flow-button"
+            class:flowing-down={flowDown}
+            role="switch"
+            aria-checked={flowDown}
+            aria-label="Flow top to bottom"
+            aria-keyshortcuts={shortcutLabel(flowShortcut, mac)}
+            disabled={!diagram}
+            use:tip={{
+              title: 'Flow',
+              text: `Lay the diagram out top to bottom instead of left to right. Useful on tall screens, portrait pages and embeds. ${shortcutLabel(flowShortcut, mac)}`
+            }}
+            onclick={() => toggleFlow()}
+            >{#if flowDown}<ArrowDown size={17} />{:else}<ArrowRight size={17} />{/if}</button
+          >
           <ThemeMenu theme={theme.id} onchoose={chooseTheme} />
           <button
             class="icon-button present-button"
@@ -864,8 +887,6 @@
           sceneId = null;
           renderView();
         }}
-        flow={view.layout}
-        onflow={chooseFlow}
         {toggle}
         onshowall={showStructure}
         allShown={allStructure?.expanded.every((id) => view.expanded.includes(id)) ?? true}

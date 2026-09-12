@@ -16,8 +16,8 @@ or install the [local service](local-service.md). Every action here has a keyboa
   information icon, or **I**) explains the legend, counts and boundaries and opens external
   connections. These describe the model, not enforced permissions.
 - Enable **Proposed** to include planned elements and relationships.
-- Use the **Flow** arrow beside those switches, or **F**, to lay the view out top to bottom instead
-  of left to right. The direction rides in the view link and in exports, like the theme does.
+- Use the **Flow** arrow in the bar, beside the theme, or **F**, to lay the view out top to bottom
+  instead of left to right. The direction rides in the view link and in exports, like the theme does.
 - Choose a saved perspective, then **Present**. Left/right arrows step through scenes; Escape exits.
 - **Export** previews the actual 16:9 SVG artwork and downloads SVG or a 3840x2160 PNG.
 - Choose **Grove**, **Graphite**, or **Midnight**. Themes travel with view links and SVG/PNG exports.

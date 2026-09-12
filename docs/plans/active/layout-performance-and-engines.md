@@ -146,8 +146,8 @@ The default stays `elk-layered`. `elk-layered-down` is reached the same way a th
 elk-layered-down` on `layout`, `export`, `project` and `search`; `"layout": "elk-layered-down"` in
 a scene; the `layout` field of the view JSON in a link; the same field on `POST /api/render` and
 `/api/export`, where the render cache keys on it like every other field of the view state. In the
-studio it is the **Flow** arrow in the left rail's view-control row, with the `F` shortcut; the
-portable document has the same choice as a switch beside Trust and Proposed and runs it locally.
+studio it is the **Flow** arrow in the bar's action cluster beside the theme, with the `F`
+shortcut; the portable document carries the same control in its own bar and runs it locally.
 
 Quality on the delivery example, `bin/fractal bench --model delivery --engine
 elk-layered,elk-layered-down --json` (2026-09-11, Apple Silicon, 5 iterations):
@@ -156,14 +156,14 @@ elk-layered,elk-layered-down --json` (2026-09-11, Apple Silicon, 5 iterations):
 | --------- | ------------------ | --------- | ----- | ------ | ------ | ---------- |
 | overview  | `elk-layered`      | 0         | 18    | 0.50 M | 4.52   | 7.5 ms     |
 | overview  | `elk-layered-down` | 0         | 18    | 0.49 M | 0.53   | 5.9 ms     |
-| execution | `elk-layered`      | 0         | 8     | 0.90 M | 2.94   | 7.9 ms     |
-| execution | `elk-layered-down` | 6         | 14    | 1.04 M | 0.68   | 7.6 ms     |
-| trust     | `elk-layered`      | 0         | 8     | 0.90 M | 2.94   | 7.0 ms     |
-| trust     | `elk-layered-down` | 6         | 14    | 1.04 M | 0.68   | 6.8 ms     |
+| execution | `elk-layered`      | 0         | 8     | 0.90 M | 2.94   | 7.7 ms     |
+| execution | `elk-layered-down` | 2         | 14    | 1.04 M | 0.68   | 6.9 ms     |
+| trust     | `elk-layered`      | 0         | 8     | 0.90 M | 2.94   | 6.9 ms     |
+| trust     | `elk-layered-down` | 2         | 14    | 1.04 M | 0.68   | 6.8 ms     |
 | proposal  | `elk-layered`      | 0         | 22    | 0.96 M | 2.83   | 7.5 ms     |
-| proposal  | `elk-layered-down` | 5         | 34    | 1.82 M | 1.00   | 7.4 ms     |
-| show-all  | `elk-layered`      | 0         | 24    | 2.74 M | 3.44   | 12.2 ms    |
-| show-all  | `elk-layered-down` | 16        | 64    | 6.29 M | 0.83   | 11.5 ms    |
+| proposal  | `elk-layered-down` | 3         | 34    | 1.82 M | 1.00   | 7.5 ms     |
+| show-all  | `elk-layered`      | 0         | 24    | 2.74 M | 3.44   | 12.5 ms    |
+| show-all  | `elk-layered-down` | 11        | 64    | 6.29 M | 0.83   | 12.0 ms    |
 
 Read honestly: the down flow buys aspect ratio and pays for it in crossings, bends and area. Nodes
 are wide and short, so turning the flow makes the long axis the one the cards are widest on; a
@@ -172,12 +172,35 @@ point on a portrait page or a phone, and it is the wrong trade for a 16:9 slide:
 export stays legible, but `--show-all` in the down flow scales to about a quarter size in the
 slide area. Time is the same or slightly better.
 
-One known characteristic: ELK's orthogonal router leaves a slanted interior segment on some
-connections that cross a container boundary in the down direction — 6 of 78 segments on delivery
-show-all, 151 of 3,876 across td's views, against none in the default engine. Endpoints stay
-exactly on the bottom and top borders and the contract holds; the slants are ELK's hierarchical
-routing under `INCLUDE_CHILDREN`, not an adapter coordinate error. Tuning them away is a separate
-decision, with its own before/after fingerprints, and belongs to whoever needs it.
+### The slanted-segment defect, diagnosed and repaired
+
+The first working version of the engine drew several connections as long diagonals — 6 of 78
+polyline steps on delivery show-all, 151 of 3,876 across td's views, against none in the default
+flow. Dumping ELK's raw output settled where it came from: each affected edge returns **one**
+section, so nothing was being concatenated across containers, no junction points were dropped, and
+the coordinates were not relative to the wrong node. ELK's orthogonal router simply hands back a
+bend sequence containing one step that is neither horizontal nor vertical when the flow runs
+downward. Two shapes appear: a centred edge label's dummy contributes a corner a few pixels off the
+route (its point sits exactly at the label box's right edge plus 2 and its bottom plus the
+edge-node spacing), and an edge crossing container boundaries jumps between two routing corridors
+without the corner that would join them. Removing every label drops it from 6 steps to 2, so both
+shapes are real. No option changes it: `mergeEdges`, `mergeHierarchyEdges`,
+`crossingMinimization.hierarchicalSweepiness`, `nodePlacement.strategy`, `thoroughness`,
+`edgeLabels.sideSelection` and `unnecessaryBendpoints` all leave the count at 6.
+
+The repair is `orthogonalRoute` in the ELK adapter, applied as the route is read back: at a slanted
+step it turns the corner that continues the direction the route was already travelling, then drops
+interior points that have become redundant — including those that now double back along a line they
+already ran. Endpoints never move, so an edge still meets its nodes exactly where ELK put it.
+Non-orthogonal steps go to **0 of 3,876 on td**, 0 on fractal, 0 on both bundled examples, and the
+down flow's crossings fall with them (delivery show-all 16 → 11). Every registered engine is now
+asserted orthogonal by the contract tests.
+
+Only the downward engine repairs. Every route the default engine has been measured on is already
+orthogonal — 0 of 3,016 steps on td, 0 on fractal, ongoing and both examples — so the repair would
+be a no-op there, but its geometry is fingerprinted and frozen and switching a repair on for it is
+exactly the kind of change this plan insists be explicit. The contract assertion covers both
+engines, so a default route that ever needs the repair fails a test rather than changing quietly.
 
 ## Benchmark tool
 
@@ -321,8 +344,9 @@ server at all.
 ## Changelog
 
 - 2026-09-11: Step 5 began (td-79513f): `elk-layered-down` registered as the second engine, with
-  CLI, scene, link, API, cache, studio Flow control and portable switch, plus the quality
-  comparison above. Default-engine fingerprints identical across all 118 benchmark rows.
+  CLI, scene, link, API, cache, studio and portable Flow controls, the diagnosis and repair of
+  ELK's slanted downward routes, an orthogonality assertion in the engine contract, and the quality
+  comparison above. Default-engine fingerprints unchanged.
 - 2026-09-11: Created from measurements on the installed studio and catalog; toggle latency made
   the headline goal.
 - 2026-09-11: Step 3 landed (td-c5936b): measurement, engine contract, registry, pipeline,
