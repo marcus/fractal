@@ -153,15 +153,18 @@ Candidate engines after the seam exists, each an explicit id and never the defau
 
 `bin/fractal bench` (also `npm run bench`). Agent-first, non-interactive, deterministic order.
 
-- Inputs: the resolved catalog by default (`--catalog`, `--model`, `--directory` narrow it, and
-  the bundled examples are always included); `--views scene|all|both` (default both: each authored
-  scene plus show-all of the first scene); `--engine ID[,ID]` (default: all registered);
-  `--iterations N` (default 5 warm runs after one discarded warm-up); `--synthetic N[,N]` generates
-  a deterministic model with N elements in a three-level hierarchy and proportional relationships,
-  so scaling is visible before a real model reaches it.
-- Stages timed per run: load (parse), project, measure, engine, assemble, SVG export, and sequence
-  layout for models with journeys. Reported as p50 and p95 with node and edge counts and diagram
-  width and height.
+- Inputs: the resolved catalog plus the bundled examples by default, deduped by directory
+  (`--catalog`, `--model` and `--directory` narrow it; naming directories measures exactly those);
+  `--views scene|all|both` (default both: each authored scene plus show-all of the first scene);
+  `--engine ID[,ID]` (default: all registered, and an unknown id is rejected); `--iterations N`
+  (default 5 measured runs after one discarded warm-up); `--synthetic N[,N]` generates a
+  deterministic model with N elements in a three-level hierarchy and proportional relationships,
+  so scaling is visible before a real model reaches it — on its own it replaces the model set,
+  alongside a narrowing flag it adds to it.
+- Stages timed per run: load (read and parse), project, layout, SVG export, and sequence layout
+  for models with journeys. Reported as p50 and p95 with node and edge counts and diagram width
+  and height. Layout is one engine call today; it splits into measure, engine and assemble when
+  the seam lands, and the `measure` stage stays absent rather than reported as zero until then.
 - Geometry fingerprint: a hash of every node and edge coordinate rounded to 0.01, per model, view,
   and engine. Identical fingerprints prove an optimization changed nothing visible.
 - Quality metrics for engine comparison: edge crossings, bend count, total edge length, area,
@@ -170,10 +173,12 @@ Candidate engines after the seam exists, each an explicit id and never the defau
   writes one row per model, view, engine; `--baseline FILE` compares against an earlier run and
   prints time deltas and any fingerprint change, exiting nonzero on `--fail-on-geometry-change`.
   `artifacts/` is already ignored by git. Milestone numbers are copied into this plan by hand.
-- `npm run bench:browser` (`scripts/bench-browser.ts`): Playwright against a `vite preview` or the
-  installed service and against a freshly exported portable document. Records the page-open
-  request waterfall, click-to-geometry latency for one expand, one collapse, and show-all, frame
-  p50/p99, and long tasks. Toggle latency is the headline number. Prints JSON; it is a proof tool, not part of CI.
+- `npm run bench:browser` (`scripts/bench-browser.ts`): Playwright against a studio at `--url`, or
+  against a build it makes and serves on a free port itself, and against a freshly exported
+  portable document. Records the page-open request waterfall, click-to-geometry latency for one
+  expand, one collapse, and show-all, frame p50/p99, and long tasks during each; the portable
+  document has no show-all, so it reports the two toggles. Toggle latency is the headline number.
+  Prints JSON; it is a proof tool, not part of CI.
 
 Both tools regenerate the CLI reference through `npm run docs`, and `tests/docs.test.ts` keeps it
 current.
@@ -208,11 +213,55 @@ Each step is a td ticket under `td-0b4264`, reviewed by an independent sub-agent
 any engine change, and finished with `npm run check`, `npm test`, `npm run build`, browser proof,
 and a service reinstall.
 
-## Baseline (to be filled by step 1)
+## Baseline
 
-| Model | View | Nodes | Edges | Load p50 | Engine p50 | Fingerprint |
-| ----- | ---- | ----- | ----- | -------- | ---------- | ----------- |
-|       |      |       |       |          |            |             |
+Recorded on 2026-09-11 (Apple Silicon) with
+`bin/fractal bench --output artifacts/bench/baseline-2026-09-11.jsonl`: the resolved catalog plus
+the bundled examples, every authored scene plus show-all of the first scene, five measured
+iterations after a discarded warm-up. Load is the full read-and-parse of the model, repeated every
+iteration because that is what the studio repeats on every request today; layout is the ELK call,
+which still projects, measures, places and assembles inside itself. `artifacts/` is not committed,
+so the JSONL is the local machine-readable baseline that
+`bin/fractal bench --baseline <file> --fail-on-geometry-change` compares against.
+
+The table below shows the bundled examples, Fractal's own model, and td; the full 91-row run over
+every catalog project stays in that gitignored JSONL, which is what a comparison reads anyway.
+
+| Model       | View             | Nodes | Edges | Load p50 | Layout p50 | Fingerprint    |
+| ----------- | ---------------- | ----- | ----- | -------- | ---------- | -------------- |
+| fractal     | overview         | 6     | 11    | 76.1     | 8.5        | `bf0db06ff479` |
+| fractal     | pipeline         | 10    | 13    | 76.4     | 12.7       | `2e1736eaa037` |
+| fractal     | boundaries       | 6     | 11    | 84.9     | 9.6        | `bf0db06ff479` |
+| fractal     | show-all         | 13    | 13    | 81.7     | 13.9       | `5e17b8a798f2` |
+| td          | overview         | 9     | 50    | 98.7     | 42.1       | `fe87d9db39b7` |
+| td          | cli-surface      | 12    | 7     | 91.2     | 6.4        | `04afa5a9f504` |
+| td          | core-and-store   | 28    | 70    | 97.1     | 61.7       | `fd06184de4d7` |
+| td          | monitor          | 8     | 6     | 93.2     | 5.6        | `bb2eaa845264` |
+| td          | serve-api        | 5     | 3     | 93.5     | 4.8        | `1704eace8550` |
+| td          | sync-client      | 7     | 6     | 94.3     | 5.4        | `5d8e7841d28f` |
+| td          | sync-server      | 14    | 24    | 97.5     | 15.0       | `f52384d9c1cf` |
+| td          | full-detail      | 74    | 123   | 103.1    | 126.0      | `c85ef028959a` |
+| td          | trust-boundaries | 34    | 77    | 96.9     | 73.1       | `cf5b4a7a0d28` |
+| td          | proposed         | 55    | 115   | 98.6     | 105.8      | `4da565d61550` |
+| td          | show-all         | 74    | 123   | 100.0    | 120.6      | `c85ef028959a` |
+| delivery    | overview         | 5     | 8     | 79.2     | 5.2        | `31927e3a3897` |
+| delivery    | execution        | 8     | 6     | 79.4     | 6.5        | `2bdb1694796b` |
+| delivery    | trust            | 8     | 6     | 74.9     | 6.2        | `2bdb1694796b` |
+| delivery    | proposal         | 11    | 10    | 81.8     | 7.6        | `e0eb199268b8` |
+| delivery    | show-all         | 20    | 14    | 79.9     | 10.9       | `4b76e8443940` |
+| observatory | overview         | 5     | 7     | 73.9     | 5.5        | `cee583ae5e65` |
+| observatory | execution        | 5     | 2     | 75.7     | 5.1        | `bc003a4a7c0d` |
+| observatory | trust            | 5     | 2     | 76.7     | 5.3        | `bc003a4a7c0d` |
+| observatory | proposal         | 10    | 11    | 74.4     | 8.2        | `c92f643ab0b7` |
+| observatory | show-all         | 13    | 10    | 73.0     | 7.9        | `1710aec1d3c9` |
+
+The headline number comes from `npm run bench:browser`, against a build it starts itself. On td,
+click to new geometry is 260 ms to expand, 180 ms to collapse and 265 ms for show-all; page open is
+1.85 s, of which `/api/models` alone is 915 ms. Frames hold 16.6 ms at p50 through every toggle and
+no long task appears, in the studio or in the portable document — the wait is server time, not the
+browser. The same run on the bundled delivery example: 129 ms expand, 132 ms collapse, 131 ms
+show-all, 855 ms page open; the portable document toggles the same view in 97 ms and 48 ms with no
+server at all.
 
 ## Open questions
 
@@ -239,6 +288,6 @@ and a service reinstall.
 
 - 2026-09-11: Created from measurements on the installed studio and catalog; toggle latency made
   the headline goal.
-- 2026-09-11: Step 2 landed (td-5ca34f): parsed-model cache, layout-result cache, warm-up on
+- 2026-09-11: Step 1 landed (td-45b8a9): `bin/fractal bench`, `npm run bench:browser`, and the
+  baseline table. Step 2 landed (td-5ca34f): parsed-model cache, layout-result cache, warm-up on
   server start, a delayed "Composing view" badge, and a parallel model request on page open.
-  Step 1's benchmark is still outstanding, so the numbers above were measured by hand.
