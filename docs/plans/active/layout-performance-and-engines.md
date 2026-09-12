@@ -163,7 +163,7 @@ elk-layered,elk-layered-down --json` (2026-09-11, Apple Silicon, 5 iterations):
 | proposal  | `elk-layered`      | 0         | 22    | 0.96 M | 2.83   | 7.5 ms     |
 | proposal  | `elk-layered-down` | 3         | 34    | 1.82 M | 1.00   | 7.5 ms     |
 | show-all  | `elk-layered`      | 0         | 24    | 2.74 M | 3.44   | 12.5 ms    |
-| show-all  | `elk-layered-down` | 11        | 64    | 6.29 M | 0.83   | 12.0 ms    |
+| show-all  | `elk-layered-down` | 11        | 62    | 6.29 M | 0.83   | 12.1 ms    |
 
 Read honestly: the down flow buys aspect ratio and pays for it in crossings, bends and area. Nodes
 are wide and short, so turning the flow makes the long axis the one the cards are widest on; a
@@ -193,8 +193,19 @@ step it turns the corner that continues the direction the route was already trav
 interior points that have become redundant — including those that now double back along a line they
 already ran. Endpoints never move, so an edge still meets its nodes exactly where ELK put it.
 Non-orthogonal steps go to **0 of 3,876 on td**, 0 on fractal, 0 on both bundled examples, and the
-down flow's crossings fall with them (delivery show-all 16 → 11). Every registered engine is now
-asserted orthogonal by the contract tests.
+down flow's crossings fall with them (delivery show-all 16 → 11).
+
+Squaring a step up is not free, though, and review caught the cost: a diagonal can cut past a card
+that no right-angled path can, so choosing the corner by travelled axis alone sent 31 segments
+straight through collapsed cards across delivery, observatory and td (`recovery-records` ran down
+the middle of the Fulfillment scheduler card on delivery show-all). The repair therefore computes
+both candidate corners and takes the other one when the preferred corner's two segments would cross
+the interior of a collapsed card that is not the edge's own source or target; every node is placed
+before any route is read, so the obstacle set is the whole diagram rather than whatever the
+traversal reached first. That gives **0 through-card segments over 21 views and 680 edges**, still
+0 diagonal steps, and fewer foreign-container crossings than the naive corner. The contract tests
+now assert both properties — orthogonal steps, and no step through a card that is not an
+endpoint — for every registered engine.
 
 Only the downward engine repairs. Every route the default engine has been measured on is already
 orthogonal — 0 of 3,016 steps on td, 0 on fractal, ongoing and both examples — so the repair would
@@ -345,8 +356,8 @@ server at all.
 
 - 2026-09-11: Step 5 began (td-79513f): `elk-layered-down` registered as the second engine, with
   CLI, scene, link, API, cache, studio and portable Flow controls, the diagnosis and repair of
-  ELK's slanted downward routes, an orthogonality assertion in the engine contract, and the quality
-  comparison above. Default-engine fingerprints unchanged.
+  ELK's slanted downward routes, orthogonality and through-card assertions in the engine contract,
+  and the quality comparison above. Default-engine fingerprints unchanged.
 - 2026-09-11: Created from measurements on the installed studio and catalog; toggle latency made
   the headline goal.
 - 2026-09-11: Step 3 landed (td-c5936b): measurement, engine contract, registry, pipeline,

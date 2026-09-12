@@ -94,6 +94,27 @@ const fixtureViews: ViewState[] = [
 type Box = { x: number; y: number; width: number; height: number };
 const intersects = (a: Box, b: Box): boolean =>
   a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+/**
+ * Whether one orthogonal step passes through a card's interior. The one-unit inset lets a route
+ * run along a border or meet it at an endpoint without counting as a crossing.
+ */
+const crossesCard = (from: { x: number; y: number }, to: typeof from, card: Box): boolean => {
+  const [left, right] = [card.x + 1, card.x + card.width - 1];
+  const [top, bottom] = [card.y + 1, card.y + card.height - 1];
+  if (Math.abs(from.x - to.x) <= 0.5)
+    return (
+      from.x > left &&
+      from.x < right &&
+      Math.max(from.y, to.y) > top &&
+      Math.min(from.y, to.y) < bottom
+    );
+  return (
+    from.y > top &&
+    from.y < bottom &&
+    Math.max(from.x, to.x) > left &&
+    Math.min(from.x, to.x) < right
+  );
+};
 const onBorder = (point: { x: number; y: number }, node: Box, tolerance = 2): boolean => {
   const insideX = point.x >= node.x - tolerance && point.x <= node.x + node.width + tolerance;
   const insideY = point.y >= node.y - tolerance && point.y <= node.y + node.height + tolerance;
@@ -151,13 +172,20 @@ function assertContract(diagram: Diagram, label: string): void {
       `${label}: ${connection.id} ends on the border of ${target.id}`
     );
     // Routes are orthogonal: every step runs along one axis. An engine that hands back a slanted
-    // step has to repair it before the diagram is assembled, whatever its flow direction.
+    // step has to repair it before the diagram is assembled, whatever its flow direction — and
+    // squaring a step up must not send it through a card, which a diagonal could cut past.
     for (let index = 1; index < connection.points.length; index++) {
       const [from, to] = [connection.points[index - 1], connection.points[index]];
       assert.ok(
         Math.abs(to.x - from.x) <= 0.5 || Math.abs(to.y - from.y) <= 0.5,
         `${label}: ${connection.id} step ${index} runs diagonally, ${JSON.stringify(from)} to ${JSON.stringify(to)}`
       );
+      for (const card of diagram.nodes)
+        if (!card.expanded && card.id !== connection.source && card.id !== connection.target)
+          assert.ok(
+            !crossesCard(from, to, card),
+            `${label}: ${connection.id} step ${index} runs through ${card.id}`
+          );
     }
     if (!connection.labelLines.length) continue;
     const width = Math.max(...connection.labelLines.map((line) => textWidth(line, 11))) + 14;
