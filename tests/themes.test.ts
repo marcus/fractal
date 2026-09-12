@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { parseModel } from '../src/lib/adapters/likec4';
-import { layout } from '../src/lib/adapters/elk-layout';
+import { layout } from '../src/lib/core/layout';
 import { project } from '../src/lib/core/projection';
 import { exportSvg } from '../src/lib/core/svg';
 import { getTheme, THEMES } from '../src/lib/core/themes';

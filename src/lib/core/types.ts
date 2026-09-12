@@ -1,6 +1,8 @@
 export type Status = 'current' | 'proposed';
 export type Lens = 'structure' | 'trust';
 export type ThemeId = 'grove' | 'graphite' | 'midnight';
+/** Registered layout engines; `core/layout-engines.ts` carries their metadata. */
+export type LayoutEngineId = 'elk-layered';
 export interface Theme {
   readonly id: ThemeId;
   readonly name: string;
@@ -63,6 +65,8 @@ export interface ViewState {
   lens: Lens;
   scope?: string;
   theme?: ThemeId;
+  /** Which engine places the view; absent means the default, so existing links keep their look. */
+  layout?: LayoutEngineId;
 }
 export interface Scene extends ViewState {
   id: string;

@@ -32,6 +32,7 @@ Commands:
   layout     Resolve vector geometry for the selected view
   export     Write SVG, 4K PNG, or an interactive offline HTML document (--output FILE)
   themes     List available presentation themes (use --json for tokens)
+  engines    List available layout engines (use --json for metadata)
   bench      Time the layout pipeline and fingerprint its geometry (bin/fractal bench --help)
   shortcuts  List keyboard commands from the shared registry
   search     Search all components, connections and views, with resolved view state
@@ -54,6 +55,7 @@ Options:
   --lens structure|trust         Boundary lens
   --scope ID                     Focus one component; retain external connection inventory
   --theme grove|graphite|midnight Presentation theme (default Grove)
+  --layout ID                    Layout engine for architecture views (see engines)
   --json                         Structured output
   --element ID                   Inspect a stable element ID
   --query TEXT                   Search titles, identifiers and descriptions
@@ -66,7 +68,7 @@ Examples:
   npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg
 ```
 
-`projects`, `journeys`, `journey`, `sequence`, `sequence-export`, `validate`, `inspect`, `project`, `layout`, `export`, `themes`, `shortcuts`, `search` print this same text with `--help`.
+`projects`, `journeys`, `journey`, `sequence`, `sequence-export`, `validate`, `inspect`, `project`, `layout`, `export`, `themes`, `engines`, `shortcuts`, `search` print this same text with `--help`.
 
 ## fractal service
 
@@ -111,8 +113,8 @@ Usage: bin/fractal bench [options]
 Times the model pipeline over a set of models and views, fingerprints the geometry it produced,
 and reports composition quality. Deterministic order, no interaction, structured output.
 
-Stages: load (read and parse), project, layout (the engine call), svg, and sequence layout for
-models with journeys. A separate measure stage is reported once the layout seam lands.
+Stages: load (read and parse), project, measure (node content), layout (the engine call and
+assembly), svg, and sequence layout for models with journeys.
 
 Options:
   --catalog PATH                 Use a specific catalog.json instead of the resolved one

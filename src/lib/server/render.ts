@@ -1,4 +1,4 @@
-import { layout } from '../adapters/elk-layout';
+import { layout } from '../core/layout';
 import { createCache } from './cache';
 import type { Diagram, Model, ViewState } from '../core/types';
 

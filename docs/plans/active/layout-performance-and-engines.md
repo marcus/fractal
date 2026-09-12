@@ -92,54 +92,40 @@ is byte-identical before and after, as is the `/api/render` payload over HTTP, c
 
 ## Layout-engine seam
 
-Current shape: `src/lib/adapters/elk-layout.ts` projects, measures, builds the ELK graph, runs ELK,
-and reads results back into a `Diagram`. Target shape:
+Shape as built:
 
 ```text
-project(model, state) → measure(projection) → engine.layout(measured, options) → assemble → Diagram
-      core/projection      core/measure           adapters/layout/*             core/layout
+project(model, state) → measure(projection) → engine.layout(measured, request) → assemble → Diagram
+      core/projection      core/measure           adapters/layout/*                core/layout
 ```
 
-- `src/lib/core/measure.ts`: `measure(projection): MeasuredGraph`. Nodes carry id, parent, depth,
-  expanded, width, height, header height (for container padding), `titleLines`, `descriptionLines`,
-  `kindLabel`; edges carry source, target, `labelLines`, and label box size. Uses the shared
+- `src/lib/core/measure.ts`: `measure(projection): MeasuredGraph`. Nodes carry the element, depth,
+  expanded, width, height, header height, `titleLines`, `descriptionLines`, `kindLabel`, in
+  depth-first authored order; edges carry `labelLines` and the label box. Uses the shared
   `ARCHITECTURE_NODE_METRICS` profile. Pure and synchronous.
-- `src/lib/core/layout-engine.ts`: the contract.
-
-  ```ts
-  interface LayoutEngine {
-    readonly id: LayoutEngineId; // 'elk-layered' is the default
-    readonly title: string;
-    readonly description: string;
-    layout(graph: MeasuredGraph, options: LayoutRequest): Promise<Placement>;
-  }
-  interface Placement {
-    nodes: Record<string, { x: number; y: number; width: number; height: number }>;
-    edges: Record<string, { points: Point[]; label?: Point }>;
-    width: number;
-    height: number;
-  }
-  ```
-
-  `LayoutRequest` starts small: the density profile and the view's direction. Add options only
-  when a second engine needs them.
-
-- `src/lib/core/layout.ts`: `layout(model, state, engines?)` orchestrates the pipeline, selects the
-  engine from `state.layout`, re-wraps titles of expanded nodes whose width grew, applies the
-  parent-integrity check, and returns the `Diagram` the canvas, SVG, HTML, and CLI already consume.
-  Callers (`api/render`, `api/export`, `adapters/html.ts`, `scripts/fractal.ts`, the portable
-  viewer) import from here instead of the ELK adapter.
-- `src/lib/adapters/layout/elk.ts`: the ELK engine, today's options unchanged, module-level
-  instance kept. `src/lib/adapters/layout/elk-worker.ts` is the same engine run through
-  `elk-worker.min.js` in a browser worker; the portable viewer picks it. Same id, same geometry.
-- `src/lib/core/layout-engines.ts`: the registry (`LAYOUT_ENGINES`, `getLayoutEngine`,
-  `isLayoutEngineId`), mirroring `themes.ts`. The CLI gains `engines` (list) and `--layout ID`.
-- **Contract tests** in `tests/layout-engines.test.ts` run every registered engine over the fixture
-  model and the bundled examples: determinism, children inside parents below the header, no sibling
-  overlap, edges start and end on the border of their endpoint nodes (not specifically the right
-  and left edges, which is ELK-layered-specific), labels clear of collapsed nodes and each other.
-  The existing right/left endpoint assertions in `tests/layout.test.ts` stay for the default engine.
-- The canvas and SVG do not change. Edge morphing, camera following, and export consume `Diagram`.
+- `src/lib/core/layout-engine.ts`: the contract. `LayoutEngine` has `id`, `title`,
+  `description` and `layout(graph, request): Promise<Placement>`. `LayoutRequest` carries the
+  density profile only; direction is a property of an engine, not of a view, so a top-down engine
+  is a registry entry rather than a request option. `Placement` maps node ids to absolute boxes
+  and edge ids to route points plus an optional label anchor, with the diagram extent.
+- `src/lib/core/layout-engines.ts`: the registry of ids and copy (`LAYOUT_ENGINES`,
+  `DEFAULT_LAYOUT_ENGINE`, `getLayoutEngineInfo`, `isLayoutEngineId`), mirroring `themes.ts`. It
+  imports no engine, so validation and the studio bundle stay free of ELK.
+- `src/lib/adapters/layout/index.ts`: implementations by id (`getLayoutEngine`,
+  `allLayoutEngines`). `src/lib/adapters/layout/elk.ts` is a factory for ELK layered placement
+  with a flow direction; the default engine is `elk-layered`, left to right, with the options
+  and geometry the studio always had.
+- `src/lib/core/layout.ts`: `layout(model, state, engine?)` runs the pipeline, choosing the engine
+  from `state.layout` when none is passed, and `assembleDiagram` re-wraps expanded titles to their
+  placed width, enforces visible authored parents, and echoes the view state. The canvas, SVG,
+  HTML export, CLI and portable viewer consume the same `Diagram` as before.
+- `ViewState.layout?: LayoutEngineId` rides in scenes (validated by the LikeC4 adapter), links,
+  the CLI (`--layout ID`, `engines`), the API and exports. Absent means the default.
+- `tests/layout-engines.test.ts` runs every registered engine over a nested fixture and both
+  bundled examples: determinism, children inside parents below the header, no sibling overlap,
+  edge endpoints on the border of their nodes on any side, labels clear of collapsed nodes and of
+  each other, nodes within the diagram extent. The ELK-specific left/right endpoint assertions
+  stay in `tests/layout.test.ts`.
 
 Candidate engines after the seam exists, each an explicit id and never the default:
 
@@ -288,6 +274,9 @@ server at all.
 
 - 2026-09-11: Created from measurements on the installed studio and catalog; toggle latency made
   the headline goal.
+- 2026-09-11: Step 3 landed (td-c5936b): measurement, engine contract, registry, pipeline,
+  ELK adapter factory, `ViewState.layout`, `--layout`, `engines`, contract tests; fingerprints
+  and export bytes identical to the pre-seam baseline.
 - 2026-09-11: Step 1 landed (td-45b8a9): `bin/fractal bench`, `npm run bench:browser`, and the
   baseline table. Step 2 landed (td-5ca34f): parsed-model cache, layout-result cache, warm-up on
   server start, a delayed "Composing view" badge, and a parallel model request on page open.

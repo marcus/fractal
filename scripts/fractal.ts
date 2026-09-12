@@ -6,7 +6,8 @@ import { loadDirectory, loadModel, listProjects } from '../src/lib/server/models
 import { inspectComponent } from '../src/lib/core/inspect';
 import { project } from '../src/lib/core/projection';
 import { showAllStructure } from '../src/lib/core/navigation';
-import { layout } from '../src/lib/adapters/elk-layout';
+import { layout } from '../src/lib/core/layout';
+import { LAYOUT_ENGINES, getLayoutEngineInfo } from '../src/lib/core/layout-engines';
 import { renderPng } from '../src/lib/adapters/png';
 import { buildPortableAssets } from './portable-assets';
 import { exportHtml } from '../src/lib/adapters/html';
@@ -51,13 +52,14 @@ async function main() {
       query: { type: 'string' },
       scope: { type: 'string' },
       theme: { type: 'string' },
+      layout: { type: 'string' },
       format: { type: 'string', default: 'svg' }
     }
   });
   const command = positionals[0] ?? 'help';
   if (values.help || command === 'help') {
     console.log(
-      `Fractal · an explorable model of software\n\nUsage: npm run cli -- <command> [options]\n\nCommands:\n  service    Manage the installed local studio (bin/fractal service --help)\n  projects   List catalog projects and their resolved model metadata\n  journeys   List available sequence journeys\n  journey    Inspect one authored journey (--journey ID)\n  sequence   Lay out an explorable sequence as JSON\n  sequence-export  Export the sequence as SVG or PNG\n  validate   Compile and validate a model and its scenes\n  inspect    Read the normalized model, or --element ID and its relationships\n  project    Resolve a mixed-depth view with underlying relationship IDs\n  layout     Resolve vector geometry for the selected view\n  export     Write SVG, 4K PNG, or an interactive offline HTML document (--output FILE)\n  themes     List available presentation themes (use --json for tokens)\n  bench      Time the layout pipeline and fingerprint its geometry (bin/fractal bench --help)\n  shortcuts  List keyboard commands from the shared registry\n  search     Search all components, connections and views, with resolved view state\n\nOptions:\n  --model ID                     Catalog model (default delivery)\n  --catalog PATH                 Use a specific catalog.json\n  --directory PATH               Read model.c4 + fractal.json from a directory\n  --surface architecture|sequence|portable Shortcut surface (default architecture)\n  --journey ID                   Sequence journey identifier\n  --collapsed-phases ID,ID        Fold sequence phases\n  --collapsed-groups ID,ID        Combine participant columns\n  --hidden-participants ID,ID     Hide columns with explicit interaction summaries\n  --scope-phase ID               Focus a sequence phase\n  --visible-phases ID,ID         Show exact phases with ancestor context (empty shows none)\n  --scene ID                     Start from a saved scene\n  --expanded ID,ID                Override expanded elements (empty collapses all)\n  --show-all                     Expand all structure within the selected scope\n  --proposed                     Include proposed elements and relationships\n  --lens structure|trust         Boundary lens\n  --scope ID                     Focus one component; retain external connection inventory\n  --theme grove|graphite|midnight Presentation theme (default Grove)\n  --json                         Structured output\n  --element ID                   Inspect a stable element ID\n  --query TEXT                   Search titles, identifiers and descriptions\n  --format svg|png|html          Export format (HTML includes the full model; PNG needs Chromium)\n  --output PATH                  Write result to a file\n\nExamples:\n  npm run cli -- projects --json\n  npm run cli -- validate --model delivery --json\n  npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg`
+      `Fractal · an explorable model of software\n\nUsage: npm run cli -- <command> [options]\n\nCommands:\n  service    Manage the installed local studio (bin/fractal service --help)\n  projects   List catalog projects and their resolved model metadata\n  journeys   List available sequence journeys\n  journey    Inspect one authored journey (--journey ID)\n  sequence   Lay out an explorable sequence as JSON\n  sequence-export  Export the sequence as SVG or PNG\n  validate   Compile and validate a model and its scenes\n  inspect    Read the normalized model, or --element ID and its relationships\n  project    Resolve a mixed-depth view with underlying relationship IDs\n  layout     Resolve vector geometry for the selected view\n  export     Write SVG, 4K PNG, or an interactive offline HTML document (--output FILE)\n  themes     List available presentation themes (use --json for tokens)\n  engines    List available layout engines (use --json for metadata)\n  bench      Time the layout pipeline and fingerprint its geometry (bin/fractal bench --help)\n  shortcuts  List keyboard commands from the shared registry\n  search     Search all components, connections and views, with resolved view state\n\nOptions:\n  --model ID                     Catalog model (default delivery)\n  --catalog PATH                 Use a specific catalog.json\n  --directory PATH               Read model.c4 + fractal.json from a directory\n  --surface architecture|sequence|portable Shortcut surface (default architecture)\n  --journey ID                   Sequence journey identifier\n  --collapsed-phases ID,ID        Fold sequence phases\n  --collapsed-groups ID,ID        Combine participant columns\n  --hidden-participants ID,ID     Hide columns with explicit interaction summaries\n  --scope-phase ID               Focus a sequence phase\n  --visible-phases ID,ID         Show exact phases with ancestor context (empty shows none)\n  --scene ID                     Start from a saved scene\n  --expanded ID,ID                Override expanded elements (empty collapses all)\n  --show-all                     Expand all structure within the selected scope\n  --proposed                     Include proposed elements and relationships\n  --lens structure|trust         Boundary lens\n  --scope ID                     Focus one component; retain external connection inventory\n  --theme grove|graphite|midnight Presentation theme (default Grove)\n  --layout ID                    Layout engine for architecture views (see engines)\n  --json                         Structured output\n  --element ID                   Inspect a stable element ID\n  --query TEXT                   Search titles, identifiers and descriptions\n  --format svg|png|html          Export format (HTML includes the full model; PNG needs Chromium)\n  --output PATH                  Write result to a file\n\nExamples:\n  npm run cli -- projects --json\n  npm run cli -- validate --model delivery --json\n  npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg`
     );
     return;
   }
@@ -71,6 +73,16 @@ async function main() {
         2
       )
     );
+    return;
+  }
+  if (command === 'engines') {
+    if (values.json) console.log(JSON.stringify(LAYOUT_ENGINES, null, 2));
+    else
+      console.log(
+        LAYOUT_ENGINES.map(
+          (engine) => `${engine.id.padEnd(18)} ${engine.title} · ${engine.description}`
+        ).join('\n')
+      );
     return;
   }
   if (command === 'themes') {
@@ -172,13 +184,15 @@ async function main() {
   if (values.lens && !['structure', 'trust'].includes(values.lens))
     throw new Error('Lens must be structure or trust');
   const theme = getTheme(values.theme ?? scene.theme);
+  const engine = getLayoutEngineInfo(values.layout ?? scene.layout);
   let state: ViewState = {
     expanded:
       values.expanded !== undefined ? values.expanded.split(',').filter(Boolean) : scene.expanded,
     proposed: values.proposed ?? scene.proposed,
     lens: (values.lens as ViewState['lens']) ?? scene.lens,
     scope: values.scope ?? scene.scope,
-    ...(values.theme !== undefined || scene.theme !== undefined ? { theme: theme.id } : {})
+    ...(values.theme !== undefined || scene.theme !== undefined ? { theme: theme.id } : {}),
+    ...(values.layout !== undefined || scene.layout !== undefined ? { layout: engine.id } : {})
   };
   if (values['show-all']) state = showAllStructure(model, state);
   let result: unknown;

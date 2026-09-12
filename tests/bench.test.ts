@@ -11,7 +11,7 @@ import {
   syntheticModel,
   type BenchRow
 } from '../src/lib/bench';
-import { layout } from '../src/lib/adapters/elk-layout';
+import { layout } from '../src/lib/core/layout';
 import { project } from '../src/lib/core/projection';
 import { showAllStructure } from '../src/lib/core/navigation';
 import { loadDirectory } from '../src/lib/server/models';
@@ -178,8 +178,7 @@ test('stage timing reports every stage a model reaches', async () => {
     assert.ok(measured.stages[stage], `${stage} was not timed`);
     assert.ok(measured.stages[stage]!.p50 >= 0);
   }
-  // The measure stage waits for the layout seam; reporting it as zero would be a false number.
-  assert.equal(measured.stages.measure, undefined);
+  assert.ok(measured.stages.measure!.p50 >= 0, 'measure is timed on its own');
   assert.equal(measured.nodes, measured.diagram.nodes.length);
   assert.ok(measured.edges >= 0);
 });

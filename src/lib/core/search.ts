@@ -224,7 +224,8 @@ export function revealSearchResult(
         proposed: scene.proposed,
         lens: scene.lens,
         ...(scene.scope ? { scope: scene.scope } : {}),
-        ...((scene.theme ?? currentView.theme) ? { theme: scene.theme ?? currentView.theme } : {})
+        ...((scene.theme ?? currentView.theme) ? { theme: scene.theme ?? currentView.theme } : {}),
+        ...(scene.layout ? { layout: scene.layout } : {})
       },
       selected: null
     };

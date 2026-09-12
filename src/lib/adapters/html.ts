@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { layout } from './elk-layout';
+import { layout } from '../core/layout';
 import { portableHtml } from '../portable/document';
 import type { Diagram, Model, ViewState } from '../core/types';
 import type { SequenceJourney } from '../sequence/types';

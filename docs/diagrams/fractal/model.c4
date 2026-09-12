@@ -54,7 +54,7 @@ model {
     }
     layout = adapter 'Layout adapter' {
       description 'Measure text and arrange nested nodes and relationships using ELK.'
-      metadata { uid 'core.layout' fractalColor '#739886' evidence 'src/lib/adapters/elk-layout.ts' }
+      metadata { uid 'core.layout' fractalColor '#739886' evidence 'src/lib/adapters/layout/elk.ts' }
     }
   }
   export = adapter 'Portable documents' {

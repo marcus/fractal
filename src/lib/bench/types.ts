@@ -1,28 +1,23 @@
+import { LAYOUT_ENGINES, isLayoutEngineId } from '../core/layout-engines';
+import type { LayoutEngineId } from '../core/types';
+
 /**
- * Pipeline stages the benchmark reports.
- *
- * `measure` has no timing of its own today: the ELK adapter projects, measures, places and
- * assembles inside one call, so its cost is inside `layout`. It is reported once the layout
- * seam lands (see docs/plans/active/layout-performance-and-engines.md), and until then the
- * stage is simply absent from a row rather than reported as zero.
+ * Pipeline stages the benchmark reports: read and parse, project the view, measure node content,
+ * place it and assemble the diagram, export SVG, and lay out sequence journeys when present.
+ * `sequence` is absent from a row when the model has no journeys.
  */
 export const BENCH_STAGES = ['load', 'project', 'measure', 'layout', 'svg', 'sequence'] as const;
 export type BenchStage = (typeof BENCH_STAGES)[number];
 
-/** Stages that carry a timing today. */
-export const TIMED_BENCH_STAGES: readonly BenchStage[] = BENCH_STAGES.filter(
-  (stage) => stage !== 'measure'
-);
+/** Every stage carries a timing; kept for callers that iterate reported stages. */
+export const TIMED_BENCH_STAGES: readonly BenchStage[] = BENCH_STAGES;
 
-/**
- * Layout engines the benchmark can ask for. One engine exists; the registry that replaces this
- * list arrives with the layout seam, and the benchmark reads it then.
- */
-export const BENCH_ENGINES = ['elk-layered'] as const;
-export type BenchEngineId = (typeof BENCH_ENGINES)[number];
+/** Layout engines the benchmark can ask for: the shared registry, in its order. */
+export const BENCH_ENGINES: readonly LayoutEngineId[] = LAYOUT_ENGINES.map((engine) => engine.id);
+export type BenchEngineId = LayoutEngineId;
 
 export function isBenchEngineId(value: string): value is BenchEngineId {
-  return (BENCH_ENGINES as readonly string[]).includes(value);
+  return isLayoutEngineId(value);
 }
 
 export interface StageStats {

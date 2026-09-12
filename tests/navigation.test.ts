@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { directionalNeighbor, outwardView } from '../src/lib/core/navigation';
 import { loadModel } from '../src/lib/server/models';
-import { layout } from '../src/lib/adapters/elk-layout';
+import { layout } from '../src/lib/core/layout';
 
 test('spatial navigation follows geometry and retains focus at an edge', async () => {
   const { model } = await loadModel('delivery');

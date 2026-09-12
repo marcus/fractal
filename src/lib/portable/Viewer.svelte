@@ -14,7 +14,8 @@
   import { resolveShortcut } from '../core/shortcuts';
   import { outwardView, showAllStructure } from '../core/navigation';
   import { searchModel, revealSearchResult } from '../core/search';
-  import { layout } from '../adapters/elk-layout';
+  import { layout } from '../core/layout';
+  import { isLayoutEngineId } from '../core/layout-engines';
   import { exportSvg } from '../core/svg';
   import { layoutSequence } from '../sequence/layout';
   import { exportSequenceSvg } from '../sequence/svg';
@@ -110,7 +111,8 @@
       proposed: next.proposed,
       lens: next.lens,
       scope: next.scope,
-      theme: next.theme ?? view.theme
+      theme: next.theme ?? view.theme,
+      layout: next.layout
     };
     navOpen = false;
     void render().then(() => canvas?.fit());
@@ -277,7 +279,8 @@
           proposed: nextScene.proposed,
           lens: nextScene.lens,
           scope: nextScene.scope,
-          theme: nextScene.theme
+          theme: nextScene.theme,
+          layout: nextScene.layout
         };
       }
       if (hash.has('view')) {
@@ -288,6 +291,7 @@
           typeof next.proposed !== 'boolean' ||
           !['structure', 'trust'].includes(next.lens) ||
           (next.theme !== undefined && !isThemeId(next.theme)) ||
+          (next.layout !== undefined && !isLayoutEngineId(next.layout)) ||
           (next.scope !== undefined && !model.elements.some((item) => item.id === next.scope))
         )
           throw new Error('Invalid view');

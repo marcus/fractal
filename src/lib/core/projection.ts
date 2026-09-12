@@ -1,9 +1,11 @@
 import type { Element, Model, Projection, ProjectedEdge, Relationship, ViewState } from './types';
 import { getTheme } from './themes';
+import { getLayoutEngineInfo } from './layout-engines';
 
 /** Visibility is a projection of authored identities; collapsing never rewrites the model. */
 export function project(model: Model, state: ViewState): Projection {
   getTheme(state.theme);
+  getLayoutEngineInfo(state.layout);
   if (
     !['structure', 'trust'].includes(state.lens) ||
     typeof state.proposed !== 'boolean' ||

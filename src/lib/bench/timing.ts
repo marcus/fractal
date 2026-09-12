@@ -1,11 +1,14 @@
 import { performance } from 'node:perf_hooks';
-import { layout } from '../adapters/elk-layout';
+import { getLayoutEngine } from '../adapters/layout';
+import { assembleDiagram } from '../core/layout';
+import { measure } from '../core/measure';
+import { ARCHITECTURE_NODE_METRICS as METRICS } from '../core/node-metrics';
 import { project } from '../core/projection';
 import { exportSvg } from '../core/svg';
 import { layoutSequence } from '../sequence/layout';
 import type { SequenceJourney } from '../sequence/types';
-import type { Diagram, Model, ViewState } from '../core/types';
-import { TIMED_BENCH_STAGES, type BenchEngineId, type BenchStage, type StageStats } from './types';
+import type { Diagram, LayoutEngineId, Model, ViewState } from '../core/types';
+import { BENCH_STAGES, type BenchStage, type StageStats } from './types';
 
 export interface LoadedBenchModel {
   model: Model;
@@ -15,23 +18,15 @@ export interface LoadedBenchModel {
 /**
  * One measurable unit of work: a model source, a resolved view state, and the engine to place
  * it with. `load` is re-run every iteration, because re-reading and re-parsing the model is
- * what the studio does on every request today and is the stage worth watching.
+ * what a cold request costs and is the stage worth watching.
  */
 export interface BenchSubject {
   load: () => Promise<LoadedBenchModel>;
   state: ViewState;
-  engine: BenchEngineId;
+  engine: LayoutEngineId;
   title?: string;
   subtitle?: string;
 }
-
-/**
- * Placement per engine id. One entry today; the layout-engine registry replaces this map when
- * the seam lands, without changing what the benchmark measures.
- */
-const ENGINES: Record<BenchEngineId, (model: Model, state: ViewState) => Promise<Diagram>> = {
-  'elk-layered': layout
-};
 
 export interface StageRun {
   durations: Partial<Record<BenchStage, number>>;
@@ -41,12 +36,11 @@ export interface StageRun {
 }
 
 /**
- * One pass over the pipeline. `project` is timed on its own; `layout` is the whole engine call,
- * which still projects, measures, places and assembles internally until the seam splits it.
+ * One pass over the pipeline, stage by stage: load, project, measure, layout (the engine call
+ * plus assembling its placement into a diagram), svg, and sequence layout when journeys exist.
  */
 export async function runStages(subject: BenchSubject): Promise<StageRun> {
-  const engine = ENGINES[subject.engine];
-  if (!engine) throw new Error(`Unknown layout engine: ${subject.engine}`);
+  const engine = getLayoutEngine(subject.engine);
   const durations: Partial<Record<BenchStage, number>> = {};
 
   const loadStart = performance.now();
@@ -57,8 +51,13 @@ export async function runStages(subject: BenchSubject): Promise<StageRun> {
   const projection = project(model, subject.state);
   durations.project = performance.now() - projectStart;
 
+  const measureStart = performance.now();
+  const graph = measure(projection);
+  durations.measure = performance.now() - measureStart;
+
   const layoutStart = performance.now();
-  const diagram = await engine(model, subject.state);
+  const placement = await engine.layout(graph, { metrics: METRICS });
+  const diagram = assembleDiagram(projection, graph, placement, subject.state);
   durations.layout = performance.now() - layoutStart;
 
   const svgStart = performance.now();
@@ -96,7 +95,7 @@ const round = (value: number): number => Math.round(value * 1000) / 1000;
 
 export function summarize(runs: readonly StageRun[]): Partial<Record<BenchStage, StageStats>> {
   const stages: Partial<Record<BenchStage, StageStats>> = {};
-  for (const stage of TIMED_BENCH_STAGES) {
+  for (const stage of BENCH_STAGES) {
     const samples = runs
       .map((run) => run.durations[stage])
       .filter((value): value is number => value !== undefined);

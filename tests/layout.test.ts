@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { project, textWidth, wrapText } from '../src/lib/core/projection';
-import { layout } from '../src/lib/adapters/elk-layout';
+import { layout } from '../src/lib/core/layout';
 import { exportSvg } from '../src/lib/core/svg';
 import { ARCHITECTURE_NODE_METRICS as METRICS } from '../src/lib/core/node-metrics';
 import type { Element, Model, Relationship, ViewState } from '../src/lib/core/types';
