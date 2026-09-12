@@ -125,7 +125,7 @@ Options:
   --json                         One JSON document on stdout
   --output FILE                  Write JSONL, one row per model, view and engine
   --baseline FILE                Compare against an earlier run and print deltas
-  --fail-on-geometry-change      Exit nonzero when any fingerprint differs from the baseline
+  --fail-on-geometry-change      Exit nonzero when a fingerprint differs (needs --baseline)
   -h, --help                     Show this text
 
 Examples:

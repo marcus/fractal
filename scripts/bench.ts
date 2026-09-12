@@ -4,7 +4,7 @@
 // in the library so a server or a test can run the same numbers.
 import { execFileSync } from 'node:child_process';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
@@ -50,7 +50,7 @@ Options:
   --json                         One JSON document on stdout
   --output FILE                  Write JSONL, one row per model, view and engine
   --baseline FILE                Compare against an earlier run and print deltas
-  --fail-on-geometry-change      Exit nonzero when any fingerprint differs from the baseline
+  --fail-on-geometry-change      Exit nonzero when a fingerprint differs (needs --baseline)
   -h, --help                     Show this text
 
 Examples:
@@ -126,24 +126,43 @@ async function resolveSources(values: {
   // `--synthetic` on its own measures only generated models; alongside a narrowing flag it adds to them.
   if (sizes.length && !narrowed) return synthetic;
 
-  const directories = list(values.directory).map((path) => resolve(path));
-  if (!directories.length) {
-    const catalog = await resolveCatalog({ catalog: values.catalog });
-    for (const project of catalog.projects) directories.push(resolve(project.directory));
-    for (const path of await bundledExamples()) directories.push(path);
-  }
+  const ids = list(values.model);
+  const explicit = list(values.directory).map((path) => resolve(path));
+  const candidates = explicit.length
+    ? explicit.map((directory) => ({ id: null, directory }))
+    : [
+        ...(await resolveCatalog({ catalog: values.catalog })).projects.map((project) => ({
+          id: project.id as string | null,
+          directory: resolve(project.directory)
+        })),
+        ...(await bundledExamples()).map((directory) => ({
+          id: basename(directory) as string | null,
+          directory
+        }))
+      ];
   const seen = new Set<string>();
+  const unique = candidates.filter((candidate) => {
+    if (seen.has(candidate.directory)) return false;
+    seen.add(candidate.directory);
+    return true;
+  });
+  // A named model is chosen by its catalog identity before anything is parsed, so a narrowed run
+  // never reads the rest of the catalog and one unrelated broken model cannot fail it.
+  const chosen = ids.length
+    ? unique.filter((candidate) => candidate.id === null || ids.includes(candidate.id))
+    : unique;
+  for (const id of ids)
+    if (!explicit.length && !chosen.some((candidate) => candidate.id === id))
+      throw new Error(`Unknown model: ${id}`);
+
   const sources: BenchSource[] = [];
-  for (const directory of directories) {
-    if (seen.has(directory)) continue;
-    seen.add(directory);
+  for (const { directory } of chosen) {
     const { model } = await loadDirectory(directory);
     sources.push({ id: model.id, source: directory, load: () => loadDirectory(directory) });
   }
-  const ids = list(values.model);
-  for (const id of ids)
-    if (!sources.some((source) => source.id === id)) throw new Error(`Unknown model: ${id}`);
   const selected = ids.length ? sources.filter((source) => ids.includes(source.id)) : sources;
+  for (const id of ids)
+    if (!selected.some((source) => source.id === id)) throw new Error(`Unknown model: ${id}`);
   return [...selected, ...synthetic];
 }
 
@@ -302,6 +321,9 @@ export async function runBench(argv: string[]): Promise<void> {
   }
   if (!['scene', 'all', 'both'].includes(values.views!))
     throw new Error('Views must be scene, all or both');
+  // Nothing to fail against: a silent exit 0 here would read as a passing gate.
+  if (values['fail-on-geometry-change'] && values.baseline === undefined)
+    throw new Error('--fail-on-geometry-change needs a --baseline to compare against');
   const iterations = Number(values.iterations);
   if (!Number.isInteger(iterations) || iterations < 1)
     throw new Error('Iterations must be a whole number of at least 1');

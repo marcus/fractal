@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { percentile } from '../src/lib/bench';
 import { loadDirectory, resolveCatalog } from '../src/lib/server/models';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -119,19 +120,17 @@ interface RawWatch {
 
 const round = (value: number): number => Math.round(value * 100) / 100;
 
-function percentile(values: readonly number[], fraction: number): number {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  return round(sorted[Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1)]);
-}
+/** The same nearest-rank percentile the stage timings use, so both benchmarks read alike. */
+const frameTime = (values: readonly number[], fraction: number): number =>
+  round(percentile(values, fraction));
 
 function summarize(target: string, watch: RawWatch): ToggleResult {
   return {
     target,
     latencyMs: watch.latencyMs === null ? null : round(watch.latencyMs),
     frames: {
-      p50: percentile(watch.frames, 0.5),
-      p99: percentile(watch.frames, 0.99),
+      p50: frameTime(watch.frames, 0.5),
+      p99: frameTime(watch.frames, 0.99),
       count: watch.frames.length
     },
     longTasks: watch.longTasks.map((task) => ({
@@ -275,24 +274,33 @@ async function main(): Promise<void> {
     return;
   }
   const { id: model, env } = await resolveModel(values.model);
+  // Everything that owns a resource is created inside the try, so the finally below is the only
+  // place that releases one. An interrupt would skip that finally, so it also runs on a signal.
   let server: ChildProcess | undefined;
-  let url = values.url;
-  if (url === undefined) {
-    if (!values['skip-build']) await run('npm', ['run', 'build']);
-    const port = await freePort();
-    url = `http://127.0.0.1:${port}`;
-    server = spawn('node', ['build'], {
-      cwd: ROOT,
-      env: { ...process.env, ...env, PORT: String(port), HOST: '127.0.0.1' },
-      stdio: ['ignore', 'ignore', 'inherit']
-    });
-    await waitForServer(url, 30000);
-  } else url = url.replace(/\/$/, '');
-
-  const directory = await mkdtemp(join(tmpdir(), 'fractal-bench-'));
-  const portablePath = join(directory, `${model}.html`);
   let browser: Browser | undefined;
+  let directory: string | undefined;
+  const stop = (code: number) => {
+    server?.kill('SIGTERM');
+    process.exit(code);
+  };
+  process.once('SIGINT', () => stop(130));
+  process.once('SIGTERM', () => stop(143));
+  let url = values.url;
   try {
+    if (url === undefined) {
+      if (!values['skip-build']) await run('npm', ['run', 'build']);
+      const port = await freePort();
+      url = `http://127.0.0.1:${port}`;
+      server = spawn('node', ['build'], {
+        cwd: ROOT,
+        env: { ...process.env, ...env, PORT: String(port), HOST: '127.0.0.1' },
+        stdio: ['ignore', 'ignore', 'inherit']
+      });
+      await waitForServer(url, 30000);
+    } else url = url.replace(/\/$/, '');
+
+    directory = await mkdtemp(join(tmpdir(), 'fractal-bench-'));
+    const portablePath = join(directory, `${model}.html`);
     if (!(await exists(join(ROOT, 'build', 'portable.json'))))
       await run('npm', ['run', 'build:portable']);
     await run(
@@ -381,7 +389,8 @@ async function main(): Promise<void> {
   } finally {
     await browser?.close();
     server?.kill('SIGTERM');
-    if (!values['keep-portable']) await rm(directory, { recursive: true, force: true });
+    if (directory !== undefined && !values['keep-portable'])
+      await rm(directory, { recursive: true, force: true });
   }
 }
 
