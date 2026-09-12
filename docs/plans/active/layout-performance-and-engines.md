@@ -252,8 +252,10 @@ every catalog project stays in that gitignored JSONL, which is what a comparison
 The headline number comes from `npm run bench:browser`, against a build it starts itself. On td,
 click to new geometry is 260 ms to expand, 180 ms to collapse and 265 ms for show-all; page open is
 1.85 s, of which `/api/models` alone is 915 ms. Frames hold 16.6 ms at p50 through every toggle and
-no long task appears, in the studio or in the portable document — the wait is server time, not the
-browser. The same run on the bundled delivery example: 129 ms expand, 132 ms collapse, 131 ms
+no long task appears in the studio — the wait is server time, not the browser. The portable
+document is the exception, and that run under-reported it: measured again for step 4 on the same
+machine and model, the reader blocked its main thread for 106 ms on page open, 128 ms on expand and
+51 ms on collapse. The same run on the bundled delivery example: 129 ms expand, 132 ms collapse, 131 ms
 show-all, 855 ms page open; the portable document toggles the same view in 97 ms and 48 ms with no
 server at all.
 
@@ -288,3 +290,11 @@ server at all.
 - 2026-09-11: Step 1 landed (td-45b8a9): `bin/fractal bench`, `npm run bench:browser`, and the
   baseline table. Step 2 landed (td-5ca34f): parsed-model cache, layout-result cache, warm-up on
   server start, a delayed "Composing view" badge, and a parallel model request on page open.
+- 2026-09-11: Step 4 landed (td-1ff679): the ELK engine takes its ELK instance, and the portable
+  document runs elkjs's worker from an inlined blob URL instead of the bundled main-thread build.
+  On td, long tasks in the reader went from 106 ms on page open, 128 ms on expand and 51 ms on
+  collapse to none at all; click to new geometry went from 158.7 to 146.9 ms expanding and from
+  99.9 to 81.2 ms collapsing. `npm run bench:browser -- --model td` agrees: 147.4 ms and 81.2 ms,
+  no long task in either toggle or on open, frames at 16.7 ms p50. The document shrank from
+  2,121,424 to 2,116,535 bytes, because it now ships one copy of ELK rather than elkjs's bundle.
+  Node fingerprints are unchanged and the reader's node transforms match `fractal layout --json`.

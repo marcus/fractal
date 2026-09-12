@@ -6,7 +6,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
  * The reader runs ELK in a worker, so a toggle never blocks its main thread. Swapping the module
  * that provides the ELK instance is the whole of it: the engine, its options and its geometry are
  * the ones Node uses. It also keeps the bundled main-thread ELK out of the document, so the single
- * file ships one copy of ELK — the worker script, inlined as text.
+ * file ships one copy of ELK — elkjs's worker script, which Vite inlines into the bundle.
  */
 function portableElk(root: string): Plugin {
   const node = `${root}/src/lib/adapters/layout/elk-instance.ts`;
