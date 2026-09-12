@@ -83,17 +83,25 @@
     fitInsets = measureInsets();
     camera = { x: 0, y: 0, zoom: 1 };
   }
+  /**
+   * Keyboard commands act on the diagram the reader was just given, not on the animated copy,
+   * which trails it by a frame. A key pressed the instant a fast render lands must not move
+   * through the rows of the view that was just replaced.
+   */
+  const targetRows = () => diagram?.rows ?? rows;
+  const targetColumns = () => diagram?.columns ?? columns;
+  const targetGaps = () => diagram?.gaps ?? gaps;
   export function activate() {
     if (!activeId) return;
-    const gap = gaps.find((item) => item.id === activeId);
+    const gap = targetGaps().find((item) => item.id === activeId);
     if (gap) revealGap(gap);
     else onselect(activeId);
   }
   export function toggleActive() {
     if (!activeId) return;
-    const row = rows.find((item) => item.id === activeId);
-    const col = columns.find((item) => item.id === activeId);
-    const gap = gaps.find((item) => item.id === activeId);
+    const row = targetRows().find((item) => item.id === activeId);
+    const col = targetColumns().find((item) => item.id === activeId);
+    const gap = targetGaps().find((item) => item.id === activeId);
     if (row?.type === 'phase' && !row.contextOnly) ontogglephase(row.id);
     else if (col && col.memberIds.length > 1) ontogglegroup(col.id);
     else if (gap) revealGap(gap);
@@ -103,8 +111,9 @@
     svg?.focus({ preventScroll: true });
   }
   export function navigate(direction: 'left' | 'right' | 'up' | 'down') {
+    const rows = targetRows();
     const rowIndex = rows.findIndex((item) => item.id === activeId);
-    const horizontal = [...columns, ...gaps].sort((a, b) => a.x - b.x);
+    const horizontal = [...targetColumns(), ...targetGaps()].sort((a, b) => a.x - b.x);
     const columnIndex = horizontal.findIndex((item) => item.id === activeId);
     if (direction === 'up' || direction === 'down') {
       const start = rowIndex >= 0 ? rowIndex : direction === 'down' ? -1 : rows.length;

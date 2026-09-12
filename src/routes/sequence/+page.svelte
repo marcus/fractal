@@ -741,7 +741,7 @@
             {journey?.description ?? 'Choose an authored journey to explore its interactions.'}
           </p>
         </div>
-        <div class="diagram-area" class:loading={slow}>
+        <div class="diagram-area" class:loading={slow} aria-busy={busy}>
           {#if diagram && model}<SequenceCanvas
               bind:this={canvas}
               {diagram}

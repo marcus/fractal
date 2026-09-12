@@ -25,7 +25,7 @@ test('installed sequence reads repository edits, refuses stale exports, and pres
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/sequence?model=delivery&journey=order-delivery');
   await expect(page.locator('[data-sequence-id="fulfillment"]')).toBeVisible();
-  await expect(page.getByText('Updating sequence', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
   const before = await (await page.request.get('/api/models/delivery')).json();
   const changed = JSON.parse(original);
   changed.journeys[0].description = 'Repository-owned sequence reload verified';
@@ -40,17 +40,17 @@ test('installed sequence reads repository edits, refuses stale exports, and pres
     await expect(page.locator('.appbar-subtitle')).toContainText(
       'Repository-owned sequence reload verified'
     );
-    await expect(page.getByText('Updating sequence', { exact: true })).toHaveCount(0);
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
     await expect(page.getByRole('alert')).toHaveCount(0);
   } finally {
     await writeFile(sourcePath, original);
   }
   await page.getByRole('button', { name: 'Reload sequence', exact: true }).click();
-  await expect(page.getByText('Updating sequence', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
   await page.getByRole('button', { name: 'Expand Prepare the parcel', exact: true }).click();
   await expect(page.locator('[data-sequence-id="summary:packed-parcel"]')).toBeVisible();
   await chooseTheme(page, 'Midnight');
-  await expect(page.getByText('Updating sequence', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
   await page.getByRole('button', { name: 'Present', exact: true }).click();
   await page.screenshot({ path: 'artifacts/installed-sequence-presentation.png' });
   await page.keyboard.press('Escape');

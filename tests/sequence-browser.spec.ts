@@ -6,7 +6,8 @@ async function ready(page: Page) {
   await expect(
     page.getByRole('application', { name: 'Interactive sequence diagram' })
   ).toBeVisible();
-  await expect(page.getByText('Updating sequence', { exact: true })).toHaveCount(0);
+  // The badge only appears for slow requests; the busy state is the render-complete signal.
+  await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
   await expect(page.locator('[data-sequence-id]').first()).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 }

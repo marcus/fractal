@@ -869,7 +869,7 @@
           </div>
           <p title={subtitle}>{subtitle}</p>
         </div>
-        <div class="diagram-area" class:loading={slow}>
+        <div class="diagram-area" class:loading={slow} aria-busy={busy}>
           {#if model}{#key model.id}<DiagramCanvas
                 bind:this={canvas}
                 onexitlayer={goOut}

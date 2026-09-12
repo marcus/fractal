@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 
 async function ready(page: Page) {
   await expect(page.locator('[data-node-id]').first()).toBeVisible();
-  await expect(page.getByText('Composing view', { exact: true })).toHaveCount(0);
+  // The badge only appears for slow requests; the busy state is the render-complete signal.
+  await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
 }
 async function scene(page: Page, name: string) {
   await page.getByRole('button', { name }).click();

@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 // Only Fractal's own companion is temporarily edited; exact bytes are restored in finally.
 async function ready(page: Page) {
   await expect(page.locator('[data-node-id]').first()).toBeVisible();
-  await expect(page.getByText('Composing view', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
 }
 /** The theme is a fly-out on the floating bar now, not a select. */
 async function chooseTheme(page: Page, name: 'Grove' | 'Graphite' | 'Midnight') {
