@@ -244,6 +244,14 @@
       case 'toggle-sidebar':
         navOpen = !navOpen;
         break;
+      case 'toggle-flow':
+        if (journey) return;
+        view = {
+          ...view,
+          layout: view.layout === 'elk-layered-down' ? undefined : 'elk-layered-down'
+        };
+        void render();
+        break;
       case 'copy-link':
         void copyLink();
         break;
@@ -450,6 +458,18 @@
                 void render();
               }}
             />Proposed</label
+          ><label
+            ><input
+              type="checkbox"
+              checked={view.layout === 'elk-layered-down'}
+              onchange={(e) => {
+                view = {
+                  ...view,
+                  layout: e.currentTarget.checked ? 'elk-layered-down' : undefined
+                };
+                void render();
+              }}
+            />Top to bottom</label
           >
         </div>
         <button

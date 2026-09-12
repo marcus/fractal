@@ -5,6 +5,7 @@ import {
   prepareEdgeMorph,
   interpolateEdgeCurve,
   edgeCurvePath,
+  facingBorderPoints,
   type EdgeCurve
 } from '../src/lib/ui/edge-motion';
 
@@ -101,4 +102,26 @@ test('empty and duplicate-point routes produce finite paths', () => {
     for (const t of [0, 0.5, 1])
       assert.doesNotMatch(edgeCurvePath(interpolateEdgeCurve(morph, t)), /NaN|Infinity/);
   }
+});
+
+test('synthesised endpoints sit on the borders the two boxes face each other with', () => {
+  const box = (x: number, y: number) => ({ x, y, width: 100, height: 40 });
+  // Side by side: the left-to-right engine's right and left ports.
+  assert.deepEqual(facingBorderPoints(box(0, 0), box(300, 10)), [
+    { x: 100, y: 20 },
+    { x: 300, y: 30 }
+  ]);
+  assert.deepEqual(facingBorderPoints(box(300, 0), box(0, 0)), [
+    { x: 300, y: 20 },
+    { x: 100, y: 20 }
+  ]);
+  // Stacked: the top-to-bottom engine's bottom and top ports.
+  assert.deepEqual(facingBorderPoints(box(0, 0), box(10, 300)), [
+    { x: 50, y: 40 },
+    { x: 60, y: 300 }
+  ]);
+  assert.deepEqual(facingBorderPoints(box(0, 300), box(0, 0)), [
+    { x: 50, y: 300 },
+    { x: 50, y: 40 }
+  ]);
 });

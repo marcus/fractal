@@ -424,6 +424,16 @@
     sceneId = null;
     renderView();
   }
+  /**
+   * The flow direction is the view's layout engine, so it travels in the link, the export and
+   * the API exactly like the lens does. Absent is the default left-to-right engine, which keeps
+   * every older link meaning what it meant.
+   */
+  function chooseFlow(id: ViewState['layout']) {
+    view = { ...view, layout: id };
+    sceneId = null;
+    renderView();
+  }
   function select(id: string, type: 'element' | 'relationship' | 'outside') {
     selected = id;
     selectedType = type;
@@ -559,6 +569,10 @@
         break;
       case 'toggle-sidebar':
         if (!presentation) toggleSidebar();
+        break;
+      case 'toggle-flow':
+        if (diagram && !busy)
+          chooseFlow(view.layout === 'elk-layered-down' ? undefined : 'elk-layered-down');
         break;
       case 'toggle-presentation':
         if (diagram) togglePresentation();
@@ -850,6 +864,8 @@
           sceneId = null;
           renderView();
         }}
+        flow={view.layout}
+        onflow={chooseFlow}
         {toggle}
         onshowall={showStructure}
         allShown={allStructure?.expanded.every((id) => view.expanded.includes(id)) ?? true}

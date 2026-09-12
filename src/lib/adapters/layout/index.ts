@@ -9,7 +9,9 @@ import { elkLayeredEngine } from './elk';
  */
 const implementations: Record<LayoutEngineId, () => LayoutEngine> = {
   'elk-layered': () =>
-    elkLayeredEngine({ ...getLayoutEngineInfo('elk-layered'), direction: 'right' })
+    elkLayeredEngine({ ...getLayoutEngineInfo('elk-layered'), direction: 'right' }),
+  'elk-layered-down': () =>
+    elkLayeredEngine({ ...getLayoutEngineInfo('elk-layered-down'), direction: 'down' })
 };
 
 const instances = new Map<LayoutEngineId, LayoutEngine>();

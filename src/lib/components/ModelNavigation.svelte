@@ -11,6 +11,8 @@
     ChevronDown,
     Grid,
     Route,
+    ArrowRight,
+    ArrowDown,
     X
   } from '@marcusv/roc/svelte/outline';
   import { architectureLink, sequenceLink } from '$lib/core/links';
@@ -25,7 +27,7 @@
     SIDEBAR_MIN_WIDTH,
     type NavigationSection
   } from '$lib/ui/preferences';
-  import type { Model, LayoutNode, ThemeId } from '$lib/core/types';
+  import type { Model, LayoutNode, LayoutEngineId, ThemeId } from '$lib/core/types';
 
   type Journey = { id: string; title: string; status: 'current' | 'proposed' };
   let {
@@ -56,6 +58,8 @@
     proposed = false,
     onlens,
     onproposed,
+    flow,
+    onflow,
     sourceLabel = '.c4',
     sections
   }: {
@@ -87,6 +91,9 @@
     proposed?: boolean;
     onlens?: (lens: 'structure' | 'trust') => void;
     onproposed?: (proposed: boolean) => void;
+    /** The engine placing the view; absent is the default left-to-right flow. */
+    flow?: LayoutEngineId;
+    onflow?: (layout: LayoutEngineId | undefined) => void;
     sourceLabel?: string;
     /** Surface-specific navigation, shown where the architecture outline sits. */
     sections?: Snippet;
@@ -113,6 +120,8 @@
     };
   });
   const jumpShortcut = SHORTCUTS.find((s) => s.id === 'jump')!;
+  const flowShortcut = SHORTCUTS.find((s) => s.id === 'toggle-flow')!;
+  const flowDown = $derived(flow === 'elk-layered-down');
   const label = (index: number) => String(index + 1).padStart(2, '0');
   function toggleSection(section: NavigationSection) {
     if (section === 'perspectives') {
@@ -221,6 +230,20 @@
             checked={proposed}
             onchange={(e) => onproposed?.(e.currentTarget.checked)}
           /><span class="toggle-track"></span>Proposed</label
+        >
+        <button
+          class="icon-button flow-toggle"
+          class:down={flowDown}
+          role="switch"
+          aria-checked={flowDown}
+          aria-label="Flow top to bottom"
+          aria-keyshortcuts={shortcutLabel(flowShortcut, mac)}
+          use:tip={{
+            title: 'Flow',
+            text: `Lay the diagram out top to bottom instead of left to right. Useful on tall screens, portrait pages and embeds. ${shortcutLabel(flowShortcut, mac)}`
+          }}
+          onclick={() => onflow?.(flowDown ? undefined : 'elk-layered-down')}
+          >{#if flowDown}<ArrowDown size={15} />{:else}<ArrowRight size={15} />{/if}</button
         >
       {/if}
       <button
@@ -413,6 +436,16 @@
 </aside>
 
 <style>
+  /* The arrow is the state: it points the way the diagram flows, and turns accent when the
+     view is no longer on the default engine. Quiet until hovered, like the row's other controls. */
+  .flow-toggle {
+    width: 26px;
+    height: 26px;
+    color: var(--ui-muted, #7d886f);
+  }
+  .flow-toggle.down {
+    color: var(--ui-accent, #8b9d62);
+  }
   .proposed-label {
     display: block;
     color: var(--proposed);

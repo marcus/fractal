@@ -2,7 +2,7 @@ export type Status = 'current' | 'proposed';
 export type Lens = 'structure' | 'trust';
 export type ThemeId = 'grove' | 'graphite' | 'midnight';
 /** Registered layout engines; `core/layout-engines.ts` carries their metadata. */
-export type LayoutEngineId = 'elk-layered';
+export type LayoutEngineId = 'elk-layered' | 'elk-layered-down';
 export interface Theme {
   readonly id: ThemeId;
   readonly name: string;
