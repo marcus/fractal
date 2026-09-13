@@ -558,6 +558,10 @@ test('phase rows use compact shared geometry and grouped lanes explain their cou
   await expect(page.locator('[data-geometry-kind="column"]')).toHaveCount(6);
   await page.getByRole('button', { name: 'Expand all phases', exact: true }).click();
   await ready(page);
+  // Rows arrive a frame or two after the busy flag clears; wait for the deepest phase.
+  await expect(
+    page.locator('[data-geometry-kind="phase"][data-sequence-id="picking"]')
+  ).toHaveCount(1);
   const geometry = await page.locator('[data-geometry-kind="phase"]').evaluateAll((rows) =>
     rows.map((row) => ({
       id: row.getAttribute('data-sequence-id'),
@@ -710,4 +714,37 @@ test('sequence inspector prioritizes interactions and progressively reveals cont
   await expect(context.locator('p')).toBeVisible();
   await grip.getByRole('button', { name: 'Close inspector' }).click();
   await expect(inspector).toHaveCount(0);
+});
+
+test.describe('touch', () => {
+  test.use({ hasTouch: true });
+  test('a two-finger pinch zooms the sequence about the fingers', async ({ page }) => {
+    await page.goto(path);
+    await ready(page);
+    const band = page.locator('[data-sequence-id="order"] rect').first();
+    const box = (await page.getByRole('application').boundingBox())!;
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (
+      type: 'touchStart' | 'touchMove' | 'touchEnd',
+      points: { id: number; x: number; y: number }[]
+    ) =>
+      cdp.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints: points.map((p) => ({ x: box.x + p.x, y: box.y + p.y, id: p.id }))
+      });
+    const before = (await band.boundingBox())!;
+    const centre = { x: box.width / 2, y: box.height / 2 };
+    const a0 = { id: 0, x: centre.x - 40, y: centre.y },
+      b0 = { id: 1, x: centre.x + 40, y: centre.y };
+    await touch('touchStart', [a0]);
+    await touch('touchStart', [a0, b0]);
+    const a1 = { ...a0, x: centre.x - 80 },
+      b1 = { ...b0, x: centre.x + 80 };
+    await touch('touchMove', [a1, b1]);
+    await touch('touchEnd', [a1, b1]);
+    await expect
+      .poll(async () => (await band.boundingBox())!.width / before.width)
+      .toBeCloseTo(2, 2);
+    await expect(page.locator('.inspector')).toHaveCount(0);
+  });
 });

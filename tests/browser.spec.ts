@@ -1744,24 +1744,26 @@ test('the Flow control lays the view out top to bottom, by pointer, by key, and 
   // Flow is a presentation choice, so it lives with the theme, not with the model lenses.
   await expect(page.locator('.sidebar').getByRole('switch')).toHaveCount(0);
   await expect(flow).toHaveAttribute('aria-checked', 'false');
-  const across = await spread();
-  expect(across.x).toBeGreaterThan(across.y);
+  // The layout lands a frame or two after the busy flag clears, so poll the arrangement.
+  const flowsAcross = () =>
+    expect.poll(async () => (await spread()).x > (await spread()).y).toBe(true);
+  const flowsDown = () =>
+    expect.poll(async () => (await spread()).y > (await spread()).x).toBe(true);
+  await flowsAcross();
   expect(layoutInUrl()).toBeUndefined();
 
   await flow.click();
   await ready(page);
   await expect(flow).toHaveAttribute('aria-checked', 'true');
   expect(layoutInUrl()).toBe('elk-layered-down');
-  const down = await spread();
-  expect(down.y).toBeGreaterThan(down.x);
+  await flowsDown();
 
   // The link carries the flow: reopening it reproduces the same arrangement.
   await page.reload();
   await ready(page);
   expect(layoutInUrl()).toBe('elk-layered-down');
   await expect(flow).toHaveAttribute('aria-checked', 'true');
-  const reloaded = await spread();
-  expect(reloaded.y).toBeGreaterThan(reloaded.x);
+  await flowsDown();
 
   // The registered shortcut is the keyboard path to the same command.
   await page.locator('.canvas > svg').click({ position: { x: 20, y: 20 } });
@@ -1769,9 +1771,99 @@ test('the Flow control lays the view out top to bottom, by pointer, by key, and 
   await ready(page);
   await expect(flow).toHaveAttribute('aria-checked', 'false');
   expect(layoutInUrl()).toBeUndefined();
-  const again = await spread();
-  expect(again.x).toBeGreaterThan(again.y);
+  await flowsAcross();
   await page.keyboard.press('f');
   await ready(page);
   expect(layoutInUrl()).toBe('elk-layered-down');
+});
+
+test('a trackpad pinch zooms at a usable pace and a mouse notch keeps its step', async ({
+  page
+}) => {
+  await page.goto('/');
+  await ready(page);
+  await page.waitForTimeout(600);
+  const node = page.locator('[data-node-id="core"]');
+  const scale = () =>
+    node.evaluate(
+      (element) => (element.parentElement as unknown as SVGGraphicsElement).getScreenCTM()!.a
+    );
+  const box = (await page.getByRole('application').boundingBox())!;
+  const at = { x: box.x + openCanvas.x, y: box.y + openCanvas.y };
+  const cdp = await page.context().newCDPSession(page);
+  const before = await scale();
+  // One mouse notch is ~100px; it stays at the familiar ~16% step.
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(100);
+  const notched = await scale();
+  expect(notched / before).toBeCloseTo(Math.exp(0.15), 3);
+  // A trackpad pinch reaches the canvas as ctrl+wheel with small deltas; ten such frames
+  // must move the zoom by a clearly visible amount rather than a crawl.
+  for (let i = 0; i < 10; i++) {
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: at.x,
+      y: at.y,
+      deltaX: 0,
+      deltaY: -5,
+      modifiers: 2
+    });
+  }
+  await page.waitForTimeout(100);
+  const pinched = await scale();
+  expect(pinched / notched).toBeGreaterThan(1.5);
+});
+
+test.describe('touch', () => {
+  test.use({ hasTouch: true });
+  test('a two-finger pinch zooms about the fingers and pans with them', async ({ page }) => {
+    await page.goto('/');
+    await ready(page);
+    await page.waitForTimeout(600);
+    const node = page.locator('[data-node-id="core"]');
+    const transform = () =>
+      node.evaluate((element) => {
+        const matrix = (element.parentElement as unknown as SVGGraphicsElement).getScreenCTM()!;
+        return { scale: matrix.a, x: matrix.e, y: matrix.f };
+      });
+    const box = (await page.getByRole('application').boundingBox())!;
+    const cdp = await page.context().newCDPSession(page);
+    // CDP touch events list the points that changed; a touchEnd lifts exactly the points given.
+    const touch = (
+      type: 'touchStart' | 'touchMove' | 'touchEnd',
+      points: { id: number; x: number; y: number }[]
+    ) =>
+      cdp.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints: points.map((p) => ({ x: box.x + p.x, y: box.y + p.y, id: p.id }))
+      });
+    const before = await transform();
+    const a0 = { id: 0, x: openCanvas.x - 50, y: openCanvas.y },
+      b0 = { id: 1, x: openCanvas.x + 50, y: openCanvas.y };
+    const mid = { x: box.x + openCanvas.x, y: box.y + openCanvas.y };
+    // The world point under the starting midpoint, in the node group's frame.
+    const world = { x: (mid.x - before.x) / before.scale, y: (mid.y - before.y) / before.scale };
+    await touch('touchStart', [a0]);
+    await touch('touchStart', [a0, b0]);
+    // Spread the fingers to double the distance while sliding the midpoint 40px right, 20px down.
+    const a1 = { id: 0, x: openCanvas.x - 60, y: openCanvas.y + 20 },
+      b1 = { id: 1, x: openCanvas.x + 140, y: openCanvas.y + 20 };
+    await touch('touchMove', [a1, b1]);
+    await page.waitForTimeout(100);
+    const pinched = await transform();
+    expect(pinched.scale / before.scale).toBeCloseTo(2, 3);
+    expect(pinched.x + world.x * pinched.scale).toBeCloseTo(mid.x + 40, 0);
+    expect(pinched.y + world.y * pinched.scale).toBeCloseTo(mid.y + 20, 0);
+    // Lifting one finger hands over to a plain drag with the other; nothing gets selected.
+    await touch('touchEnd', [b1]);
+    const a2 = { ...a1, x: a1.x + 30 };
+    await touch('touchMove', [a2]);
+    await touch('touchEnd', [a2]);
+    await page.waitForTimeout(100);
+    const dragged = await transform();
+    expect(dragged.scale).toBeCloseTo(pinched.scale, 5);
+    expect(dragged.x - pinched.x).toBeCloseTo(30, 0);
+    await expect(page.locator('.inspector')).toHaveCount(0);
+  });
 });

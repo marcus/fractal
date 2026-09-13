@@ -10,6 +10,14 @@
     type EdgeCurve
   } from '$lib/ui/edge-motion';
   import { maximumCanvasZoom } from '$lib/ui/zoom';
+  import {
+    pinchCamera,
+    pinchZoom,
+    wheelZoomRatio,
+    zoomAbout,
+    type Pinch,
+    type Point
+  } from '$lib/ui/camera-gestures';
   import type { Diagram, Model, LayoutNode, LayoutEdge } from '$lib/core/types';
   import { getTheme } from '$lib/core/themes';
   import { ARCHITECTURE_NODE_METRICS as METRICS } from '$lib/core/node-metrics';
@@ -285,6 +293,9 @@
   let reduced = $state(false);
   let svg: SVGSVGElement;
   let dragging: { x: number; y: number; cameraX: number; cameraY: number } | null = null;
+  /* Live pointers on the canvas, in fit-centre coordinates; two of them make a pinch. */
+  const pointers = new Map<number, Point>();
+  let pinch: Pinch | null = null;
   let moved = false;
   let size = $state({ width: 1000, height: 600 });
   // Floating chrome covers the canvas edges rather than narrowing it. The fit region is captured
@@ -494,6 +505,14 @@
   function boundaryFor(id: string) {
     return model.boundaries.filter((b) => b.members.includes(id));
   }
+  function screenOrigin(x: number, y: number): Point {
+    // Screen positions are measured from the centre of the fit region, like the camera.
+    const box = svg.getBoundingClientRect();
+    return {
+      x: x - box.left - (fitInsets.left + fitWidth / 2),
+      y: y - box.top - (fitInsets.top + fitHeight / 2)
+    };
+  }
   function down(e: PointerEvent) {
     moved = false;
     clearPeek();
@@ -503,10 +522,26 @@
     // pointer has not moved. Only the expand control keeps the pointer to itself.
     if ((e.target as Element).closest('[data-interactive="toggle"]')) return;
     takeCameraControl();
+    pointers.set(e.pointerId, screenOrigin(e.clientX, e.clientY));
+    if (pointers.size === 2) {
+      // A second finger turns the drag into a pinch: zoom about the fingers and pan with them.
+      const [a, b] = [...pointers.values()];
+      pinch = { camera: { ...camera }, a, b };
+      dragging = null;
+      moved = true;
+      for (const id of pointers.keys()) svg.setPointerCapture(id);
+      return;
+    }
     dragging = { x: e.clientX, y: e.clientY, cameraX: camera.x, cameraY: camera.y };
-    moved = false;
   }
   function move(e: PointerEvent) {
+    if (pinch && pointers.has(e.pointerId)) {
+      pointers.set(e.pointerId, screenOrigin(e.clientX, e.clientY));
+      const [a, b] = [...pointers.values()];
+      camera = pinchCamera(pinch, a, b, boundedZoom(pinchZoom(pinch, a, b)));
+      takeCameraControl();
+      return;
+    }
     if (!dragging) return;
     moved = Math.abs(e.clientX - dragging.x) + Math.abs(e.clientY - dragging.y) > 3;
     // Capture only once this is a drag, so a still click keeps its target and selects.
@@ -518,16 +553,46 @@
     };
     takeCameraControl();
   }
+  function up(e: PointerEvent) {
+    pointers.delete(e.pointerId);
+    if (pinch) {
+      pinch = null;
+      // The finger still down carries on as a plain drag from where it is now.
+      const rest = [...pointers.entries()];
+      if (rest.length === 1) {
+        const [id, p] = rest[0];
+        const box = svg.getBoundingClientRect();
+        dragging = {
+          x: p.x + box.left + fitInsets.left + fitWidth / 2,
+          y: p.y + box.top + fitInsets.top + fitHeight / 2,
+          cameraX: camera.x,
+          cameraY: camera.y
+        };
+        svg.setPointerCapture(id);
+        return;
+      }
+    }
+    if (pointers.size === 0) dragging = null;
+  }
+  $effect(() => {
+    // Safari on iOS may still zoom the page on a pinch despite touch-action, so refuse
+    // multi-finger touches at the source; the pointer events that drive the pinch still arrive.
+    const refuse = (e: TouchEvent) => {
+      if (e.touches.length > 1) e.preventDefault();
+    };
+    svg.addEventListener('touchstart', refuse, { passive: false });
+    svg.addEventListener('touchmove', refuse, { passive: false });
+    return () => {
+      svg.removeEventListener('touchstart', refuse);
+      svg.removeEventListener('touchmove', refuse);
+    };
+  });
   function wheel(e: WheelEvent) {
     e.preventDefault();
     clearPeek();
     cancelAnimationFrame(cameraFrame);
-    const zoom = boundedZoom(camera.zoom * Math.exp(-e.deltaY * 0.0015));
-    const box = svg.getBoundingClientRect();
-    const ox = e.clientX - box.left - (fitInsets.left + fitWidth / 2),
-      oy = e.clientY - box.top - (fitInsets.top + fitHeight / 2);
-    const ratio = zoom / camera.zoom;
-    camera = { zoom, x: ox - (ox - camera.x) * ratio, y: oy - (oy - camera.y) * ratio };
+    const zoom = boundedZoom(camera.zoom * wheelZoomRatio(e));
+    camera = zoomAbout(camera, screenOrigin(e.clientX, e.clientY), zoom);
     takeCameraControl();
   }
 </script>
@@ -543,8 +608,8 @@
     tabindex="0"
     onpointerdown={down}
     onpointermove={move}
-    onpointerup={() => (dragging = null)}
-    onpointercancel={() => (dragging = null)}
+    onpointerup={up}
+    onpointercancel={up}
     onwheel={wheel}
   >
     <defs>
