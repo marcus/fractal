@@ -195,7 +195,7 @@ export function routeBridge(
     const right = targetFrameCenter.x >= sourceFrameCenter.x;
     const x = corridorX(source.frame, target.frame, right);
     sourcePoint = source.port ?? projectPoint(source, from, right, false);
-    targetPoint = target.port ?? projectPoint(target, to, right, false);
+    targetPoint = target.port ?? projectPoint(target, to, !right, false);
     const direct =
       sourcePoint.y === targetPoint.y
         ? [sourcePoint, { x, y: sourcePoint.y }, targetPoint]
@@ -231,7 +231,7 @@ export function routeBridge(
     const down = targetFrameCenter.y >= sourceFrameCenter.y;
     const right = targetFrameCenter.x >= sourceFrameCenter.x;
     sourcePoint = source.port ?? projectPoint(source, from, right, down);
-    targetPoint = target.port ?? projectPoint(target, to, right, down);
+    targetPoint = target.port ?? projectPoint(target, to, !right, !down);
     const directX = escapeX([source.frame, target.frame], right);
     const direct = [
       sourcePoint,

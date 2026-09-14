@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { COMPOSITION_METRICS } from '../src/lib/composition/place';
-import { routeBridge, type RouteEndpoint } from '../src/lib/composition/route';
+import { routeAxis, routeBridge, type RouteEndpoint } from '../src/lib/composition/route';
 import type { Frame } from '../src/lib/composition/types';
 import type { LayoutNode, Point } from '../src/lib/core/types';
 
@@ -140,10 +140,20 @@ function nodeEndpoint(box: Frame, node: LayoutNode, titleHeight = TITLE_H): Rout
   };
 }
 
+function representativeRect(endpoint: RouteEndpoint): Frame {
+  if (!endpoint.node) return endpoint.frame;
+  return {
+    x: endpoint.content.x + endpoint.node.x,
+    y: endpoint.content.y + endpoint.node.y,
+    width: endpoint.node.width,
+    height: endpoint.node.height
+  };
+}
+
 function assertSafeRoute(
   route: ReturnType<typeof routeBridge>,
-  source: Frame,
-  target: Frame,
+  source: RouteEndpoint,
+  target: RouteEndpoint,
   others: Frame[],
   label: string
 ): void {
@@ -161,9 +171,42 @@ function assertSafeRoute(
       `${label} segment ${index} is not axis-aligned (${from.x},${from.y})→(${to.x},${to.y})`
     );
   }
+  const fromRect = representativeRect(source);
+  const toRect = representativeRect(target);
+  if (routeAxis(source.frame, target.frame) === 'horizontal') {
+    const right =
+      target.frame.x + target.frame.width / 2 >= source.frame.x + source.frame.width / 2;
+    if (!source.port)
+      assert.equal(
+        route.sourcePoint.x,
+        right ? fromRect.x + fromRect.width : fromRect.x,
+        `${label} source is not on its facing edge`
+      );
+    if (!target.port)
+      assert.equal(
+        route.targetPoint.x,
+        right ? toRect.x : toRect.x + toRect.width,
+        `${label} target is not on its facing edge`
+      );
+  } else {
+    const down =
+      target.frame.y + target.frame.height / 2 >= source.frame.y + source.frame.height / 2;
+    if (!source.port)
+      assert.equal(
+        route.sourcePoint.y,
+        down ? fromRect.y + fromRect.height : fromRect.y,
+        `${label} source is not on its facing edge`
+      );
+    if (!target.port)
+      assert.equal(
+        route.targetPoint.y,
+        down ? toRect.y : toRect.y + toRect.height,
+        `${label} target is not on its facing edge`
+      );
+  }
   const bands = [
-    { name: 'source', band: titleBandOf(source) },
-    { name: 'target', band: titleBandOf(target) },
+    { name: 'source', band: titleBandOf(source.frame) },
+    { name: 'target', band: titleBandOf(target.frame) },
     ...others.map((box, index) => ({ name: `other[${index}]`, band: titleBandOf(box) }))
   ];
   for (const { name, band } of bands) {
@@ -201,7 +244,7 @@ test('stacked mixed-width frames route vertically, not through title bands', () 
   const target = nodeEndpoint(td, fakeNode(nodeLocalX, nodeLocalY, 280, 92));
 
   const routed = routeBridge(source, target, ['td-integration'], [recall]);
-  assertSafeRoute(routed, sidecar, td, [recall], 'sidecar/td-integration');
+  assertSafeRoute(routed, source, target, [recall], 'sidecar/td-integration');
   assert.ok(
     routed.label.y > sidecar.y + sidecar.height && routed.label.y < td.y,
     `label y ${routed.label.y} is not in the stacked corridor`
@@ -210,6 +253,68 @@ test('stacked mixed-width frames route vertically, not through title bands', () 
     routed.sourcePoint.y >= sidecar.y + TITLE_H,
     `project representative anchors inside the sidecar title band at y=${routed.sourcePoint.y}`
   );
+});
+
+test('a horizontal node-to-node target anchors on its near edge, not the far one', () => {
+  const left = frame(0, 0, 400, 200);
+  const rightBox = frame(400 + COMPOSITION_METRICS.gap, 0, 300, 200);
+  const source = nodeEndpoint(left, fakeNode(40, 40, 100, 80));
+  const target = nodeEndpoint(
+    rightBox,
+    fakeNode(510 - (rightBox.x + COMPOSITION_METRICS.padding), 40, 100, 80)
+  );
+  const routed = routeBridge(source, target, ['call']);
+  const to = representativeRect(target);
+  assert.equal(to.x, 510);
+  assert.equal(to.x + to.width, 610);
+  assert.equal(routed.targetPoint.x, 510);
+  assertSafeRoute(routed, source, target, [], 'node-node rightward');
+});
+
+test('node and project representatives face each other on both axes', () => {
+  const left = frame(0, 0, 400, 200);
+  const rightBox = frame(400 + COMPOSITION_METRICS.gap, 0, 200, 200);
+  const top = frame(0, 0, 400, 200);
+  const bottom = frame(0, 200 + COMPOSITION_METRICS.gap, 400, 200);
+  const kinds = ['node', 'project'] as const;
+  const of = (box: Frame, kind: (typeof kinds)[number]): RouteEndpoint =>
+    kind === 'node' ? nodeEndpoint(box, fakeNode(40, 40, 100, 80)) : projectEndpoint(box);
+  for (const src of kinds) {
+    for (const tgt of kinds) {
+      const hSource = of(left, src);
+      const hTarget = of(rightBox, tgt);
+      assertSafeRoute(
+        routeBridge(hSource, hTarget, ['h']),
+        hSource,
+        hTarget,
+        [],
+        `h ${src}→${tgt}`
+      );
+      assertSafeRoute(
+        routeBridge(hTarget, hSource, ['hr']),
+        hTarget,
+        hSource,
+        [],
+        `h ${tgt}→${src}`
+      );
+      const vSource = of(top, src);
+      const vTarget = of(bottom, tgt);
+      assertSafeRoute(
+        routeBridge(vSource, vTarget, ['v']),
+        vSource,
+        vTarget,
+        [],
+        `v ${src}→${tgt}`
+      );
+      assertSafeRoute(
+        routeBridge(vTarget, vSource, ['vr']),
+        vTarget,
+        vSource,
+        [],
+        `v ${tgt}→${src}`
+      );
+    }
+  }
 });
 
 const modes = ['open', 'collapsed'] as const;
@@ -264,7 +369,7 @@ test('mixed-width frames keep bridges out of title bands and non-endpoints on bo
             const others = placed.filter((_, index) => index !== i && index !== j);
             const label = `${engine} ${combo.join('/')} ${i}→${j}`;
             const routed = routeBridge(source, target, [label], others);
-            assertSafeRoute(routed, placed[i], placed[j], others, label);
+            assertSafeRoute(routed, source, target, others, label);
           }
         }
       }
