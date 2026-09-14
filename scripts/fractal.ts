@@ -1,8 +1,22 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { loadDirectory, loadModel, listProjects } from '../src/lib/server/models';
+import { loadDirectory, loadModel, listProjects, snapshotOf } from '../src/lib/server/models';
+import {
+  composedProjectSummary,
+  composeFromSelector,
+  inspectInComposition,
+  linksFor,
+  linksForLocated,
+  searchInComposition,
+  validateLinked,
+  validateLinkedSnapshot,
+  type CompositionSelector,
+  type LinkedValidation
+} from '../src/lib/server/composition';
+import { parseCompositionState } from '../src/lib/composition/parse';
+import type { QualifiedSelection } from '../src/lib/composition/types';
 import { inspectComponent } from '../src/lib/core/inspect';
 import { project } from '../src/lib/core/projection';
 import { showAllStructure } from '../src/lib/core/navigation';
@@ -30,10 +44,14 @@ async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
-      model: { type: 'string', default: 'delivery' },
+      model: { type: 'string' },
       directory: { type: 'string' },
       catalog: { type: 'string' },
       scene: { type: 'string' },
+      linked: { type: 'boolean' },
+      composition: { type: 'string' },
+      'composition-state': { type: 'string' },
+      selection: { type: 'string' },
       surface: { type: 'string', default: 'architecture' },
       journey: { type: 'string' },
       'collapsed-phases': { type: 'string' },
@@ -59,7 +77,7 @@ async function main() {
   const command = positionals[0] ?? 'help';
   if (values.help || command === 'help') {
     console.log(
-      `Fractal · an explorable model of software\n\nUsage: npm run cli -- <command> [options]\n\nCommands:\n  service    Manage the installed local studio (bin/fractal service --help)\n  projects   List catalog projects and their resolved model metadata\n  journeys   List available sequence journeys\n  journey    Inspect one authored journey (--journey ID)\n  sequence   Lay out an explorable sequence as JSON\n  sequence-export  Export the sequence as SVG or PNG\n  validate   Compile and validate a model and its scenes\n  inspect    Read the normalized model, or --element ID and its relationships\n  project    Resolve a mixed-depth view with underlying relationship IDs\n  layout     Resolve vector geometry for the selected view\n  export     Write SVG, 4K PNG, or an interactive offline HTML document (--output FILE)\n  themes     List available presentation themes (use --json for tokens)\n  engines    List available layout engines (use --json for metadata)\n  bench      Time the layout pipeline and fingerprint its geometry (bin/fractal bench --help)\n  shortcuts  List keyboard commands from the shared registry\n  search     Search all components, connections and views, with resolved view state\n\nOptions:\n  --model ID                     Catalog model (default delivery)\n  --catalog PATH                 Use a specific catalog.json\n  --directory PATH               Read model.c4 + fractal.json from a directory\n  --surface architecture|sequence|portable Shortcut surface (default architecture)\n  --journey ID                   Sequence journey identifier\n  --collapsed-phases ID,ID        Fold sequence phases\n  --collapsed-groups ID,ID        Combine participant columns\n  --hidden-participants ID,ID     Hide columns with explicit interaction summaries\n  --scope-phase ID               Focus a sequence phase\n  --visible-phases ID,ID         Show exact phases with ancestor context (empty shows none)\n  --scene ID                     Start from a saved scene\n  --expanded ID,ID                Override expanded elements (empty collapses all)\n  --show-all                     Expand all structure within the selected scope\n  --proposed                     Include proposed elements and relationships\n  --lens structure|trust         Boundary lens\n  --scope ID                     Focus one component; retain external connection inventory\n  --theme grove|graphite|midnight Presentation theme (default Grove)\n  --layout ID                    Layout engine for architecture views (see engines)\n  --json                         Structured output\n  --element ID                   Inspect a stable element ID\n  --query TEXT                   Search titles, identifiers and descriptions\n  --format svg|png|html          Export format (HTML includes the full model; PNG needs Chromium)\n  --output PATH                  Write result to a file\n\nExamples:\n  npm run cli -- projects --json\n  npm run cli -- validate --model delivery --json\n  npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg`
+      `Fractal · an explorable model of software\n\nUsage: npm run cli -- <command> [options]\n\nCommands:\n  service    Manage the installed local studio (bin/fractal service --help)\n  projects   List catalog projects and their resolved model metadata\n  links      List authored links and each foreign model's resolution status\n  journeys   List available sequence journeys\n  journey    Inspect one authored journey (--journey ID)\n  sequence   Lay out an explorable sequence as JSON\n  sequence-export  Export the sequence as SVG or PNG\n  validate   Compile and validate a model and its scenes (--linked for the link closure)\n  inspect    Read the normalized model, or --element ID and its relationships\n  project    Resolve a mixed-depth view with underlying relationship IDs\n  layout     Resolve vector geometry for the selected view\n  export     Write SVG, 4K PNG, or an interactive offline HTML document (--output FILE)\n  themes     List available presentation themes (use --json for tokens)\n  engines    List available layout engines (use --json for metadata)\n  bench      Time the layout pipeline and fingerprint its geometry (bin/fractal bench --help)\n  shortcuts  List keyboard commands from the shared registry\n  search     Search all components, connections and views, with resolved view state\n\nOptions:\n  --model ID                     Catalog model (default delivery)\n  --catalog PATH                 Use a specific catalog.json\n  --directory PATH               Read model.c4 + fractal.json from a directory\n  --linked                       Validate the declared linked-project closure\n  --composition ID               Authored composition from the root links.json\n  --composition-state FILE       Explicit resolved composition state file\n  --selection JSON               Qualified selection for inspect in a composition\n  --surface architecture|sequence|portable Shortcut surface (default architecture)\n  --journey ID                   Sequence journey identifier\n  --collapsed-phases ID,ID        Fold sequence phases\n  --collapsed-groups ID,ID        Combine participant columns\n  --hidden-participants ID,ID     Hide columns with explicit interaction summaries\n  --scope-phase ID               Focus a sequence phase\n  --visible-phases ID,ID         Show exact phases with ancestor context (empty shows none)\n  --scene ID                     Start from a saved scene\n  --expanded ID,ID                Override expanded elements (empty collapses all)\n  --show-all                     Expand all structure within the selected scope\n  --proposed                     Include proposed elements and relationships\n  --lens structure|trust         Boundary lens\n  --scope ID                     Focus one component; retain external connection inventory\n  --theme grove|graphite|midnight Presentation theme (default Grove)\n  --layout ID                    Layout engine for architecture views (see engines)\n  --json                         Structured output\n  --element ID                   Inspect a stable element ID\n  --query TEXT                   Search titles, identifiers and descriptions\n  --format svg|png|html          Export format (HTML includes the full model; PNG needs Chromium)\n  --output PATH                  Write result to a file\n\nExamples:\n  npm run cli -- projects --json\n  npm run cli -- links --model sidecar --json\n  npm run cli -- validate --model delivery --json\n  npm run cli -- layout --model host --composition plugins\n  npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg`
     );
     return;
   }
@@ -96,6 +114,40 @@ async function main() {
     return;
   }
   const catalogOptions = { catalog: values.catalog };
+  const printResult = async (result: unknown): Promise<void> => {
+    const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+    if (values.output) {
+      await writeFile(values.output, text + '\n');
+      console.log(JSON.stringify({ output: resolve(values.output) }));
+    } else console.log(text);
+  };
+  const compositionCommands = ['project', 'layout', 'inspect', 'search'];
+  const hasComposition =
+    values.composition !== undefined || values['composition-state'] !== undefined;
+  if (hasComposition && !compositionCommands.includes(command))
+    throw new Error(
+      '--composition and --composition-state are supported for project, layout, inspect and search'
+    );
+  if (command === 'links') {
+    const result = values.directory
+      ? await linksForLocated(await loadDirectory(resolve(values.directory)), catalogOptions)
+      : await linksFor(values.model ?? 'delivery', catalogOptions);
+    await printResult(result);
+    return;
+  }
+  if (command === 'validate' && values.linked) {
+    const validation = values.directory
+      ? await validateLinkedSnapshot(
+          snapshotOf(await loadDirectory(resolve(values.directory))),
+          catalogOptions
+        )
+      : await validateLinked(values.model ?? 'delivery', catalogOptions);
+    if (values.json) await printResult(validation);
+    else if (!validation.valid) await printResult(validation.diagnostics);
+    else console.log(`${validation.model}: linked closure valid`);
+    if (!validation.valid) process.exitCode = 1;
+    return;
+  }
   if (command === 'projects') {
     const projects = await listProjects(catalogOptions);
     if (values.json) console.log(JSON.stringify(projects, null, 2));
@@ -110,9 +162,22 @@ async function main() {
       );
     return;
   }
-  const { model, sequences } = values.directory
+  const compositionStateFile = values['composition-state'];
+  let explicitCompositionState: ReturnType<typeof parseCompositionState> | undefined;
+  if (compositionStateFile !== undefined && compositionCommands.includes(command)) {
+    explicitCompositionState = parseCompositionState(
+      JSON.parse(await readFile(resolve(compositionStateFile), 'utf8'))
+    );
+    if (values.model !== undefined && values.model !== explicitCompositionState.root)
+      throw new Error(
+        `Composition state root ${explicitCompositionState.root} does not match --model ${values.model}`
+      );
+  }
+  const requestedModel = explicitCompositionState?.root ?? values.model ?? 'delivery';
+  const loaded = values.directory
     ? await loadDirectory(resolve(values.directory))
-    : await loadModel(values.model!, catalogOptions);
+    : await loadModel(requestedModel, catalogOptions);
+  const { model, sequences } = loaded;
   if (['journeys', 'journey', 'sequence', 'sequence-export'].includes(command)) {
     let result: unknown;
     if (command === 'journeys') {
@@ -177,6 +242,41 @@ async function main() {
       await writeFile(values.output, text + '\n');
       console.log(JSON.stringify({ output: resolve(values.output) }));
     } else console.log(text);
+    return;
+  }
+  if (hasComposition) {
+    const root = values.directory ? snapshotOf(loaded) : requestedModel;
+    if (
+      values.directory &&
+      explicitCompositionState &&
+      loaded.model.id !== explicitCompositionState.root
+    )
+      throw new Error(
+        `Composition state root ${explicitCompositionState.root} does not match --directory model ${loaded.model.id}`
+      );
+    const selector: CompositionSelector = explicitCompositionState
+      ? { state: explicitCompositionState }
+      : { composition: values.composition };
+    if (command === 'project') {
+      const { composed } = await composeFromSelector(root, selector, catalogOptions);
+      await printResult(composedProjectSummary(composed));
+      return;
+    }
+    if (command === 'layout') {
+      const { composed } = await composeFromSelector(root, selector, catalogOptions);
+      await printResult(composed);
+      return;
+    }
+    if (command === 'inspect') {
+      if (values.selection === undefined)
+        throw new Error('inspect with --composition requires --selection JSON');
+      const selection = JSON.parse(values.selection) as QualifiedSelection;
+      await printResult(await inspectInComposition(root, selector, selection, catalogOptions));
+      return;
+    }
+    await printResult(
+      await searchInComposition(root, selector, values.query ?? '', catalogOptions)
+    );
     return;
   }
   const scene = values.scene ? model.scenes.find((s) => s.id === values.scene) : model.scenes[0];

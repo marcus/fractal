@@ -22,11 +22,12 @@ Usage: npm run cli -- <command> [options]
 Commands:
   service    Manage the installed local studio (bin/fractal service --help)
   projects   List catalog projects and their resolved model metadata
+  links      List authored links and each foreign model's resolution status
   journeys   List available sequence journeys
   journey    Inspect one authored journey (--journey ID)
   sequence   Lay out an explorable sequence as JSON
   sequence-export  Export the sequence as SVG or PNG
-  validate   Compile and validate a model and its scenes
+  validate   Compile and validate a model and its scenes (--linked for the link closure)
   inspect    Read the normalized model, or --element ID and its relationships
   project    Resolve a mixed-depth view with underlying relationship IDs
   layout     Resolve vector geometry for the selected view
@@ -41,6 +42,10 @@ Options:
   --model ID                     Catalog model (default delivery)
   --catalog PATH                 Use a specific catalog.json
   --directory PATH               Read model.c4 + fractal.json from a directory
+  --linked                       Validate the declared linked-project closure
+  --composition ID               Authored composition from the root links.json
+  --composition-state FILE       Explicit resolved composition state file
+  --selection JSON               Qualified selection for inspect in a composition
   --surface architecture|sequence|portable Shortcut surface (default architecture)
   --journey ID                   Sequence journey identifier
   --collapsed-phases ID,ID        Fold sequence phases
@@ -64,11 +69,13 @@ Options:
 
 Examples:
   npm run cli -- projects --json
+  npm run cli -- links --model sidecar --json
   npm run cli -- validate --model delivery --json
+  npm run cli -- layout --model host --composition plugins
   npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg
 ```
 
-`projects`, `journeys`, `journey`, `sequence`, `sequence-export`, `validate`, `inspect`, `project`, `layout`, `export`, `themes`, `engines`, `shortcuts`, `search` print this same text with `--help`.
+`projects`, `links`, `journeys`, `journey`, `sequence`, `sequence-export`, `validate`, `inspect`, `project`, `layout`, `export`, `themes`, `engines`, `shortcuts`, `search` print this same text with `--help`.
 
 ## fractal service
 

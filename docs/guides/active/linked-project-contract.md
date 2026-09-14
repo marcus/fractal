@@ -204,3 +204,37 @@ Phase 1 adds loader integration, revision hashing, targeted resolution and real 
 validation alongside CLI/HTTP/canvas wiring. Later slices add state URL replay, proposed/scene
 projection rules, runtime limits, SVG namespaces and portable/export behavior. None should be
 inferred from the successful phase 0 parsers.
+
+## CLI and HTTP
+
+Phase 1 ships a thin application boundary in `src/lib/server/composition.ts` that the CLI and the
+HTTP routes both call; no resolution, validation or caching rule is duplicated in a handler. Only
+the configured catalog is read: routes accept model IDs, never directories or URLs, while the CLI
+keeps `--directory` as an explicit local entry point whose links resolve through the catalog.
+
+- `linksFor(model, options)` returns the parsed links, the root revision and one
+  `{ model, status, message? }` entry per distinct foreign model named by links or connections,
+  resolved and validated individually without composing. Unknown roots throw.
+- `validateLinked(model, options)` runs local `from`/endpoint existence and explicit-UID checks,
+  then resolves the declared link closure with a visited set (a target's own links are followed
+  only when it resolves) and a 20-model traversal budget (`budget_exceeded`, recovery `reduce`).
+  Unresolved claims are diagnostics, never throws.
+- `composeFromSelector(root, selector, options)` builds state from an authored composition ID or
+  an explicit saved state (mutually exclusive), composes it, and caches by `compositionKey` — the
+  canonical state plus the participating revision vector. `revisionConflict` compares a caller's
+  vector with what was loaded.
+- `inspectInComposition` and `searchInComposition` qualify results with their model; unopened link
+  targets are never searched and appear as link metadata results.
+
+CLI additions: `fractal links --model X [--json]`; `fractal validate --model X --linked` (exit 1
+and diagnostics JSON when invalid); and `--composition ID` / `--composition-state FILE` on
+`project`, `layout`, `inspect` and `search`. `layout` prints the full `ComposedDiagram`; `project`
+prints it without per-project `diagram` geometry; `inspect --selection '<json>'` prints the
+qualified inspection; `search` searches every participating model. Without the new flags every
+existing command's output is unchanged.
+
+HTTP additions: `GET /api/composition/links?model=X`, `POST /api/composition/validate { model }`,
+and `POST /api/composition/render { root, composition?, state?, revisions? }`. Invalid input
+(contract errors, unknown root, mutually exclusive selectors) is 400; a changed participating
+revision is 409 with `{ error, code: 'revision_changed', model }`; an over-budget state payload is
+422; recoverable target failures stay 200 with diagnostics in the body.
