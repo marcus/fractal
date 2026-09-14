@@ -95,11 +95,20 @@ instead of re-fitting.
 how architecture geometry is computed, benchmarked, and swapped. It keeps the current appearance
 as the fingerprinted default, adds a layout benchmark CLI, and opens a layout-engine seam.
 
+## Linked project diagrams
+
+[Linked project diagrams on one canvas](linked-project-diagrams.md) is the proposed implementation
+plan for revealing repository-owned architecture diagrams together, with explicit cross-project
+connections and independent project layouts. Sidecar → td and Recall is the steel thread. It covers
+identity, resolution, boundaries, performance budgets, surface parity and portable exports;
+implementation has not started.
+
 ## Saved workspace idea
 
 [Multi-diagram workspace canvas](../planning/multi-diagram-canvas.md) records an idea for
 side-by-side, independently navigable architecture and sequence frames across projects. It is
-future exploration, not part of the sequence prototype.
+future exploration, not part of the sequence prototype. Connected architecture projects are scoped
+by the linked-project plan above; arbitrary frames and mixed diagram types remain in this idea.
 
 ## Sequence implementation readiness
 
