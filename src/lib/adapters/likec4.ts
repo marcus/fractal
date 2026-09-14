@@ -1,5 +1,6 @@
 import { LikeC4 } from 'likec4';
 import type { Boundary, Element, Model, Scene, Status } from '../core/types';
+import type { IdentityOrigins } from '../composition/types';
 import { getTheme } from '../core/themes';
 import { getLayoutEngineInfo } from '../core/layout-engines';
 
@@ -64,8 +65,16 @@ function status(
  * uid is recommended for durable identity. Unannotated imports fall back to the
  * LikeC4 source ID (hierarchical for elements, generated for relationships), which
  * may change after restructuring. Companion references always use normalized IDs.
+ *
+ * Alongside the model this returns identity origins: whether each normalized element
+ * or relationship ID was explicitly authored (`uid`) or generated (`fallback`). Origin
+ * is decided by metadata presence, never by the ID's spelling. The composition core
+ * uses it to require explicit UIDs for cross-project references.
  */
-export async function parseModel(source: string, companion: unknown): Promise<Model> {
+export async function parseModelWithOrigins(
+  source: string,
+  companion: unknown
+): Promise<{ model: Model; origins: IdentityOrigins }> {
   string(source, 'source');
   const config = object(companion, 'companion');
   const allowed = new Set([
@@ -104,16 +113,19 @@ export async function parseModel(source: string, companion: unknown): Promise<Mo
         identity(element.getMetadata('uid') ?? element.id, `${element.id}.uid`)
       ])
     );
+    const origins: IdentityOrigins = { elements: {}, relationships: {} };
     const elements: Element[] = [];
     // LikeC4 yields parents before children. Sorting also makes that contract explicit.
     sourceElements.sort((a, b) => a.id.split('.').length - b.id.split('.').length);
     for (const element of sourceElements) {
       const metadata = element.getMetadata() ?? {};
+      const id = sourceIds.get(element.id)!;
       const parent = element.parent ? sourceIds.get(element.parent.id)! : null;
       const parentElement = elements.find((candidate) => candidate.id === parent);
       const evidenceValue = metadata.evidence;
+      origins.elements[id] = element.getMetadata('uid') === undefined ? 'fallback' : 'explicit';
       elements.push({
-        id: sourceIds.get(element.id)!,
+        id,
         sourceId: element.id,
         parent,
         title: element.title,
@@ -137,15 +149,20 @@ export async function parseModel(source: string, companion: unknown): Promise<Mo
     );
     if (!elements.length) throw new Error('model must contain at least one element');
     const elementIds = new Set(elements.map((element) => element.id));
-    const relationships = Array.from(parsed.relationships()).map((relation) => ({
-      id: identity(relation.getMetadata('uid') ?? relation.id, `relationship ${relation.id}.uid`),
-      source: sourceIds.get(relation.source.id)!,
-      target: sourceIds.get(relation.target.id)!,
-      title: relation.title ?? '',
-      kind: relation.kind ?? 'relates',
-      description: relation.description.text ?? '',
-      status: status(relation.getMetadata() ?? {}, relation.tags, `relationship ${relation.id}`)
-    }));
+    const relationships = Array.from(parsed.relationships()).map((relation) => {
+      const uid = relation.getMetadata('uid');
+      const id = identity(uid ?? relation.id, `relationship ${relation.id}.uid`);
+      origins.relationships[id] = uid === undefined ? 'fallback' : 'explicit';
+      return {
+        id,
+        source: sourceIds.get(relation.source.id)!,
+        target: sourceIds.get(relation.target.id)!,
+        title: relation.title ?? '',
+        kind: relation.kind ?? 'relates',
+        description: relation.description.text ?? '',
+        status: status(relation.getMetadata() ?? {}, relation.tags, `relationship ${relation.id}`)
+      };
+    });
     unique(
       relationships.map((relation) => relation.id),
       'relationships'
@@ -243,8 +260,13 @@ export async function parseModel(source: string, companion: unknown): Promise<Mo
       scenes.map((scene) => scene.id),
       'scenes'
     );
-    return { ...header, elements, relationships, boundaries, scenes };
+    return { model: { ...header, elements, relationships, boundaries, scenes }, origins };
   } finally {
     await api.dispose();
   }
+}
+
+/** The compiled model alone; identity origins remain available from `parseModelWithOrigins`. */
+export async function parseModel(source: string, companion: unknown): Promise<Model> {
+  return (await parseModelWithOrigins(source, companion)).model;
 }
