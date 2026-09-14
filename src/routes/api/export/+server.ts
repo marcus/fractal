@@ -4,7 +4,7 @@ import type { RevisionVector } from '$lib/composition/revision';
 import type { ViewState } from '$lib/core/types';
 import { loadModel, snapshotOf } from '$lib/server/models';
 import { renderDiagram } from '$lib/server/render';
-import { exportHtml } from '$lib/adapters/html';
+import { exportHtml, shouldExportLinkedHtml } from '$lib/adapters/html';
 import { exportSvg } from '$lib/core/svg';
 import {
   BudgetExceededError,
@@ -87,8 +87,12 @@ export const POST: RequestHandler = async ({ request }) => {
   // A non-object body never names a selector; it falls through to the single-model
   // path and fails there exactly as before.
   const body = typeof input === 'object' && input !== null ? input : null;
-  if (body !== null && body.include !== undefined && !isStringArray(body.include))
-    return json({ error: 'include must be an array of strings' }, { status: 400 });
+  if (body !== null && body.include !== undefined) {
+    if (!isStringArray(body.include))
+      return json({ error: 'include must be an array of strings' }, { status: 400 });
+    if (body.format !== 'html')
+      return json({ error: '--include is only supported for HTML export' }, { status: 400 });
+  }
   if (body !== null && (body.composition !== undefined || body.compositionState !== undefined)) {
     const input = body;
     if (input.composition !== undefined && typeof input.composition !== 'string')
@@ -175,11 +179,11 @@ export const POST: RequestHandler = async ({ request }) => {
     if (input.format !== undefined && !['svg', 'html'].includes(input.format as string))
       throw new Error('Format must be svg or html');
     if (input.format === 'html') {
-      const include = input.include;
-      if (isStringArray(include)) {
-        const snapshots = [snapshotOf(loaded)];
+      const include = isStringArray(input.include) ? input.include : undefined;
+      const snapshots = [snapshotOf(loaded)];
+      if (shouldExportLinkedHtml(include, loaded.links)) {
         const sequencesByModel: Record<string, typeof sequences> = { [model.id]: sequences };
-        for (const id of include) {
+        for (const id of include ?? []) {
           if (id === model.id) continue;
           const other = await loadModel(id);
           snapshots.push(snapshotOf(other));
@@ -190,7 +194,7 @@ export const POST: RequestHandler = async ({ request }) => {
             state,
             scene: input.scene,
             sequences,
-            include,
+            include: include ?? [],
             snapshots,
             sequencesByModel
           }),

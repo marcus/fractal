@@ -34,7 +34,7 @@ import { layout } from '../src/lib/core/layout';
 import { LAYOUT_ENGINES, getLayoutEngineInfo } from '../src/lib/core/layout-engines';
 import { renderPng } from '../src/lib/adapters/png';
 import { buildPortableAssets } from './portable-assets';
-import { exportHtml, exportLinkedDocument } from '../src/lib/adapters/html';
+import { exportHtml, exportLinkedDocument, shouldExportLinkedHtml } from '../src/lib/adapters/html';
 import { exportSvg } from '../src/lib/core/svg';
 import { shortcutsForSurface } from '../src/lib/core/shortcuts';
 import { searchModel, revealSearchResult } from '../src/lib/core/search';
@@ -387,11 +387,16 @@ async function main() {
       if (values.format === 'html') {
         if (!values.output) throw new Error('HTML export requires --output');
         const assets = await buildPortableAssets();
-        if (values.include !== undefined) {
-          const extras = values.include
-            .split(',')
-            .map((id) => id.trim())
-            .filter(Boolean);
+        const extras =
+          values.include === undefined
+            ? []
+            : values.include
+                .split(',')
+                .map((id) => id.trim())
+                .filter(Boolean);
+        if (
+          shouldExportLinkedHtml(values.include === undefined ? undefined : extras, loaded.links)
+        ) {
           const snapshots = [snapshotOf(loaded)];
           const sequencesByModel: Record<string, typeof sequences> = { [model.id]: sequences };
           for (const id of extras) {

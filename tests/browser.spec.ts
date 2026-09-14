@@ -2390,6 +2390,23 @@ test('portable HTML linked composition works offline from a file', async ({ page
       'Diagram not opened'
     );
     await expect(page.locator('[data-stub-target="third"]')).toContainText('Diagram not opened');
+
+    await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
+    await page.getByRole('menuitemradio', { name: 'Trust and detail' }).click();
+    await expect(page.locator('[data-node-id="plugin:cli"]')).toBeVisible({ timeout: 30000 });
+    await page.waitForFunction(() => location.hash.includes('composition='));
+    await page.reload();
+    await expect(page.locator('[data-linked-contract="1"]')).toBeVisible();
+    await expect(page.locator('[data-node-id="plugin:cli"]')).toBeVisible({ timeout: 30000 });
+
+    await page.getByRole('button', { name: 'Explore', exact: true }).click();
+    await page.getByRole('searchbox').fill('Plugin records');
+    await page
+      .getByRole('navigation', { name: 'Explore document' })
+      .getByRole('button', { name: 'Plugin records' })
+      .click();
+    await expect(page.locator('.inspector h2')).toHaveText('Plugin records');
+
     expect(blocked).toEqual([]);
     expect(errors).toEqual([]);
   } finally {

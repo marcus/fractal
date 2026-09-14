@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { compose } from '../composition/compose';
 import { openProject, rootState, stateFromComposition } from '../composition/state';
 import { staticResolver, type ProjectSnapshot } from '../composition/snapshot';
-import type { CompositionState } from '../composition/types';
+import type { CompositionState, ProjectLinks } from '../composition/types';
 import { layout } from '../core/layout';
 import {
   collectExcludedLinks,
@@ -36,8 +36,10 @@ export interface HtmlExportOptions {
    */
   diagram?: () => Promise<Diagram>;
   /**
-   * Extra catalog IDs to embed with the root. Presence selects linked-document export; the root
-   * is always included. Omit for the existing single-model document.
+   * Extra catalog IDs to embed with the root. The root is always included. Omit together with
+   * a root that has no links.json for the existing single-model document. A root that owns
+   * links still takes the linked path with this defaulting to `[]` (root-only, every link
+   * excluded).
    */
   include?: string[];
   /** Preloaded snapshots covering the root and every included id. Required when `include` is set. */
@@ -105,14 +107,21 @@ function initialLinkedState(
  * Build the linked portable document and its scope report. Callers write the HTML and print
  * the report; a scene is not a publication filter.
  */
+/** Linked HTML when `--include` is present or the root owns `links.json`. */
+export function shouldExportLinkedHtml(
+  include: string[] | undefined,
+  links: ProjectLinks | null | undefined
+): boolean {
+  return include !== undefined || links != null;
+}
+
 export async function exportLinkedDocument(
   model: Model,
   options: HtmlExportOptions
 ): Promise<{ document: PortableLinkedDocument; html: string; report: LinkedHtmlReport }> {
-  if (options.include === undefined)
-    throw new Error('Linked HTML export requires an explicit include set');
+  const include = options.include ?? [];
   const loaded = options.snapshots ?? [];
-  const includedIds = uniqueIds(model.id, options.include);
+  const includedIds = uniqueIds(model.id, include);
   const byId = snapshotById(loaded);
   const missing = includedIds.filter((id) => !byId.has(id));
   if (missing.length)
@@ -157,8 +166,12 @@ export async function exportLinkedDocument(
 }
 
 export async function exportHtml(model: Model, options: HtmlExportOptions): Promise<string> {
-  if (options.include !== undefined) {
-    const { html } = await exportLinkedDocument(model, options);
+  const rootLinks = options.snapshots?.find((snapshot) => snapshot.id === model.id)?.links;
+  if (shouldExportLinkedHtml(options.include, rootLinks)) {
+    const { html } = await exportLinkedDocument(model, {
+      ...options,
+      include: options.include ?? []
+    });
     return html;
   }
   const scene = options.scene ?? model.scenes[0]?.id;

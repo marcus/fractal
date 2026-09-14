@@ -30,9 +30,9 @@ bin/fractal export --model sidecar --include td,recall --format html \
   --output /path/to/artifacts/plugins.html
 ```
 
-`--include` names extra catalog IDs. The root is always included. The command prints that scope before the file is useful: `included` (each project id, title and revision), `excluded` (authored links whose targets were not included), and a versioned `revisions` manifest. A scene is the starting view, not a publication filter — each included project contributes its full model, scenes, evidence, `links.json` and identity origins.
+`--include` names extra catalog IDs. The root is always included. Omitting `--include` on a root that owns `links.json` still writes a linked document: the included set is the root only, and every authored link is reported as excluded. A root without `links.json` stays a single-model document. The command prints that scope: `included` (each project id, title and revision), `excluded` (authored links whose targets were not included), and a versioned `revisions` manifest. A scene is the starting view, not a publication filter — each included project contributes its full model, scenes, evidence, `links.json` and identity origins.
 
-`POST /api/export` accepts the same set as an `include` array of model IDs alongside `format: "html"`.
+`POST /api/export` accepts the same set as an `include` array of model IDs alongside `format: "html"`. `include` on any other format is 400.
 
 The document is a snapshot. It does not read repositories at runtime and does not update when those repositories change. Imported snapshots are read-only. Links to projects left out of `--include`, and links whose targets were unavailable at export, remain honest placeholders and never cause a network fetch.
 
