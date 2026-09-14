@@ -196,7 +196,10 @@ unreadable body copy and bridge labels become restrained skeleton bars rather th
 vanishing; titles, project identity, inspection data and exports remain complete. A
 restored permalink frames the selected project, or the root when nothing is selected;
 Fit remains the explicit way to frame the whole composition. Reference cards that share
-an authored anchor stack with measured spacing instead of overlapping.
+an owner use a measured footer lane inside its project frame, keeping both the cards and
+the independently laid-out model content unobstructed. Expanded-container fills are ground:
+local relationships paint above them and below the interactive node cards and titles, so nesting
+never erases a connection.
 
 Bridges run in the theme edge color from the visible representative of each endpoint,
 with the arrow direction retained at every detail level. The bridge label sits on a halo

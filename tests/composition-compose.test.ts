@@ -7,8 +7,13 @@ import { compose } from '../src/lib/composition/compose';
 import { inspectConnection, inspectQualified } from '../src/lib/composition/inspect';
 import { parseCompositionState, parseLinks } from '../src/lib/composition/parse';
 import { COMPOSITION_METRICS, placeFrames } from '../src/lib/composition/place';
+import { COMPOSITION_PORT_GAP, compositionPortGeometry } from '../src/lib/composition/ports';
 import { searchComposition } from '../src/lib/composition/search';
-import { REFERENCE_STUB_GAP, referenceStubGeometries } from '../src/lib/composition/stubs';
+import {
+  REFERENCE_STUB_GAP,
+  REFERENCE_STUB_LANE_PADDING,
+  referenceStubGeometries
+} from '../src/lib/composition/stubs';
 import {
   closeProject,
   openProject,
@@ -63,6 +68,32 @@ const openState = (): CompositionState =>
     { model: 'host', scene: 'overview', mode: 'open', view: view() },
     { model: 'plugin', scene: 'overview', mode: 'open', view: view() }
   ]);
+
+function hostWithTwoStubs(host: ProjectSnapshot): ProjectSnapshot {
+  const links = host.links!;
+  return {
+    ...host,
+    links: {
+      ...links,
+      links: links.links.map((link) =>
+        link.id === 'unavailable' ? { ...link, from: 'cli' } : link
+      ),
+      connections: [
+        ...links.connections,
+        {
+          id: 'unavailable-call',
+          source: { model: 'host', element: 'cli' },
+          target: { model: 'missing-plugin', element: 'cli' },
+          title: 'Calls unregistered plugin',
+          kind: 'uses',
+          status: 'current',
+          description: 'A second reference at the same local anchor.',
+          evidence: []
+        }
+      ]
+    }
+  };
+}
 
 const titleBand = (project: { frame: Frame; titleHeight: number }): Frame => ({
   x: project.frame.x,
@@ -142,36 +173,210 @@ test('host and plugin compose as two frames with both owned bridges and a not_lo
 
 test('reference cards sharing an anchor stack and participate in composition bounds', async () => {
   const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
-  const links = host.links!;
-  const modified: ProjectSnapshot = {
-    ...host,
-    links: {
-      ...links,
-      links: links.links.map((link) =>
-        link.id === 'unavailable' ? { ...link, from: 'cli' } : link
-      ),
-      connections: [
-        ...links.connections,
-        {
-          id: 'unavailable-call',
-          source: { model: 'host', element: 'cli' },
-          target: { model: 'missing-plugin', element: 'cli' },
-          title: 'Calls unregistered plugin',
-          kind: 'uses',
-          status: 'current',
-          description: 'A second reference at the same local anchor.',
-          evidence: []
-        }
-      ]
-    }
-  };
+  const modified = hostWithTwoStubs(host);
   const composed = await compose(staticResolver([modified, plugin]), openState());
   const cards = [...referenceStubGeometries(composed).values()];
 
   assert.equal(cards.length, 2);
   assert.equal(cards[0].position.x, cards[1].position.x);
   assert.equal(cards[1].position.y, cards[0].position.y + cards[0].height + REFERENCE_STUB_GAP);
+  const owner = composed.projects.find((project) => project.model === 'host')!;
+  const diagramBottom = owner.content.y + owner.diagram!.height;
+  for (const card of cards) {
+    assert.ok(card.position.y > diagramBottom, 'reference card clears all laid-out model content');
+    assert.ok(card.position.x >= owner.frame.x, 'reference card stays inside its owner frame');
+    assert.ok(
+      card.position.x + card.width <= owner.frame.x + owner.frame.width,
+      'reference card stays inside its owner frame'
+    );
+    assert.ok(
+      card.position.y + card.height <= owner.frame.y + owner.frame.height,
+      'reference card stays inside its owner frame'
+    );
+  }
   assert.ok(composed.height >= cards[1].position.y + cards[1].height);
+});
+
+test('reference-card lanes clear scoped perimeter ports and pad collapsed frames', async () => {
+  const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
+  const modified = hostWithTwoStubs(host);
+  for (const engine of ['elk-layered', 'elk-layered-down'] as const) {
+    const composed = await compose(
+      staticResolver([modified, plugin]),
+      stateOf(
+        [
+          {
+            model: 'host',
+            scene: 'overview',
+            mode: 'open',
+            view: { ...view(), scope: 'store' }
+          },
+          { model: 'plugin', scene: 'overview', mode: 'open', view: view() }
+        ],
+        engine
+      )
+    );
+    const owner = composed.projects.find((project) => project.model === 'host')!;
+    const cards = [...referenceStubGeometries(composed).values()].filter(
+      (card) =>
+        card.position.x >= owner.frame.x && card.position.x < owner.frame.x + owner.frame.width
+    );
+    const port = owner.ports.find((candidate) =>
+      engine === 'elk-layered' ? candidate.side === 'right' : candidate.side === 'bottom'
+    )!;
+    assert.ok(port, `${engine} has the scoped endpoint port`);
+    const first = cards[0];
+    const last = cards.at(-1)!;
+    const portGeometry = compositionPortGeometry(port.side, port.point, port.labelLines);
+    if (port.side === 'left' || port.side === 'right') {
+      assert.ok(
+        portGeometry.position.y + portGeometry.height <= first.position.y,
+        `${engine} side port clears the footer lane`
+      );
+    } else {
+      assert.ok(
+        last.position.y + last.height + 8 <= portGeometry.position.y,
+        `${engine} bottom port clears the footer lane`
+      );
+    }
+  }
+
+  const longLabelHost: ProjectSnapshot = {
+    ...modified,
+    model: {
+      ...modified.model,
+      elements: modified.model.elements.map((element) =>
+        element.id === 'cli'
+          ? {
+              ...element,
+              title:
+                'Plugin adapter with an intentionally long scoped endpoint label spanning many measured lines'
+            }
+          : element
+      )
+    }
+  };
+  for (const engine of ['elk-layered', 'elk-layered-down'] as const) {
+    const longLabel = await compose(
+      staticResolver([longLabelHost, plugin]),
+      stateOf(
+        [
+          {
+            model: 'host',
+            scene: 'overview',
+            mode: 'open',
+            view: { ...view(), scope: 'store' }
+          },
+          { model: 'plugin', scene: 'overview', mode: 'open', view: view() }
+        ],
+        engine
+      )
+    );
+    const longOwner = longLabel.projects.find((project) => project.model === 'host')!;
+    const longPort = longOwner.ports.find((port) =>
+      engine === 'elk-layered' ? port.side === 'right' : port.side === 'bottom'
+    )!;
+    const longPortGeometry = compositionPortGeometry(
+      longPort.side,
+      longPort.point,
+      longPort.labelLines
+    );
+    const longCards = [...referenceStubGeometries(longLabel).values()];
+    assert.equal(longPort.labelLines.length, 3, `${engine} bounds visible port copy`);
+    assert.match(longPort.labelLines.at(-1)!, /…$/);
+    assert.match(longPort.title, /intentionally long scoped endpoint label/);
+    if (longPort.side === 'left' || longPort.side === 'right') {
+      assert.ok(
+        longPortGeometry.position.y + longPortGeometry.height <= longCards[0].position.y,
+        'bounded side-port geometry clears the footer lane'
+      );
+    } else {
+      const longLastCard = longCards.at(-1)!;
+      assert.ok(
+        longLastCard.position.y + longLastCard.height + 8 <= longPortGeometry.position.y,
+        'measured bottom-port height reserves its full inward footprint'
+      );
+    }
+  }
+
+  const twoPortHost: ProjectSnapshot = {
+    ...longLabelHost,
+    links: {
+      ...longLabelHost.links!,
+      connections: [
+        ...longLabelHost.links!.connections,
+        {
+          id: 'second-scope-port',
+          source: { model: 'host', element: 'core' },
+          target: { model: 'plugin', element: 'cli' },
+          title: 'A second scoped endpoint',
+          kind: 'uses',
+          status: 'current',
+          description: 'Exercises measured side-port packing.',
+          evidence: []
+        }
+      ]
+    },
+    model: {
+      ...longLabelHost.model,
+      elements: longLabelHost.model.elements.map((element) =>
+        element.id === 'core'
+          ? {
+              ...element,
+              title:
+                'Harbor host component with another intentionally long scoped endpoint label for packing'
+            }
+          : element
+      )
+    }
+  };
+  const packed = await compose(
+    staticResolver([twoPortHost, plugin]),
+    stateOf([
+      {
+        model: 'host',
+        scene: 'overview',
+        mode: 'open',
+        view: { ...view(), scope: 'store' }
+      },
+      { model: 'plugin', scene: 'overview', mode: 'open', view: view() }
+    ])
+  );
+  const packedOwner = packed.projects.find((project) => project.model === 'host')!;
+  const packedPorts = packedOwner.ports
+    .filter((port) => port.side === 'right')
+    .map((port) => compositionPortGeometry(port.side, port.point, port.labelLines))
+    .sort((a, b) => a.position.y - b.position.y);
+  assert.equal(packedPorts.length, 2);
+  assert.ok(
+    packedPorts[0].position.y + packedPorts[0].height + COMPOSITION_PORT_GAP <=
+      packedPorts[1].position.y,
+    'measured side ports retain their explicit gap'
+  );
+  const packedFirstCard = [...referenceStubGeometries(packed).values()][0];
+  assert.ok(
+    packedPorts[1].position.y + packedPorts[1].height <= packedFirstCard.position.y,
+    'the packed side-port group clears the footer lane'
+  );
+
+  for (const engine of ['elk-layered', 'elk-layered-down'] as const) {
+    const composed = await compose(
+      staticResolver([modified]),
+      stateOf([{ model: 'host', mode: 'collapsed', view: view() }], engine)
+    );
+    const owner = composed.projects[0];
+    for (const card of referenceStubGeometries(composed).values()) {
+      assert.ok(card.position.x >= owner.frame.x + COMPOSITION_METRICS.padding);
+      assert.ok(
+        card.position.x + card.width <=
+          owner.frame.x + owner.frame.width - COMPOSITION_METRICS.padding
+      );
+      assert.ok(
+        card.position.y + card.height <=
+          owner.frame.y + owner.frame.height - REFERENCE_STUB_LANE_PADDING
+      );
+    }
+  }
 });
 
 test('a collapsed project routes to its summary card at the fixed summary size', async () => {

@@ -133,6 +133,8 @@ export interface ComposedPort {
   side: PortSide;
   /** Perimeter point in composed coordinates; bridges end here. */
   point: Point;
+  /** Complete readable endpoint title; visual wrapping may be bounded. */
+  title: string;
   /** Measured label lines (endpoint title, with `×N` when more than one claim shares the port). */
   labelLines: string[];
   count: number;

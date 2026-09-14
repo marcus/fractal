@@ -4,8 +4,14 @@ import { wrapText } from '../core/projection';
 import type { Diagram, Point } from '../core/types';
 import { parseCompositionState } from './parse';
 import { placeFrames } from './place';
+import { COMPOSITION_PORT_GAP, compositionPortLabelLines, compositionPortSize } from './ports';
 import { routeAxis, routeBridge } from './route';
-import { referenceStubGeometries } from './stubs';
+import {
+  REFERENCE_STUB_LANE_GAP,
+  referenceStubGeometries,
+  referenceStubLaneBodyBottom,
+  reserveReferenceStubLanes
+} from './stubs';
 import type { RouteEndpoint } from './route';
 import type { ProjectSnapshot, ResolutionOutcome, SnapshotResolver } from './snapshot';
 import type {
@@ -124,25 +130,39 @@ const SIDE_ORDER: PortSide[] = ['left', 'right', 'top', 'bottom'];
  * Evenly spaced slot along one side, in composed coordinates. Side ports start below the
  * title band so bridge segments never cross it; top/bottom ports span the full width.
  */
-function portPoint(
+function portGroupPoints(
   frame: Frame,
   titleHeight: number,
   side: PortSide,
-  index: number,
-  total: number
-): Point {
+  sizes: readonly { width: number; height: number }[],
+  bodyBottom?: number
+): Point[] {
   if (side === 'left' || side === 'right') {
     const top = frame.y + titleHeight;
-    const span = Math.max(0, frame.height - titleHeight);
-    return {
-      x: side === 'left' ? frame.x : frame.x + frame.width,
-      y: top + ((index + 1) * span) / (total + 1)
-    };
+    const bottom = bodyBottom ?? frame.y + frame.height;
+    const occupied = sizes.reduce((sum, size) => sum + size.height, 0);
+    const gaps = Math.max(0, sizes.length - 1) * COMPOSITION_PORT_GAP;
+    let cursor = top + Math.max(0, (bottom - top - occupied - gaps) / 2);
+    return sizes.map((size) => {
+      const point = {
+        x: side === 'left' ? frame.x : frame.x + frame.width,
+        y: cursor + size.height / 2
+      };
+      cursor += size.height + COMPOSITION_PORT_GAP;
+      return point;
+    });
   }
-  return {
-    x: frame.x + ((index + 1) * frame.width) / (total + 1),
-    y: side === 'top' ? frame.y : frame.y + frame.height
-  };
+  const occupied = sizes.reduce((sum, size) => sum + size.width, 0);
+  const gaps = Math.max(0, sizes.length - 1) * COMPOSITION_PORT_GAP;
+  let cursor = frame.x + Math.max(0, (frame.width - occupied - gaps) / 2);
+  return sizes.map((size) => {
+    const point = {
+      x: cursor + size.width / 2,
+      y: side === 'top' ? frame.y : frame.y + frame.height
+    };
+    cursor += size.width + COMPOSITION_PORT_GAP;
+    return point;
+  });
 }
 
 /** Bridge and port labels show the title, with `×N` when N claims share one drawn bridge. */
@@ -570,6 +590,11 @@ export async function compose(
     }
   }
 
+  stubs.sort(
+    (a, b) =>
+      compare(a.owner, b.owner) ||
+      compare(a.linkId ?? a.connectionId ?? '', b.linkId ?? b.connectionId ?? '')
+  );
   // Bundle claims that draw the same visible stand-ins with identical claim fields.
   const grouped = new Map<string, RawBridge[]>();
   for (const raw of raws) {
@@ -627,21 +652,96 @@ export async function compose(
     if (group) group.push(use);
     else useGroups.set(key, [use]);
   }
+  const portLabels = new Map<string, { title: string; lines: string[] }>();
+  const bottomPaddingByOwner = new Map<string, number>();
+  const ownersWithStubLanes = new Set(stubs.map((stub) => stub.owner));
+  for (const use of uses.values()) {
+    const key = `${use.model}\n${use.side}\n${use.element}`;
+    const title = countedLabel(endpointTitle(resolved.get(use.model)!, use.element), use.count);
+    const lines = compositionPortLabelLines(title);
+    portLabels.set(key, { title, lines });
+    if (use.side === 'bottom') {
+      const clearance = compositionPortSize(lines).height + 8;
+      bottomPaddingByOwner.set(
+        use.model,
+        Math.max(bottomPaddingByOwner.get(use.model) ?? 0, clearance)
+      );
+    }
+  }
+  const bodyHeightExtraByOwner = new Map<string, number>();
+  const minWidthByOwner = new Map<string, number>();
+  for (const group of useGroups.values()) {
+    group.sort((a, b) => compare(a.element, b.element));
+    const project = framesByModel.get(group[0].model)!;
+    const sizes = group.map((use) =>
+      compositionPortSize(portLabels.get(`${use.model}\n${use.side}\n${use.element}`)!.lines)
+    );
+    if (group[0].side === 'left' || group[0].side === 'right') {
+      const required =
+        sizes.reduce((sum, size) => sum + size.height, 0) +
+        Math.max(0, sizes.length - 1) * COMPOSITION_PORT_GAP;
+      const available =
+        referenceStubLaneBodyBottom(project) -
+        (project.frame.y + project.titleHeight) +
+        (ownersWithStubLanes.has(project.model) ? REFERENCE_STUB_LANE_GAP : 0);
+      bodyHeightExtraByOwner.set(
+        project.model,
+        Math.max(bodyHeightExtraByOwner.get(project.model) ?? 0, required - available, 0)
+      );
+    } else {
+      const required =
+        sizes.reduce((sum, size) => sum + size.width, 0) +
+        Math.max(0, sizes.length - 1) * COMPOSITION_PORT_GAP;
+      minWidthByOwner.set(
+        project.model,
+        Math.max(minWidthByOwner.get(project.model) ?? 0, required)
+      );
+    }
+  }
+  reserveReferenceStubLanes(
+    placed.projects,
+    stubs,
+    diagnostics,
+    normalized.layout === 'elk-layered-down',
+    { bottomPaddingByOwner, bodyHeightExtraByOwner, minWidthByOwner }
+  );
+  placed.width = placed.projects.reduce(
+    (max, project) => Math.max(max, project.frame.x + project.frame.width),
+    0
+  );
+  placed.height = placed.projects.reduce(
+    (max, project) => Math.max(max, project.frame.y + project.frame.height),
+    0
+  );
+
   const portPoints = new Map<string, Point>();
   const portsByModel = new Map<string, ComposedPort[]>();
   for (const group of useGroups.values()) {
-    group.sort((a, b) => compare(a.element, b.element));
     const placed = framesByModel.get(group[0].model)!;
+    const labels = group.map((use) => portLabels.get(`${use.model}\n${use.side}\n${use.element}`)!);
+    const points = portGroupPoints(
+      placed.frame,
+      placed.titleHeight,
+      group[0].side,
+      labels.map(({ lines }) => compositionPortSize(lines)),
+      ownersWithStubLanes.has(placed.model)
+        ? referenceStubLaneBodyBottom(placed) +
+            (bodyHeightExtraByOwner.get(placed.model) ?? 0) +
+            REFERENCE_STUB_LANE_GAP
+        : undefined
+    );
     group.forEach((use, index) => {
-      const point = portPoint(placed.frame, placed.titleHeight, use.side, index, group.length);
-      portPoints.set(`${use.model}\n${use.side}\n${use.element}`, point);
-      const title = endpointTitle(resolved.get(use.model)!, use.element);
+      const key = `${use.model}\n${use.side}\n${use.element}`;
+      const { title, lines: labelLines } = portLabels.get(key)!;
+      const point = points[index];
+      portPoints.set(key, point);
       const ports = portsByModel.get(use.model);
       const port: ComposedPort = {
         model: use.model,
         side: use.side,
         point,
-        labelLines: wrapText(countedLabel(title, use.count), EDGE_LABEL_WIDTH, EDGE_LABEL_SIZE),
+        title,
+        labelLines,
         count: use.count,
         reveal: { model: use.model, element: use.element }
       };
@@ -739,11 +839,6 @@ export async function compose(
   }));
 
   bridges.sort((a, b) => compare(a.owner, b.owner) || compare(a.id, b.id));
-  stubs.sort(
-    (a, b) =>
-      compare(a.owner, b.owner) ||
-      compare(a.linkId ?? a.connectionId ?? '', b.linkId ?? b.connectionId ?? '')
-  );
   hidden.sort((a, b) => compare(a.owner, b.owner) || compare(a.connectionId, b.connectionId));
   diagnostics.sort(
     (a, b) => compare(a.ownerModel, b.ownerModel) || compare(a.path ?? '', b.path ?? '')

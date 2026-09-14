@@ -1,5 +1,10 @@
 <script lang="ts">
   import { COMPOSITION_METRICS } from '$lib/composition/place';
+  import {
+    COMPOSITION_PORT_CAPTION,
+    COMPOSITION_PORT_LABEL_LINE_HEIGHT,
+    compositionPortGeometry
+  } from '$lib/composition/ports';
   import { ARCHITECTURE_NODE_METRICS as NODE_METRICS } from '$lib/core/node-metrics';
   import type { ComposedPort, ComposedProject } from '$lib/composition/types';
 
@@ -34,14 +39,6 @@
   const firstLineY = $derived(
     project.frame.y + COMPOSITION_METRICS.titleClearance + NODE_METRICS.titleSize
   );
-  const PORT_TAB = { width: 78, height: 22 };
-  function portOrigin(port: ComposedPort) {
-    const { width, height } = PORT_TAB;
-    if (port.side === 'right') return { x: port.point.x - width, y: port.point.y - height / 2 };
-    if (port.side === 'left') return { x: port.point.x, y: port.point.y - height / 2 };
-    if (port.side === 'top') return { x: port.point.x - width / 2, y: port.point.y };
-    return { x: port.point.x - width / 2, y: port.point.y - height };
-  }
 </script>
 
 <g
@@ -105,7 +102,7 @@
     >
   {/if}
   {#each project.ports as port (`${port.side}:${port.reveal.element}`)}
-    {@const origin = portOrigin(port)}
+    {@const geometry = compositionPortGeometry(port.side, port.point, port.labelLines)}
     <g
       class="project-port"
       data-interactive="port"
@@ -115,8 +112,8 @@
       data-port-count={port.count}
       role="button"
       tabindex="0"
-      aria-label={`Outside-scope port: ${port.labelLines.join(' ')}. Reveal ${port.reveal.element}.`}
-      transform={`translate(${origin.x} ${origin.y})`}
+      aria-label={`Outside-scope port: ${port.title}. Reveal ${port.reveal.element}.`}
+      transform={`translate(${geometry.position.x} ${geometry.position.y})`}
       onclick={(event) => {
         event.stopPropagation();
         onrevealport?.(port);
@@ -129,12 +126,18 @@
         }
       }}
     >
-      <rect width={PORT_TAB.width} height={PORT_TAB.height} rx="7" class="port-tab" />
+      <rect width={geometry.width} height={geometry.height} rx="7" class="port-tab" />
       {#each port.labelLines as line, index}
-        <text x={PORT_TAB.width / 2} y={14 + index * 11} text-anchor="middle" class="port-label"
-          >{line}</text
+        <text
+          x={geometry.width / 2}
+          y={geometry.labelY + index * COMPOSITION_PORT_LABEL_LINE_HEIGHT}
+          text-anchor="middle"
+          class="port-label">{line}</text
         >
       {/each}
+      <text x={geometry.width / 2} y={geometry.captionY} text-anchor="middle" class="port-caption"
+        >{COMPOSITION_PORT_CAPTION}</text
+      >
     </g>
   {/each}
 </g>
@@ -198,6 +201,11 @@
     font-size: 10px;
     font-weight: 600;
     fill: var(--text, #243b34);
+    pointer-events: none;
+  }
+  .port-caption {
+    font-size: 8px;
+    fill: var(--muted, #67746e);
     pointer-events: none;
   }
 </style>

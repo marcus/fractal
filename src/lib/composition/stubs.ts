@@ -1,10 +1,14 @@
 import { wrapText } from '../core/projection';
 import type { Point } from '../core/types';
+import { COMPOSITION_METRICS, type PlacedProject } from './place';
+import { compositionPortSize } from './ports';
 import type { ComposedDiagram, CompositionDiagnostic, ReferenceStub } from './types';
 
 export const REFERENCE_STUB_WIDTH = 236;
 export const REFERENCE_STUB_BODY_WIDTH = REFERENCE_STUB_WIDTH - 32;
 export const REFERENCE_STUB_GAP = 12;
+export const REFERENCE_STUB_LANE_GAP = 16;
+export const REFERENCE_STUB_LANE_PADDING = COMPOSITION_METRICS.padding;
 
 const FIRST_DETAIL_Y = 66;
 const DETAIL_LINE_HEIGHT = 14;
@@ -55,24 +59,6 @@ export function referenceStubGuidance(
   return recovery ? RECOVERY_GUIDANCE[recovery] : null;
 }
 
-function anchorKey(stub: ReferenceStub): string {
-  return `${stub.anchor.model}\n${stub.anchor.element ?? ''}`;
-}
-
-/** Base origin below the local anchor, or below-right of the owner frame for a root link. */
-function baseOrigin(composed: ComposedDiagram, stub: ReferenceStub): Point {
-  const owner = composed.projects.find((project) => project.model === stub.anchor.model);
-  if (stub.anchor.element && owner?.diagram) {
-    const node = owner.diagram.nodes.find((candidate) => candidate.id === stub.anchor.element);
-    if (node)
-      return { x: owner.content.x + node.x, y: owner.content.y + node.y + node.height + 12 };
-  }
-  const frame = owner?.frame ?? composed.projects[0]?.frame;
-  return frame
-    ? { x: frame.x + frame.width - REFERENCE_STUB_WIDTH, y: frame.y + frame.height + 16 }
-    : { x: 0, y: 0 };
-}
-
 function measuredStub(
   diagnostics: readonly CompositionDiagnostic[],
   stub: ReferenceStub
@@ -96,19 +82,136 @@ function measuredStub(
   };
 }
 
-/** Cards sharing one authored anchor form a deterministic vertical stack. */
+function stackHeight(
+  diagnostics: readonly CompositionDiagnostic[],
+  stubs: readonly ReferenceStub[]
+): number {
+  return stubs.reduce(
+    (height, stub, index) =>
+      height + measuredStub(diagnostics, stub).height + (index === 0 ? 0 : REFERENCE_STUB_GAP),
+    0
+  );
+}
+
+/**
+ * Reserve an owner-local footer lane before bridges and ports are routed. Cards remain inside
+ * their project frame without competing with the independently laid-out model content.
+ */
+export function reserveReferenceStubLanes(
+  projects: PlacedProject[],
+  stubs: readonly ReferenceStub[],
+  diagnostics: readonly CompositionDiagnostic[],
+  vertical: boolean,
+  adjustments: {
+    bottomPaddingByOwner?: ReadonlyMap<string, number>;
+    bodyHeightExtraByOwner?: ReadonlyMap<string, number>;
+    minWidthByOwner?: ReadonlyMap<string, number>;
+  } = {}
+): void {
+  const byOwner = new Map<string, ReferenceStub[]>();
+  for (const stub of stubs) {
+    const group = byOwner.get(stub.owner);
+    if (group) group.push(stub);
+    else byOwner.set(stub.owner, [stub]);
+  }
+
+  let offsetX = 0;
+  let offsetY = 0;
+  for (const project of projects) {
+    if (!vertical && offsetX) {
+      project.frame.x += offsetX;
+      project.content.x += offsetX;
+    }
+    if (vertical && offsetY) {
+      project.frame.y += offsetY;
+      project.content.y += offsetY;
+    }
+    const owned = byOwner.get(project.model);
+    const bodyExtra = adjustments.bodyHeightExtraByOwner?.get(project.model) ?? 0;
+    const bottomPadding = Math.max(
+      REFERENCE_STUB_LANE_PADDING,
+      adjustments.bottomPaddingByOwner?.get(project.model) ?? 0
+    );
+    const stubExtra = owned?.length
+      ? REFERENCE_STUB_LANE_GAP + stackHeight(diagnostics, owned) + bottomPadding
+      : 0;
+    const extra = bodyExtra + stubExtra;
+    const widthExtra = Math.max(
+      0,
+      Math.max(
+        owned?.length ? REFERENCE_STUB_WIDTH + COMPOSITION_METRICS.padding * 2 : 0,
+        adjustments.minWidthByOwner?.get(project.model) ?? 0
+      ) - project.frame.width
+    );
+    project.frame.width += widthExtra;
+    project.frame.height += extra;
+    if (vertical) offsetY += extra;
+    else offsetX += widthExtra;
+  }
+}
+
+function bottomPadding(project: ComposedDiagram['projects'][number]): number {
+  return Math.max(
+    REFERENCE_STUB_LANE_PADDING,
+    ...project.ports
+      .filter((port) => port.side === 'bottom')
+      .map((port) => compositionPortSize(port.labelLines).height + 8)
+  );
+}
+
+/** Bottom edge of the laid-out model body, before an optional reference-card footer lane. */
+export function referenceStubLaneBodyBottom(project: PlacedProject): number {
+  if (project.diagram)
+    return project.content.y + project.diagram.height + COMPOSITION_METRICS.padding;
+  const baseHeight = Math.max(
+    COMPOSITION_METRICS.summary.height,
+    project.titleHeight + COMPOSITION_METRICS.summaryBodyHeight
+  );
+  return project.frame.y + baseHeight;
+}
+
+function laneX(composed: ComposedDiagram, ownerModel: string, first: ReferenceStub): number {
+  const owner = composed.projects.find((project) => project.model === ownerModel);
+  if (!owner) return 0;
+  let desired = owner.frame.x + COMPOSITION_METRICS.padding;
+  if (first.anchor.element && owner.diagram) {
+    const node = owner.diagram.nodes.find((candidate) => candidate.id === first.anchor.element);
+    if (node) desired = owner.content.x + node.x;
+  }
+  const min = owner.frame.x + COMPOSITION_METRICS.padding;
+  const max =
+    owner.frame.x + owner.frame.width - COMPOSITION_METRICS.padding - REFERENCE_STUB_WIDTH;
+  return Math.max(min, Math.min(Math.max(min, max), desired));
+}
+
+/** Cards owned by one project form a deterministic stack in its reserved footer lane. */
 export function referenceStubGeometries(
   composed: ComposedDiagram
 ): Map<ReferenceStub, ReferenceStubGeometry> {
   const result = new Map<ReferenceStub, ReferenceStubGeometry>();
   const nextY = new Map<string, number>();
+  const xByOwner = new Map<string, number>();
+  const byOwner = new Map<string, ReferenceStub[]>();
   for (const stub of composed.stubs) {
-    const base = baseOrigin(composed, stub);
+    const group = byOwner.get(stub.owner);
+    if (group) group.push(stub);
+    else byOwner.set(stub.owner, [stub]);
+  }
+  for (const stub of composed.stubs) {
+    const owner = composed.projects.find((project) => project.model === stub.owner);
     const measured = measuredStub(composed.diagnostics, stub);
-    const key = anchorKey(stub);
-    const y = nextY.get(key) ?? base.y;
-    result.set(stub, { ...measured, position: { x: base.x, y } });
-    nextY.set(key, y + measured.height + REFERENCE_STUB_GAP);
+    const x = xByOwner.get(stub.owner) ?? laneX(composed, stub.owner, stub);
+    const y =
+      nextY.get(stub.owner) ??
+      (owner
+        ? owner.frame.y +
+          owner.frame.height -
+          bottomPadding(owner) -
+          stackHeight(composed.diagnostics, byOwner.get(stub.owner) ?? [])
+        : 0);
+    result.set(stub, { ...measured, position: { x, y } });
+    xByOwner.set(stub.owner, x);
+    nextY.set(stub.owner, y + measured.height + REFERENCE_STUB_GAP);
   }
   return result;
 }

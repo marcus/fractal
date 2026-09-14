@@ -484,12 +484,21 @@
   }
   let resizeObserver: ResizeObserver | null = null;
   onMount(() => {
-    resizeObserver = new ResizeObserver(
-      ([entry]) => (size = { width: entry.contentRect.width, height: entry.contentRect.height })
-    );
+    // The placeholder size exists only so camera math is defined before mount. In a real studio,
+    // the navigation and inspector insets can leave a very different amount of usable canvas than
+    // that placeholder suggests. Fit once from the first measured SVG box so permalink restore
+    // opens the selected project at the same scale as an explicit "Fit project" action.
+    let initialFitPending = true;
+    resizeObserver = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      size = { width, height };
+      if (initialFitPending && width > 0 && height > 0 && composed.projects.length) {
+        initialFitPending = false;
+        fitProject(initialProject());
+      }
+    });
     resizeObserver.observe(svg);
     fitInsets = measureInsets();
-    if (composed.projects.length) fitProject(initialProject());
     return () => {
       resizeObserver?.disconnect();
       resizeObserver = null;
@@ -592,7 +601,23 @@
       {#each composed.projects as entry (entry.model)}
         {#if entry.diagram}
           {@const childIds = childIdsFor(entry.model)}
-          <g class="project-content" transform={`translate(${entry.content.x} ${entry.content.y})`}>
+          <g
+            class="project-content"
+            data-project-content={dormant ? undefined : entry.model}
+            transform={`translate(${entry.content.x} ${entry.content.y})`}
+          >
+            <!-- Container fills are scenery. Paint them before relationships so a large expanded
+              parent cannot erase links between its children or across its boundary. -->
+            {#each entry.diagram.nodes
+              .filter((node) => node.expanded && nodeMounted(entry.model, node, entry.content))
+              .sort((a, b) => a.depth - b.depth) as node (node.id)}
+              <g
+                data-node-backdrop={dormant ? undefined : node.id}
+                transform={`translate(${node.x} ${node.y})`}
+              >
+                <rect width={node.width} height={node.height} rx="14" fill={theme.group} />
+              </g>
+            {/each}
             {#each entry.diagram.edges.filter( (edge) => edgeMounted(entry.model, edge, entry.content) ) as edge (edge.id)}
               {@const path = edgeCurvePath(roundedEdgeCurve(edge.points))}
               <g
@@ -633,13 +658,6 @@
                   stroke-width={selectedRelationship(entry.model, edge.id) ? 2.5 : 1.5}
                   stroke-dasharray={edge.status === 'proposed' ? '6 5' : undefined}
                 />
-              </g>
-            {/each}
-            {#each entry.diagram.nodes
-              .filter((node) => node.expanded && nodeMounted(entry.model, node, entry.content))
-              .sort((a, b) => a.depth - b.depth) as node (node.id)}
-              <g transform={`translate(${node.x} ${node.y})`}>
-                <rect width={node.width} height={node.height} rx="14" fill={theme.group} />
               </g>
             {/each}
             {#each entry.diagram.nodes.filter( (node) => nodeMounted(entry.model, node, entry.content) ) as node (node.id)}

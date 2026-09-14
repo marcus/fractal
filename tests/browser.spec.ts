@@ -1983,6 +1983,28 @@ test('a linked project opens beside its host with two frames and one bridge', as
     await expect(unavailableStub).toContainText('Diagram unavailable');
     await expect(unavailableStub).toContainText('Unknown model: missing-plugin');
     await expect(unavailableStub).toContainText('Register the project in the catalog');
+    const unavailableBox = (await unavailableStub.boundingBox())!;
+    const unavailableFrame = (await page.locator('[data-project-frame="host"]').boundingBox())!;
+    const hostNodeBoxes = await page
+      .locator('.composition-canvas [data-node-id^="host:"]')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const box = node.getBoundingClientRect();
+          return { x: box.x, y: box.y, width: box.width, height: box.height };
+        })
+      );
+    expect(
+      hostNodeBoxes.every(
+        (node) =>
+          unavailableBox.x + unavailableBox.width <= node.x ||
+          node.x + node.width <= unavailableBox.x ||
+          unavailableBox.y + unavailableBox.height <= node.y ||
+          node.y + node.height <= unavailableBox.y
+      )
+    ).toBe(true);
+    expect(unavailableBox.y + unavailableBox.height).toBeLessThanOrEqual(
+      unavailableFrame.y + unavailableFrame.height + 1
+    );
     await page.getByRole('button', { name: 'Close linked view' }).click();
     await expect(page.locator('[data-stub-target="missing-plugin"]')).toHaveCount(0);
     await expect(page.locator('[data-node-id="core"]')).toBeVisible();
@@ -2107,6 +2129,22 @@ test('a linked project opens beside its host with two frames and one bridge', as
     const beforeExpand = await titleAt(page, '[data-node-id="host:core"]');
     await page.getByRole('button', { name: 'Expand Beacon plugin', exact: true }).click();
     await expect(page.locator('[data-node-id="plugin:cli"]')).toBeVisible();
+    const pluginBackdrop = page.locator(
+      '[data-project-content="plugin"] [data-node-backdrop="core"]'
+    );
+    const pluginEdge = page.locator('[data-edge-id="plugin:call"]');
+    await expect(pluginBackdrop).toBeVisible();
+    await expect(pluginEdge).toHaveCount(1);
+    expect(
+      await pluginBackdrop.evaluate((backdrop) => {
+        const edge = backdrop
+          .closest('[data-project-content]')
+          ?.querySelector('[data-edge-id="plugin:call"]');
+        return Boolean(
+          edge && backdrop.compareDocumentPosition(edge) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
+      })
+    ).toBe(true);
     const expanded = await titleAt(page, '[data-node-id="host:core"]');
     expect(Math.abs(expanded.x - beforeExpand.x)).toBeLessThan(1.5);
     expect(Math.abs(expanded.y - beforeExpand.y)).toBeLessThan(1.5);
@@ -2496,11 +2534,20 @@ test('a linked three-project composition restores permalinks, ports, search and 
     const restoredArea = (await page.locator('.diagram-area').boundingBox())!;
     const restoredPlugin = (await page.locator('[data-project-frame="plugin"]').boundingBox())!;
     const restoredHost = (await page.locator('[data-project-frame="host"]').boundingBox())!;
+    const restoredScale = Number(
+      await page.locator('.composition-canvas').getAttribute('data-camera-scale')
+    );
     expect(restoredPlugin.x).toBeGreaterThan(restoredArea.x);
     expect(restoredPlugin.x + restoredPlugin.width).toBeLessThan(
       restoredArea.x + restoredArea.width
     );
     expect(restoredHost.x).toBeLessThan(restoredArea.x);
+    await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
+    await page.getByRole('menuitem', { name: 'Fit project' }).click();
+    const explicitFitScale = Number(
+      await page.locator('.composition-canvas').getAttribute('data-camera-scale')
+    );
+    expect(restoredScale).toBeCloseTo(explicitFitScale, 3);
     await expect(page.locator('[data-structure-project]')).toHaveCount(3);
 
     await page.keyboard.press('Meta+k');

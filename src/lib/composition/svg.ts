@@ -5,6 +5,13 @@ import { ARCHITECTURE_NODE_METRICS as METRICS } from '../core/node-metrics';
 import { kindIcon } from '../core/kind-icons';
 import { textWidth, truncateText, wrapText } from '../core/projection';
 import { COMPOSITION_METRICS } from './place';
+import {
+  COMPOSITION_PORT_CAPTION,
+  COMPOSITION_PORT_CAPTION_SIZE,
+  COMPOSITION_PORT_LABEL_LINE_HEIGHT,
+  COMPOSITION_PORT_LABEL_SIZE,
+  compositionPortGeometry
+} from './ports';
 import { escapeXml, formatSvgNumber } from '../core/svg';
 import { referenceStubDetail, referenceStubGeometries, type ReferenceStubGeometry } from './stubs';
 
@@ -14,8 +21,6 @@ const xml = escapeXml;
 /** Namespaced the same way the studio slugs project IDs for DOM ids. */
 const slug = (value: string): string => value.replace(/[^a-zA-Z0-9_-]/g, '-');
 const namespaced = (model: string, local: string): string => `cmp-${slug(model)}-${local}`;
-
-const PORT_CAPTION = 'outside scope';
 
 function color(value: string): string {
   return /^#[\da-f]{3,8}$/i.test(value) ? value : '#557b70';
@@ -129,13 +134,8 @@ function portSvg(
   port: ComposedProject['ports'][number],
   theme: ReturnType<typeof getTheme>
 ): string {
-  const bodyWidth = Math.max(...port.labelLines.map((line) => textWidth(line, 11)), 0) + 24;
-  const captionWidth = textWidth(PORT_CAPTION, 9) + 24;
-  const width = Math.max(bodyWidth, captionWidth);
-  const height = port.labelLines.length * 15 + 30;
-  const x = port.point.x - width / 2;
-  const y = port.point.y - height / 2;
-  return `<g data-port-model="${xml(port.model)}" data-port-element="${xml(port.reveal.element)}" data-port-side="${port.side}" transform="translate(${number(x)} ${number(y)})" role="group" aria-label="${xml(`Outside scope: ${port.reveal.element}. Reveal in ${port.model}.`)}"><rect width="${number(width)}" height="${height}" rx="10" fill="${theme.card}" stroke="${theme.subtle}" stroke-width="1.2"/>${port.labelLines.map((line, index) => `<text x="${number(width / 2)}" y="${22 + index * 15}" text-anchor="middle" font-size="11" fill="${theme.text}">${xml(line)}</text>`).join('')}<text x="${number(width / 2)}" y="${22 + port.labelLines.length * 15}" text-anchor="middle" font-size="9" fill="${theme.muted}">${xml(PORT_CAPTION)}</text></g>`;
+  const geometry = compositionPortGeometry(port.side, port.point, port.labelLines);
+  return `<g data-port-model="${xml(port.model)}" data-port-element="${xml(port.reveal.element)}" data-port-side="${port.side}" transform="translate(${number(geometry.position.x)} ${number(geometry.position.y)})" role="group" aria-label="${xml(`Outside scope: ${port.title}. Reveal in ${port.model}.`)}"><rect width="${number(geometry.width)}" height="${number(geometry.height)}" rx="7" fill="${theme.card}" stroke="${theme.subtle}" stroke-width="1.2"/>${port.labelLines.map((line, index) => `<text x="${number(geometry.width / 2)}" y="${number(geometry.labelY + index * COMPOSITION_PORT_LABEL_LINE_HEIGHT)}" text-anchor="middle" font-size="${COMPOSITION_PORT_LABEL_SIZE}" font-weight="600" fill="${theme.text}">${xml(line)}</text>`).join('')}<text x="${number(geometry.width / 2)}" y="${number(geometry.captionY)}" text-anchor="middle" font-size="${COMPOSITION_PORT_CAPTION_SIZE}" fill="${theme.muted}">${xml(COMPOSITION_PORT_CAPTION)}</text></g>`;
 }
 
 function frameSvg(

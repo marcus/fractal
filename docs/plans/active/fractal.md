@@ -111,7 +111,9 @@ the selected project (or root) without implicitly fitting every open frame, whil
 frames the whole composition. Structure groups every open project's expandable outline. Low zoom
 uses lightweight text skeletons rather than making detail disappear, linked frames use a distinct
 theme-owned surface across canvas and export, and colocated unopened-reference cards stack through
-shared measured geometry.
+shared measured geometry in a reserved project footer lane rather than covering model content.
+Expanded-container fills remain below local relationships in composed views, matching standalone
+and exported diagrams so nested structure cannot obscure authored links.
 
 ## Saved workspace idea
 
