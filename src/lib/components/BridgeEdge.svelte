@@ -10,10 +10,12 @@
   let {
     bridge,
     selected = false,
+    dormant = false,
     onselect
   }: {
     bridge: ComposedBridge;
     selected?: boolean;
+    dormant?: boolean;
     onselect: (bridge: ComposedBridge) => void;
   } = $props();
   const path = $derived(
@@ -25,8 +27,8 @@
   class="bridge"
   class:selected
   data-interactive="bridge"
-  data-connection-owner={bridge.owner}
-  data-connection-id={bridge.id}
+  data-connection-owner={dormant ? undefined : bridge.owner}
+  data-connection-id={dormant ? undefined : bridge.id}
   role="button"
   tabindex="0"
   data-bridge-count={bridge.count}

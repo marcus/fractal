@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
-  import { replaceState } from '$app/navigation';
   import DiagramCanvas from '$lib/components/DiagramCanvas.svelte';
   import CompositionCanvas, { type ProjectAction } from '$lib/components/CompositionCanvas.svelte';
   import type { ProjectLinks } from '$lib/composition/types';
@@ -70,6 +69,7 @@
     QualifiedSelection
   } from '$lib/composition/types';
   import type { PageProps } from './$types';
+  import { EMPTY_COMPOSED } from '$lib/components/composition-viewport';
 
   interface LinkResolution {
     model: string;
@@ -156,9 +156,17 @@
     requestPeek: (id: string, box: DOMRect) => void;
     screenOfOrigin: () => { x: number; y: number; scale: number };
   }>();
-  /** Linked composition: the composed result, its participating models, and the qualified selection. */
-  let composition = $state<CompositionSession | null>(null);
-  let compositionModels = $state<Record<string, Model>>({});
+  /**
+   * Composed geometry is replaced whole, never mutated in place. `$state.raw` keeps Svelte from
+   * wrapping every node, edge and point in a proxy — those proxies survived close and grew heap
+   * across open/close cycles.
+   */
+  let composition = $state.raw<CompositionSession | null>(null);
+  /** Stay mounted after the first open so close/open cycles do not rebuild the canvas. */
+  let compositionMounted = $state(false);
+  /** Last coherent session, kept so a close/reopen reuses geometry instead of parsing another copy. */
+  let cachedSession = $state.raw<CompositionSession | null>(null);
+  let compositionModels = $state.raw<Record<string, Model>>({});
   let compositionSelection = $state<QualifiedSelection | null>(null);
   let compositionGeneration = 0;
   /** Per-tab identity so this tab's generation counter never stales another tab's. */
@@ -174,8 +182,28 @@
   let renderCount = $state(0);
   function noteRenderRequest() {
     renderCount += 1;
-    if (typeof window !== 'undefined')
-      (window as Window & { __fractalRenderCount?: number }).__fractalRenderCount = renderCount;
+    if (typeof window !== 'undefined') {
+      const hook = window as Window & {
+        __fractalRenderCount?: number;
+        __fractalRetain?: () => Record<string, unknown>;
+      };
+      hook.__fractalRenderCount = renderCount;
+      hook.__fractalRetain = retainSnapshot;
+    }
+  }
+  function retainSnapshot() {
+    return {
+      composition: composition !== null,
+      cached: cachedSession !== null,
+      models: Object.keys(compositionModels),
+      links: Object.keys(compositionLinks),
+      waiters: compositionWaiters.length,
+      canvas: composedCanvas != null,
+      anchor: compositionAnchor != null,
+      pending: pendingCompositionJob != null,
+      generation: compositionGeneration,
+      renderCount
+    };
   }
   /** One in-flight composition render plus at most one pending latest state. */
   let compositionInFlight = false;
@@ -190,12 +218,15 @@
     compositionWaiters = [];
     for (const resolve of waiters) resolve();
   }
+  let compositionAbort: AbortController | null = null;
   /** Drop queued work so a model switch cannot apply a superseded composition. */
   function abandonCompositionRequests() {
     compositionGeneration = nextGeneration(compositionGeneration);
     pendingCompositionJob = null;
+    compositionAbort?.abort();
+    compositionAbort = null;
   }
-  let compositionLinks = $state<Record<string, LinksResult>>({});
+  let compositionLinks = $state.raw<Record<string, LinksResult>>({});
   let revisionNotice = $state<RevisionNotice | null>(null);
   let pendingComposition: CompositionState | undefined;
   /** Keep a composed point at its screen position across a re-layout. */
@@ -206,7 +237,7 @@
     scale: number;
   } | null = null;
 
-  let composedCanvas = $state<{
+  let composedCanvas = $state.raw<{
     placeContent: (value: {
       offset: { x: number; y: number };
       screen: { x: number; y: number };
@@ -223,7 +254,7 @@
     zoom: (direction: number) => void;
     navigate: (direction: Direction) => void;
     dismissMenu: () => boolean;
-  }>();
+  } | null>(null);
   let authoredLinks = $state<LinksResult | null>(null);
   let authoredLinksModel = $state('');
   const inComposition = $derived(composition !== null);
@@ -417,7 +448,10 @@
       if (selected) url.searchParams.set('selected', selected);
       else url.searchParams.delete('selected');
     }
-    replaceState(url, {});
+    const href = `${url.pathname}${url.search}${url.hash}`;
+    if (href === `${location.pathname}${location.search}${location.hash}`) return;
+    // Native replace so close/open cycles do not clone the SvelteKit page on every toggle.
+    history.replaceState(history.state ?? {}, '', url);
   }
   $effect(() => {
     void selected;
@@ -488,9 +522,13 @@
   ) {
     const token = ++modelRequestId;
     ++requestId;
-    if (composition) {
+    if (composition || compositionMounted) {
       abandonCompositionRequests();
+      compositionAnchor = null;
+      composedCanvas = null;
       composition = null;
+      compositionMounted = false;
+      cachedSession = null;
       compositionSelection = null;
       compositionModels = {};
       compositionLinks = {};
@@ -643,10 +681,14 @@
   }) {
     compositionInFlight = true;
     noteRenderRequest();
+    compositionAbort?.abort();
+    compositionAbort = new AbortController();
+    const signal = compositionAbort.signal;
     try {
       const response = await fetch('/api/composition/render', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        signal,
         body: JSON.stringify({
           root: modelId,
           state: job.state,
@@ -711,6 +753,9 @@
         composed: payload.composed,
         revisions: payload.revisions
       };
+      compositionMounted = true;
+      if (typeof performance !== 'undefined' && performance.clearResourceTimings)
+        performance.clearResourceTimings();
       if (compositionSelection && !selectionSurvives(payload.composed, compositionSelection))
         compositionSelection = null;
       await tick();
@@ -720,6 +765,7 @@
         compositionAnchor = null;
       }
     } catch (e) {
+      if (signal.aborted) return;
       if (!isStale(job.generation, compositionGeneration))
         error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -760,6 +806,15 @@
       compositionSelection = null;
       await tick();
       composedCanvas?.revealProject(link.target.model);
+      return;
+    }
+    if (
+      !composition &&
+      cachedSession?.state.projects.some((project) => project.model === link.target.model)
+    ) {
+      compositionSelection = null;
+      composition = cachedSession;
+      compositionMounted = true;
       return;
     }
     const sourceModel = selectedCompositionModel ?? modelId;
@@ -834,11 +889,14 @@
   }
   function closeComposition() {
     abandonCompositionRequests();
-    composition = null;
+    resolveCompositionWaiters();
+    compositionAnchor = null;
     compositionSelection = null;
-    compositionModels = {};
-    compositionLinks = {};
     revisionNotice = null;
+    cachedSession = composition;
+    composition = null;
+    if (typeof performance !== 'undefined' && performance.clearResourceTimings)
+      performance.clearResourceTimings();
     busy = false;
   }
   async function restoreComposition(state: CompositionState) {
@@ -945,6 +1003,13 @@
   }
   onMount(() => {
     mac = /Mac|iPhone|iPad/.test(navigator.platform);
+    const hook = window as Window & {
+      __fractalRenderCount?: number;
+      __fractalRetain?: () => Record<string, unknown>;
+    };
+    hook.__fractalRenderCount = renderCount;
+    hook.__fractalRetain = retainSnapshot;
+    performance.setResourceTimingBufferSize?.(32);
     const params = new URL(location.href).searchParams;
     try {
       if (params.has('view')) initialView = JSON.parse(params.get('view')!);
@@ -1003,6 +1068,7 @@
       ++requestId;
       ++modelRequestId;
       ++catalogRequestId;
+      abandonCompositionRequests();
     };
   });
   async function refreshCatalog() {
@@ -1787,19 +1853,22 @@
                 />{/key}
             </div>
           {/if}
-          {#if composition}
-            <CompositionCanvas
-              bind:this={composedCanvas}
-              composed={composition.composed}
-              models={compositionModels}
-              selection={compositionSelection}
-              onselect={selectComposition}
-              ontoggle={toggleCompositionElement}
-              onprojectaction={projectAction}
-              onrevealport={revealPort}
-              {measureInsets}
-              {presentation}
-            />
+          {#if compositionMounted}
+            <div class="canvas-layer" class:layer-closed={!composition}>
+              <CompositionCanvas
+                bind:this={composedCanvas}
+                composed={composition?.composed ?? cachedSession?.composed ?? EMPTY_COMPOSED}
+                dormant={!composition}
+                models={compositionModels}
+                selection={compositionSelection}
+                onselect={selectComposition}
+                ontoggle={toggleCompositionElement}
+                onprojectaction={projectAction}
+                onrevealport={revealPort}
+                {measureInsets}
+                {presentation}
+              />
+            </div>
           {/if}
           {#if model && !composition}<DiagramKey
               bind:this={diagramKey}

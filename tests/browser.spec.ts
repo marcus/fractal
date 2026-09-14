@@ -2113,6 +2113,15 @@ test('a linked project opens beside its host with two frames and one bridge', as
     await page.getByRole('menuitem', { name: 'Close' }).click();
     await expect(page.locator('[data-project-frame]')).toHaveCount(0);
     await expect(page.locator('[data-node-id="core"]')).toBeVisible();
+    const retain = await page.evaluate(() =>
+      (
+        window as Window & {
+          __fractalRetain?: () => { composition: boolean; pending: boolean };
+        }
+      ).__fractalRetain?.()
+    );
+    expect(retain?.composition).toBe(false);
+    expect(retain?.pending).toBe(false);
     await expect
       .poll(async () => (await titleAt(page, '[data-node-id="core"]')).x)
       .toBeCloseTo(before.x, 0);

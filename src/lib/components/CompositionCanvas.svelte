@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import FitControl from './FitControl.svelte';
   import ProjectFrame from './ProjectFrame.svelte';
   import BridgeEdge from './BridgeEdge.svelte';
@@ -50,7 +50,8 @@
     onprojectaction,
     onrevealport,
     measureInsets = () => ({ left: 0, right: 0, top: 0, bottom: 0 }),
-    presentation = false
+    presentation = false,
+    dormant = false
   }: {
     composed: ComposedDiagram;
     models: Record<string, Model>;
@@ -61,6 +62,7 @@
     onrevealport?: (port: ComposedPort) => void;
     measureInsets?: () => Insets;
     presentation?: boolean;
+    dormant?: boolean;
   } = $props();
 
   let svg: SVGSVGElement;
@@ -507,14 +509,22 @@
     await tick();
     apply();
   }
+  let resizeObserver: ResizeObserver | null = null;
   onMount(() => {
-    const observer = new ResizeObserver(
+    resizeObserver = new ResizeObserver(
       ([entry]) => (size = { width: entry.contentRect.width, height: entry.contentRect.height })
     );
-    observer.observe(svg);
+    resizeObserver.observe(svg);
     fitInsets = measureInsets();
-    fit();
-    return () => observer.disconnect();
+    if (composed.projects.length) fit();
+    return () => {
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+    };
+  });
+  onDestroy(() => {
+    resizeObserver?.disconnect();
+    resizeObserver = null;
   });
 </script>
 
@@ -582,12 +592,13 @@
         <ProjectFrame
           project={entry}
           menuOpen={menuModel === entry.model}
+          {dormant}
           onmenu={(model) => (menuModel = menuModel === model ? null : model)}
           onrevealport={(port) => onrevealport?.(port)}
         />
       {/each}
       {#each composed.bridges.filter( (bridge) => bridgeMounted(bridge) ) as bridge (`${bridge.owner}/${bridge.id}`)}
-        <BridgeEdge {bridge} selected={selectedBridge(bridge)} onselect={selectBridge} />
+        <BridgeEdge {bridge} selected={selectedBridge(bridge)} {dormant} onselect={selectBridge} />
       {/each}
       {#each composed.projects as entry (entry.model)}
         {#if entry.diagram}
@@ -760,9 +771,9 @@
         {@const guidance = stubGuidance(stub)}
         <g
           class="reference-stub"
-          data-stub-owner={stub.owner}
-          data-stub-target={stub.target.model}
-          data-stub-state={stub.state}
+          data-stub-owner={dormant ? undefined : stub.owner}
+          data-stub-target={dormant ? undefined : stub.target.model}
+          data-stub-state={dormant ? undefined : stub.state}
           transform={`translate(${position.x} ${position.y})`}
           role="group"
           aria-label={stubAria(stub)}

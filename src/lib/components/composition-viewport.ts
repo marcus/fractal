@@ -1,5 +1,28 @@
 import { ARCHITECTURE_NODE_METRICS } from '$lib/core/node-metrics';
+import type { ComposedDiagram } from '$lib/composition/types';
 import type { Point } from '$lib/core/types';
+
+/**
+ * Placeholder geometry so the composition canvas can stay mounted after close without
+ * retaining the last composed tree. Remounting that canvas every cycle compiled more
+ * JIT and filled the performance timeline (resource/LCP/layout-shift entries).
+ */
+export const EMPTY_COMPOSED: ComposedDiagram = {
+  state: {
+    version: 1,
+    root: '',
+    projects: [],
+    theme: 'grove',
+    layout: 'elk-layered'
+  },
+  projects: [],
+  bridges: [],
+  stubs: [],
+  hidden: [],
+  diagnostics: [],
+  width: 1,
+  height: 1
+};
 
 export interface Rect {
   x: number;
