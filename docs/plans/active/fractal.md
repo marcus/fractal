@@ -101,8 +101,11 @@ as the fingerprinted default, adds a layout benchmark CLI, and opens a layout-en
 plan for revealing repository-owned architecture diagrams together, with explicit cross-project
 connections and independent project layouts. Sidecar → td and Recall is the steel thread. It covers
 identity, resolution, boundaries, performance budgets, surface parity and portable exports;
-phase 0 contracts, fixtures, baseline evidence and visual proposal are complete. Production
-composition starts in phase 1; see the [phase 0 handoff](linked-project-diagrams/phase-0.md).
+phase 0 contracts, fixtures, baseline evidence and visual proposal are complete, and phase 1
+delivered the first production slice: `links.json` in the loader, a composition core, CLI and
+HTTP composition surfaces, and a studio canvas that reveals td beside Sidecar with one inspectable
+bridge; see the [phase 1 record](linked-project-diagrams/phase-1.md). Phase 2 (complete meaning
+and failure behavior) is next.
 
 ## Saved workspace idea
 

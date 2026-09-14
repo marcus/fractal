@@ -1,8 +1,10 @@
 # Linked project diagrams on one canvas
 
-Status: phase 0 complete, 2026-09-13. Planning task: `td-1c460e`; phase 0: `td-b67c0a`.
+Status: phase 1 complete, 2026-09-13. Planning task: `td-1c460e`; phase 0: `td-b67c0a`; phase 1:
+`td-e673b8`.
 The [product plan](fractal.md) controls product scope; this document controls linked architecture
-composition. Phase 0 establishes contracts and evidence; production composition starts in phase 1.
+composition. Phase 0 established contracts and evidence; phase 1 delivered the first production slice
+(Sidecar → td through the CLI, HTTP and one real canvas); phase 2 starts next.
 [DESIGN.md](../../../DESIGN.md) controls visual language;
 [layout performance and engines](layout-performance-and-engines.md) controls local geometry and
 its existing benchmarks. This plan adds composition measurements and does not replace that seam.
@@ -365,7 +367,9 @@ showing open/collapsed projects, Trust on, a bridge and an unavailable target in
 language. Confirm `links.json`, qualified identities, diagnostics and state parsing with example
 contract tests before broad UI work. Review the design against this plan; record any amendments.
 
-### 1. Sidecar → td through CLI and one real canvas
+### 1. Sidecar → td through CLI and one real canvas — complete
+
+Evidence and phase 2 handoff: [phase 1 record](linked-project-diagrams/phase-1.md).
 
 Implement sidecar-file parsing, targeted catalog resolver, stable reference validation and shared
 composition result. Add CLI layout/inspect and HTTP render wiring, two project frames and one bridge.
