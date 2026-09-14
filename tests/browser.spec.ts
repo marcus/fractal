@@ -2840,7 +2840,7 @@ test('composition export dialog writes SVG, PNG and HTML in every theme', async 
       await fast.close();
     }
     // The source-model load takes 400 ms here, so a badge inside the 150 ms gate of the
-    // click proves the 120 ms timer starts at the action, not after the load lands.
+    // click proves the 100 ms timer starts at the action, not after the load lands.
     const slow = await page.context().newPage();
     try {
       await slow.route('**/api/models/plugin', async (route) => {
