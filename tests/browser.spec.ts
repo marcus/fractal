@@ -1924,6 +1924,14 @@ test('a linked project opens beside its host with two frames and one bridge', as
   await cp(join('tests', 'fixtures', 'linked-projects', 'plugin'), join(root, 'plugin'), {
     recursive: true
   });
+  const hostModelPath = join(root, 'host', 'model.c4');
+  await writeFile(
+    hostModelPath,
+    (await readFile(hostModelPath, 'utf8')).replace(
+      "store = component 'Host records' {",
+      "store = component 'Host records' { description 'Persists host plugin records.'"
+    )
+  );
   // This journey proves the host-owned bridge. The reverse plugin-owned claim is covered by the
   // composition unit tests, so drop it here to keep the canvas to the one claim under test.
   await rm(join(root, 'plugin', 'links.json'), { force: true });
@@ -1987,6 +1995,30 @@ test('a linked project opens beside its host with two frames and one bridge', as
     await expect(page.locator('[data-connection-owner][data-connection-id]')).toHaveCount(1);
     await expect(page.locator('[data-node-id="host:core"]')).toBeVisible();
     await expect(page.locator('[data-node-id="plugin:core"]')).toBeVisible();
+    await expect(page.locator('[data-structure-project]')).toHaveCount(2);
+    await expect(page.locator('[data-structure-project="host"] summary')).toContainText(
+      'Harbor host'
+    );
+    await expect(page.locator('[data-structure-project="plugin"] summary')).toContainText(
+      'Beacon plugin'
+    );
+    await page
+      .getByRole('button', { name: 'Expand Beacon plugin in Beacon plugin outline', exact: true })
+      .click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-node-id="plugin:cli"]')).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Collapse Beacon plugin in Beacon plugin outline', exact: true })
+      .click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-node-id="plugin:cli"]')).toHaveCount(0);
+    const rootFill = await page
+      .locator('[data-project-frame="host"] .perimeter')
+      .evaluate((element) => getComputedStyle(element).fill);
+    const linkedFill = await page
+      .locator('[data-project-frame="plugin"] .perimeter')
+      .evaluate((element) => getComputedStyle(element).fill);
+    expect(linkedFill).not.toBe(rootFill);
     const opened = await titleAt(page, '[data-node-id="host:core"]');
     expect(Math.abs(opened.x - before.x)).toBeLessThan(1.5);
     expect(Math.abs(opened.y - before.y)).toBeLessThan(1.5);
@@ -2056,6 +2088,11 @@ test('a linked project opens beside its host with two frames and one bridge', as
     }
     await expect(page.locator('.composition-canvas')).toHaveAttribute('data-low-zoom', 'true');
     await expect(page.locator('.composition-canvas .node-title').first()).toBeVisible();
+    await expect(
+      page.locator('.composition-canvas .node-description-skeleton').first()
+    ).toBeVisible();
+    await expect(page.locator('.composition-canvas .bridge-label-skeleton').first()).toBeVisible();
+    await expect(page.locator('.composition-canvas .stub-detail-skeleton').first()).toBeVisible();
     await page.screenshot({ path: 'artifacts/linked-project-phase3/low-zoom.png' });
     await page.keyboard.press('0');
     await expect(page.locator('[data-node-id="plugin:core"]')).toBeVisible();
@@ -2454,6 +2491,17 @@ test('a linked three-project composition restores permalinks, ports, search and 
     await page.reload();
     await expect(page.locator('[data-project-frame]')).toHaveCount(3);
     await expect(page.locator('[data-project-port="plugin"]')).toBeVisible();
+    // A permalink restores the selected project at readable project scale. Fit-all remains
+    // explicit through 0, so the other frames may sit outside the viewport without shrinking it.
+    const restoredArea = (await page.locator('.diagram-area').boundingBox())!;
+    const restoredPlugin = (await page.locator('[data-project-frame="plugin"]').boundingBox())!;
+    const restoredHost = (await page.locator('[data-project-frame="host"]').boundingBox())!;
+    expect(restoredPlugin.x).toBeGreaterThan(restoredArea.x);
+    expect(restoredPlugin.x + restoredPlugin.width).toBeLessThan(
+      restoredArea.x + restoredArea.width
+    );
+    expect(restoredHost.x).toBeLessThan(restoredArea.x);
+    await expect(page.locator('[data-structure-project]')).toHaveCount(3);
 
     await page.keyboard.press('Meta+k');
     await expect(page.getByRole('dialog', { name: 'Jump to' })).toBeVisible();

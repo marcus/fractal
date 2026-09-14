@@ -186,7 +186,17 @@ not a nested toolbar. The frame is presentation geometry — it claims no trust,
 permission, no new parent. Trust memberships stay a distinct optional lens inside each
 frame, never inherited from a host by its plugin, and the dashed proposed treatment is
 never reused to mean "another repository". Project identity stays visible in the
-ordinary Structure view.
+ordinary Structure view. The root frame keeps the ordinary surface while linked frames
+use a subtly distinct surface token from the selected theme; the distinction is quiet,
+works in light and dark themes, and reaches SVG/PNG exports.
+
+Structure continues as one outline per visible project. Each project group folds locally,
+while its nodes use the same expansion and selection state as the canvas. At low zoom,
+unreadable body copy and bridge labels become restrained skeleton bars rather than
+vanishing; titles, project identity, inspection data and exports remain complete. A
+restored permalink frames the selected project, or the root when nothing is selected;
+Fit remains the explicit way to frame the whole composition. Reference cards that share
+an authored anchor stack with measured spacing instead of overlapping.
 
 Bridges run in the theme edge color from the visible representative of each endpoint,
 with the arrow direction retained at every detail level. The bridge label sits on a halo

@@ -10,6 +10,11 @@
   import { ARCHITECTURE_NODE_METRICS as METRICS } from '$lib/core/node-metrics';
   import { kindHint, kindIcon } from '$lib/core/kind-icons';
   import {
+    REFERENCE_STUB_BODY_WIDTH,
+    referenceStubDetail,
+    referenceStubGeometries
+  } from '$lib/composition/stubs';
+  import {
     isLowZoom,
     overscanRect,
     rectsIntersect,
@@ -20,7 +25,6 @@
     ComposedBridge,
     ComposedDiagram,
     ComposedPort,
-    CompositionDiagnostic,
     QualifiedSelection
   } from '$lib/composition/types';
   import type { LayoutEdge, LayoutNode, Model, Point } from '$lib/core/types';
@@ -76,6 +80,7 @@
   /** World-space view plus one extra viewport of overscan; pan/zoom only recomputes this. */
   const cullBounds = $derived(overscanRect(worldViewFromCamera(transform, size)));
   const lowZoom = $derived(isLowZoom(transform.scale));
+  const stubGeometries = $derived(referenceStubGeometries(composed));
 
   function childIdsFor(model: string): Set<string> {
     const source = models[model];
@@ -158,6 +163,12 @@
       x: fitInsets.left + (width - target.frame.width * scale) / 2 - target.frame.x * scale,
       y: fitInsets.top + (height - target.frame.height * scale) / 2 - target.frame.y * scale
     };
+  }
+
+  function initialProject(): string {
+    const selectedModel =
+      selection?.kind === 'connection' ? selection.ownerModel : selection?.model;
+    return project(selectedModel ?? '')?.model ?? composed.state.root;
   }
 
   export function revealProject(model: string) {
@@ -351,47 +362,9 @@
     return open;
   }
 
-  /**
-   * An unavailable reference card sits below its anchor rather than in the inter-frame corridor:
-   * the card is wider than the gap and must never cover another project's title band or menu.
-   */
-  function stubPosition(anchor: { model: string; element?: string }): Point {
-    const owner = project(anchor.model);
-    if (anchor.element && owner?.diagram) {
-      const node = owner.diagram.nodes.find((candidate) => candidate.id === anchor.element);
-      if (node)
-        return { x: owner.content.x + node.x, y: owner.content.y + node.y + node.height + 12 };
-    }
-    const frame = owner?.frame ?? composed.projects[0].frame;
-    return { x: frame.x + frame.width - 236, y: frame.y + frame.height + 16 };
-  }
-  function stubDiagnostic(stub: ComposedDiagram['stubs'][number]) {
-    return composed.diagnostics.find(
-      (diagnostic) =>
-        (stub.linkId !== undefined && diagnostic.linkId === stub.linkId) ||
-        (stub.connectionId !== undefined && diagnostic.connectionId === stub.connectionId)
-    );
-  }
-  const RECOVERY_GUIDANCE: Record<CompositionDiagnostic['recovery'], string> = {
-    register: 'Register the project in the catalog, then retry.',
-    retry: 'Retry once the source stops changing.',
-    repair: 'Repair the authored reference.',
-    upgrade: 'Upgrade the reader or the model version.',
-    reload: 'Reload the changed source.',
-    reduce: 'Reduce the composition to fit its budget.'
-  };
   /** A not_loaded stub names its authored target; a failed one explains and guides recovery. */
   function stubDetail(stub: ComposedDiagram['stubs'][number]): string {
-    if (stub.state === 'not_loaded') return stub.target.model;
-    return stubDiagnostic(stub)?.message ?? `${stub.title} could not be resolved.`;
-  }
-  function stubGuidance(stub: ComposedDiagram['stubs'][number]): string | null {
-    if (stub.state === 'not_loaded') return null;
-    const recovery = stubDiagnostic(stub)?.recovery;
-    return recovery ? RECOVERY_GUIDANCE[recovery] : null;
-  }
-  function stubFailed(stub: ComposedDiagram['stubs'][number]): boolean {
-    return stub.state !== 'not_loaded';
+    return referenceStubDetail(composed.diagnostics, stub);
   }
   function stubAria(stub: ComposedDiagram['stubs'][number]): string {
     if (stub.state === 'not_loaded')
@@ -516,7 +489,7 @@
     );
     resizeObserver.observe(svg);
     fitInsets = measureInsets();
-    if (composed.projects.length) fit();
+    if (composed.projects.length) fitProject(initialProject());
     return () => {
       resizeObserver?.disconnect();
       resizeObserver = null;
@@ -606,6 +579,7 @@
       {#each composed.projects as entry (entry.model)}
         <ProjectFrame
           project={entry}
+          linked={entry.model !== composed.state.root}
           menuOpen={menuModel === entry.model}
           {dormant}
           onmenu={(model) => (menuModel = menuModel === model ? null : model)}
@@ -739,6 +713,22 @@
                       y={METRICS.collapsed.titleY + 3 + node.titleLines.length * 21 + index * 17}
                       class="node-description">{line}</text
                     >{/each}{/if}
+                {#if !node.expanded && node.descriptionLines.length}
+                  <g class="node-description-skeleton" aria-hidden="true">
+                    {#each node.descriptionLines.slice(0, 3) as line, index}
+                      <rect
+                        x={METRICS.collapsed.contentX}
+                        y={METRICS.collapsed.titleY + 7 + node.titleLines.length * 21 + index * 17}
+                        width={Math.min(
+                          node.width - METRICS.collapsed.contentX * 2,
+                          Math.max(42, line.length * 5.5)
+                        )}
+                        height="6"
+                        rx="3"
+                      />
+                    {/each}
+                  </g>
+                {/if}
                 <g
                   class="kind-icon"
                   data-kind={node.kind}
@@ -789,20 +779,19 @@
         <BridgeEdge {bridge} selected={selectedBridge(bridge)} onselect={selectBridge} passive />
       {/each}
       {#each composed.stubs as stub (`${stub.owner}/${stub.linkId ?? stub.connectionId ?? ''}`)}
-        {@const position = stubPosition(stub.anchor)}
-        {@const guidance = stubGuidance(stub)}
+        {@const geometry = stubGeometries.get(stub)!}
         <g
           class="reference-stub"
           data-stub-owner={dormant ? undefined : stub.owner}
           data-stub-target={dormant ? undefined : stub.target.model}
           data-stub-state={dormant ? undefined : stub.state}
-          transform={`translate(${position.x} ${position.y})`}
+          transform={`translate(${geometry.position.x} ${geometry.position.y})`}
           role="group"
           aria-label={stubAria(stub)}
         >
           <rect
-            width="236"
-            height={stubFailed(stub) ? 104 : 68}
+            width={geometry.width}
+            height={geometry.height}
             rx="12"
             fill={theme.card}
             stroke={theme.border}
@@ -815,10 +804,29 @@
                 ? 'Diagram invalid'
                 : 'Diagram not opened'}
           </text>
-          <text x="16" y="66" class="stub-message" data-stub-detail>{stubDetail(stub)}</text>
-          {#if guidance}<text x="16" y="84" class="stub-guidance" data-stub-guidance
-              >{guidance}</text
-            >{/if}
+          {#each geometry.detailLines as line, index}<text
+              x="16"
+              y={66 + index * 14}
+              class="stub-message"
+              data-stub-detail>{line}</text
+            >{/each}
+          {#each geometry.guidanceLines as line, index}<text
+              x="16"
+              y={66 + geometry.detailLines.length * 14 + index * 14}
+              class="stub-guidance"
+              data-stub-guidance>{line}</text
+            >{/each}
+          <g class="stub-detail-skeleton" aria-hidden="true">
+            {#each [...geometry.detailLines, ...geometry.guidanceLines] as line, index}
+              <rect
+                x="16"
+                y={61 + index * 14}
+                width={Math.min(REFERENCE_STUB_BODY_WIDTH, Math.max(42, line.length * 5))}
+                height="6"
+                rx="3"
+              />
+            {/each}
+          </g>
         </g>
       {/each}
     </g>
@@ -911,6 +919,18 @@
     font-size: 12px;
     fill: var(--muted, #69766f);
   }
+  .node-description-skeleton {
+    display: none;
+    fill: var(--border, #d9e0da);
+    opacity: 0.9;
+    pointer-events: none;
+  }
+  .stub-detail-skeleton {
+    display: none;
+    fill: var(--border, #d9e0da);
+    opacity: 0.9;
+    pointer-events: none;
+  }
   .kind-icon {
     opacity: 0.85;
   }
@@ -921,6 +941,15 @@
   .low-zoom-detail .stub-message,
   .low-zoom-detail .stub-guidance {
     display: none;
+  }
+  .low-zoom-detail .node-description-skeleton {
+    display: block;
+  }
+  .low-zoom-detail .stub-detail-skeleton {
+    display: block;
+  }
+  .low-zoom-detail :global(.bridge-label-skeleton) {
+    display: block;
   }
   .expand-control:hover rect {
     fill: var(--hover, #dbe7e0);

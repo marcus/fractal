@@ -5,6 +5,7 @@ import type { Diagram, Point } from '../core/types';
 import { parseCompositionState } from './parse';
 import { placeFrames } from './place';
 import { routeAxis, routeBridge } from './route';
+import { referenceStubGeometries } from './stubs';
 import type { RouteEndpoint } from './route';
 import type { ProjectSnapshot, ResolutionOutcome, SnapshotResolver } from './snapshot';
 import type {
@@ -794,18 +795,18 @@ export async function compose(
     }
   }
 
-  const width = Math.max(
+  let width = Math.max(
     placed.width + dx,
     ...projects.map((project) => project.frame.x + project.frame.width),
     ...bridges.flatMap((bridge) => [bridge.label.x, ...bridge.points.map((point) => point.x)])
   );
-  const height = Math.max(
+  let height = Math.max(
     placed.height + dy,
     ...projects.map((project) => project.frame.y + project.frame.height),
     ...bridges.flatMap((bridge) => [bridge.label.y, ...bridge.points.map((point) => point.y)])
   );
 
-  return {
+  const composed: ComposedDiagram = {
     state: normalized,
     projects,
     bridges,
@@ -815,6 +816,13 @@ export async function compose(
     width,
     height
   };
+  for (const geometry of referenceStubGeometries(composed).values()) {
+    width = Math.max(width, geometry.position.x + geometry.width);
+    height = Math.max(height, geometry.position.y + geometry.height);
+  }
+  composed.width = width;
+  composed.height = height;
+  return composed;
 }
 
 /** The endpoint the authoring project does not own, paired with the local endpoint it anchors to. */

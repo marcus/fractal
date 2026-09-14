@@ -10,12 +10,14 @@
    */
   let {
     project,
+    linked = false,
     menuOpen = false,
     dormant = false,
     onmenu,
     onrevealport
   }: {
     project: ComposedProject;
+    linked?: boolean;
     menuOpen?: boolean;
     dormant?: boolean;
     onmenu: (model: string) => void;
@@ -50,6 +52,8 @@
 >
   <rect
     class="perimeter"
+    class:linked
+    data-project-linked={linked ? 'true' : 'false'}
     x={project.frame.x}
     y={project.frame.y}
     width={project.frame.width}
@@ -144,6 +148,10 @@
     fill-opacity: 0.5;
     stroke: var(--border, #d9e0da);
     stroke-width: 1.2;
+  }
+  .perimeter.linked {
+    fill: var(--linkedSurface, #eef4ef);
+    fill-opacity: 0.72;
   }
   .title-rule {
     stroke: var(--divider, #dce2db);

@@ -121,6 +121,15 @@ test('composed SVG page framing uses the theme canvas and names participating pr
     const theme = getTheme(themeId);
     assert.ok(svg.includes(`data-theme="${themeId}"`));
     assert.ok(svg.includes(`fill="${theme.canvas}"`));
+    assert.ok(
+      svg.includes(`data-project-frame="host" data-project-mode="open" data-project-linked="false"`)
+    );
+    assert.ok(
+      svg.includes(
+        `data-project-frame="plugin" data-project-mode="open" data-project-linked="true"`
+      )
+    );
+    assert.ok(svg.includes(`fill="${theme.linkedSurface}"`));
     assert.ok(svg.includes('Harbor host'));
     assert.ok(svg.includes('Beacon plugin / detail'));
     assert.ok(svg.includes('Relay plugin / detail'));

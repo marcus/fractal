@@ -45,6 +45,9 @@
         ? 'url(#composition-arrow-proposed)'
         : 'url(#composition-arrow)'
   );
+  const labelSkeletonWidth = $derived(
+    Math.max(34, Math.min(112, Math.max(...bridge.labelLines.map((line) => line.length * 5), 0)))
+  );
 </script>
 
 {#if passive}
@@ -58,6 +61,14 @@
       marker-end={lineMarker}
     />
     <g transform={`translate(${bridge.label.x} ${bridge.label.y})`}>
+      {#if bridge.labelLines.length}<rect
+          class="bridge-label-skeleton"
+          x={-labelSkeletonWidth / 2}
+          y="-5"
+          width={labelSkeletonWidth}
+          height="6"
+          rx="3"
+        />{/if}
       {#each bridge.labelLines as line, index}<text
           x="0"
           y={index * 15}
@@ -121,6 +132,13 @@
     stroke: var(--canvas, #f7f8f5);
     stroke-width: 6px;
     stroke-linejoin: round;
+    pointer-events: none;
+  }
+  .bridge-label-skeleton {
+    display: none;
+    fill: var(--border, #d9e0da);
+    stroke: var(--canvas, #f7f8f5);
+    stroke-width: 5px;
     pointer-events: none;
   }
 </style>

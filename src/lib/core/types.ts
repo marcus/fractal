@@ -9,6 +9,8 @@ export interface Theme {
   readonly description: string;
   readonly appearance: 'light' | 'dark';
   readonly surface: string;
+  /** Subtle project-frame fill for non-root diagrams in a linked composition. */
+  readonly linkedSurface: string;
   readonly canvas: string;
   readonly canvasDots: string;
   readonly card: string;

@@ -6,6 +6,7 @@ import { kindIcon } from '../core/kind-icons';
 import { textWidth, truncateText, wrapText } from '../core/projection';
 import { COMPOSITION_METRICS } from './place';
 import { escapeXml, formatSvgNumber } from '../core/svg';
+import { referenceStubDetail, referenceStubGeometries, type ReferenceStubGeometry } from './stubs';
 
 const number = formatSvgNumber;
 const xml = escapeXml;
@@ -14,8 +15,6 @@ const xml = escapeXml;
 const slug = (value: string): string => value.replace(/[^a-zA-Z0-9_-]/g, '-');
 const namespaced = (model: string, local: string): string => `cmp-${slug(model)}-${local}`;
 
-const STUB_WIDTH = 236;
-const STUB_BODY = 204;
 const PORT_CAPTION = 'outside scope';
 
 function color(value: string): string {
@@ -88,60 +87,24 @@ function edgeSvg(edge: LayoutEdge, theme: ReturnType<typeof getTheme>): string {
   return `<path d="${path}" fill="none" stroke="${edge.status === 'proposed' ? theme.proposed : theme.edge}" stroke-width="1.5"${edge.status === 'proposed' ? ' stroke-dasharray="6 5"' : ''}/>`;
 }
 
-/** Stub origin mirrors the canvas: below the anchor node, else below-right of the owner frame. */
-export function stubOrigin(
-  composed: ComposedDiagram,
-  stub: ComposedDiagram['stubs'][number]
-): { x: number; y: number } {
-  const owner = composed.projects.find((project) => project.model === stub.anchor.model);
-  if (stub.anchor.element && owner?.diagram) {
-    const node = owner.diagram.nodes.find((candidate) => candidate.id === stub.anchor.element);
-    if (node)
-      return { x: owner.content.x + node.x, y: owner.content.y + node.y + node.height + 12 };
-  }
-  const frame = owner?.frame ?? composed.projects[0].frame;
-  return { x: frame.x + frame.width - STUB_WIDTH, y: frame.y + frame.height + 16 };
-}
-
 function stubCard(
   composed: ComposedDiagram,
   stub: ComposedDiagram['stubs'][number],
-  theme: ReturnType<typeof getTheme>
+  theme: ReturnType<typeof getTheme>,
+  geometry: ReferenceStubGeometry
 ): string {
-  const position = stubOrigin(composed, stub);
-  const failed = stub.state !== 'not_loaded';
-  const diagnostic = composed.diagnostics.find(
-    (entry) =>
-      (stub.linkId !== undefined && entry.linkId === stub.linkId) ||
-      (stub.connectionId !== undefined && entry.connectionId === stub.connectionId)
-  );
+  const position = geometry.position;
   const stateLine =
     stub.state === 'unavailable'
       ? 'Diagram unavailable'
       : stub.state === 'invalid'
         ? 'Diagram invalid'
         : 'Diagram not opened';
-  const detail =
-    stub.state === 'not_loaded'
-      ? stub.target.model
-      : (diagnostic?.message ?? `${stub.title} could not be resolved.`);
-  const guidance =
-    failed && diagnostic
-      ? (
-          {
-            register: 'Register the project in the catalog, then retry.',
-            retry: 'Retry once the source stops changing.',
-            repair: 'Repair the authored reference.',
-            upgrade: 'Upgrade the reader or the model version.',
-            reload: 'Reload the changed source.',
-            reduce: 'Reduce the composition to fit its budget.'
-          } as const
-        )[diagnostic.recovery]
-      : null;
-  const detailLines = wrapText(detail, STUB_BODY, 10);
-  const guidanceLines = guidance ? wrapText(guidance, STUB_BODY, 10) : [];
+  const detail = referenceStubDetail(composed.diagnostics, stub);
+  const detailLines = geometry.detailLines;
+  const guidanceLines = geometry.guidanceLines;
   const firstDetail = 66;
-  const height = firstDetail + detailLines.length * 14 + guidanceLines.length * 14 + 10;
+  const height = geometry.height;
   const lines = [
     `<text x="16" y="26" font-size="13" font-weight="600" fill="${theme.text}">${xml(stub.title)}</text>`,
     `<text x="16" y="46" font-size="11" fill="${theme.muted}">${xml(stateLine)}</text>`,
@@ -158,7 +121,7 @@ function stubCard(
     stub.state === 'not_loaded'
       ? `${stub.title}: diagram not opened. Target ${stub.target.model}.`
       : `${stub.title}: ${stub.state === 'invalid' ? 'invalid' : 'unavailable'}. ${detail}`;
-  return `<g data-stub-owner="${xml(stub.owner)}" data-stub-target="${xml(stub.target.model)}" data-stub-state="${stub.state}" transform="translate(${number(position.x)} ${number(position.y)})" role="group" aria-label="${xml(label)}"><rect width="${STUB_WIDTH}" height="${height}" rx="12" fill="${theme.card}" stroke="${theme.border}"/>${lines}</g>`;
+  return `<g data-stub-owner="${xml(stub.owner)}" data-stub-target="${xml(stub.target.model)}" data-stub-state="${stub.state}" transform="translate(${number(position.x)} ${number(position.y)})" role="group" aria-label="${xml(label)}"><rect width="${geometry.width}" height="${height}" rx="12" fill="${theme.card}" stroke="${theme.border}"/>${lines}</g>`;
 }
 
 function portSvg(
@@ -177,7 +140,8 @@ function portSvg(
 
 function frameSvg(
   project: ComposedProject,
-  theme: ReturnType<typeof getTheme>
+  theme: ReturnType<typeof getTheme>,
+  linked: boolean
 ): { frame: string; titleId: string } {
   const titleId = namespaced(project.model, 'title');
   const titleX =
@@ -195,7 +159,7 @@ function frameSvg(
       : '';
   return {
     titleId,
-    frame: `<g data-project-frame="${xml(project.model)}" data-project-mode="${project.mode}" aria-labelledby="${titleId}"><rect x="${number(project.frame.x)}" y="${number(project.frame.y)}" width="${number(project.frame.width)}" height="${number(project.frame.height)}" rx="18" fill="${theme.surface}" fill-opacity="0.5" stroke="${theme.border}" stroke-width="1.2"/><line x1="${number(project.frame.x)}" y1="${number(project.frame.y + project.titleHeight)}" x2="${number(project.frame.x + project.frame.width)}" y2="${number(project.frame.y + project.titleHeight)}" stroke="${theme.divider}" stroke-width="1"/>${titles}${summary}</g>`
+    frame: `<g data-project-frame="${xml(project.model)}" data-project-mode="${project.mode}" data-project-linked="${linked}" aria-labelledby="${titleId}"><rect x="${number(project.frame.x)}" y="${number(project.frame.y)}" width="${number(project.frame.width)}" height="${number(project.frame.height)}" rx="18" fill="${linked ? theme.linkedSurface : theme.surface}" fill-opacity="${linked ? '0.72' : '0.5'}" stroke="${theme.border}" stroke-width="1.2"/><line x1="${number(project.frame.x)}" y1="${number(project.frame.y + project.titleHeight)}" x2="${number(project.frame.x + project.frame.width)}" y2="${number(project.frame.y + project.titleHeight)}" stroke="${theme.divider}" stroke-width="1"/>${titles}${summary}</g>`
   };
 }
 
@@ -213,6 +177,7 @@ export function exportCompositionSvg(
   options: { title?: string; subtitle?: string } = {}
 ): string {
   const theme = getTheme(composed.state.theme);
+  const stubGeometries = referenceStubGeometries(composed);
   const rootTitle = models[composed.state.root]?.title ?? composed.state.root;
   const title = options.title ?? rootTitle;
   const subtitle =
@@ -238,8 +203,8 @@ export function exportCompositionSvg(
     maxY = Math.max(maxY, y + extraY);
   };
   for (const stub of composed.stubs) {
-    const origin = stubOrigin(composed, stub);
-    includePoint(origin.x, origin.y, STUB_WIDTH, 120);
+    const geometry = stubGeometries.get(stub)!;
+    includePoint(geometry.position.x, geometry.position.y, geometry.width, geometry.height);
   }
   for (const bridge of composed.bridges) {
     includePoint(bridge.label.x, bridge.label.y);
@@ -272,7 +237,7 @@ export function exportCompositionSvg(
   // its frame transform inside it, so the same numbers the canvas draws are exported.
   const layers: string[] = [];
   for (const project of composed.projects) {
-    const { frame } = frameSvg(project, theme);
+    const { frame } = frameSvg(project, theme, project.model !== composed.state.root);
     layers.push(frame);
     const model = models[project.model];
     if (project.diagram && model) {
@@ -314,7 +279,9 @@ export function exportCompositionSvg(
     })
     .join('');
 
-  const stubs = composed.stubs.map((stub) => stubCard(composed, stub, theme)).join('');
+  const stubs = composed.stubs
+    .map((stub) => stubCard(composed, stub, theme, stubGeometries.get(stub)!))
+    .join('');
   const artwork = `<g data-export-layer="diagram" transform="translate(${number(ox)} ${number(oy)})">${layers.join('')}${bridges}${stubs}</g>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${number(viewWidth)}" height="${number(viewHeight)}" viewBox="0 0 ${number(viewWidth)} ${number(viewHeight)}" role="img" aria-labelledby="cmp-title cmp-description" data-theme="${theme.id}" data-theme-appearance="${theme.appearance}">

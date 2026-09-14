@@ -106,6 +106,13 @@ HTML exports, source-owned Sidecar, td and Recall models, and a final independen
 records live beside the plan (`phase-0.md` through `phase-5.md` and `final-review.md`). The real
 Sidecar → td → Recall composition runs on the installed studio.
 
+Composition presentation keeps large real models legible in ordinary use: a refreshed link frames
+the selected project (or root) without implicitly fitting every open frame, while explicit Fit still
+frames the whole composition. Structure groups every open project's expandable outline. Low zoom
+uses lightweight text skeletons rather than making detail disappear, linked frames use a distinct
+theme-owned surface across canvas and export, and colocated unopened-reference cards stack through
+shared measured geometry.
+
 ## Saved workspace idea
 
 [Multi-diagram workspace canvas](../planning/multi-diagram-canvas.md) records an idea for

@@ -445,6 +445,44 @@
     Math.max(0, model?.scenes.findIndex((s) => s.id === sceneAnchor) ?? 0)
   );
   const tree = $derived(diagram?.nodes ?? []);
+  const navigationView = $derived.by(() => {
+    if (!composition) return view;
+    const target = selectedCompositionModel ?? composition.state.root;
+    return composition.state.projects.find((project) => project.model === target)?.view ?? view;
+  });
+  const compositionStructureProjects = $derived.by(() => {
+    const session = composition;
+    if (!session) return undefined;
+    return session.state.projects.flatMap((entry) => {
+      if (entry.mode !== 'open') return [];
+      const sourceModel = compositionModels[entry.model];
+      const projectDiagram = session.composed.projects.find(
+        (project) => project.model === entry.model
+      )?.diagram;
+      if (!sourceModel || !projectDiagram) return [];
+      let allShown = false;
+      try {
+        const shown = showAllStructure(sourceModel, entry.view);
+        allShown = shown.expanded.every((id) => entry.view.expanded.includes(id));
+      } catch {
+        // The render path owns invalid-view diagnostics; keep the outline usable meanwhile.
+      }
+      return [
+        {
+          id: entry.model,
+          title: sourceModel.title,
+          model: sourceModel,
+          tree: projectDiagram.nodes,
+          selected:
+            compositionSelection?.kind === 'element' && compositionSelection.model === entry.model
+              ? compositionSelection.element
+              : null,
+          expanded: entry.view.expanded,
+          allShown
+        }
+      ];
+    });
+  });
   const title = $derived(activeScene?.title ?? 'Custom perspective');
   const subtitle = $derived(activeScene?.description ?? 'A focused view of the same architecture.');
 
@@ -1182,6 +1220,32 @@
     sceneId = null;
     renderView();
   }
+  function showCompositionStructure() {
+    if (!composition) return;
+    const anchor = selectedCompositionModel ?? composition.state.root;
+    compositionAnchor = captureAnchor(anchor, 'title');
+    void renderComposition(
+      parseCompositionState({
+        ...composition.state,
+        projects: composition.state.projects.map((entry) => {
+          if (entry.mode !== 'open') return entry;
+          const sourceModel = compositionModels[entry.model];
+          if (!sourceModel) return entry;
+          try {
+            return { ...entry, view: showAllStructure(sourceModel, entry.view) };
+          } catch {
+            return entry;
+          }
+        })
+      })
+    );
+  }
+  async function selectCompositionOutline(projectModel: string, id: string) {
+    compositionSelection = { kind: 'element', model: projectModel, element: id };
+    menuOpen = false;
+    await tick();
+    composedCanvas?.revealElement(projectModel, id);
+  }
   function toggle(id: string) {
     if (composition && selectedCompositionModel) {
       toggleCompositionElement(selectedCompositionModel, id);
@@ -1197,6 +1261,21 @@
     renderView(id);
   }
   function lens(value: 'structure' | 'trust') {
+    if (composition) {
+      const target = selectedCompositionModel ?? composition.state.root;
+      compositionAnchor = captureAnchor(target, 'title');
+      void renderComposition(
+        parseCompositionState({
+          ...composition.state,
+          projects: composition.state.projects.map((project) =>
+            project.model === target
+              ? { ...project, view: { ...project.view, lens: value } }
+              : project
+          )
+        })
+      );
+      return;
+    }
     view = { ...view, lens: value };
     sceneId = null;
     renderView();
@@ -2035,8 +2114,8 @@
         {sidebarCollapsed}
         {tree}
         {chooseScene}
-        lens={view.lens}
-        proposed={view.proposed}
+        lens={navigationView.lens}
+        proposed={navigationView.proposed}
         onlens={lens}
         onproposed={(proposed) => {
           if (composition) {
@@ -2062,8 +2141,12 @@
         onshowall={showStructure}
         allShown={allStructure?.expanded.every((id) => view.expanded.includes(id)) ?? true}
         {selectInOutline}
+        structureProjects={compositionStructureProjects}
+        ontogglestructure={toggleCompositionElement}
+        onshowallstructure={showCompositionStructure}
+        onselectstructure={selectCompositionOutline}
         theme={view.theme}
-        expanded={view.expanded}
+        expanded={navigationView.expanded}
         clearPeek={() => canvas?.clearPeek()}
         requestPeek={(id, box) => canvas?.requestPeek(id, box)}
         onjump={() => openNavigation('jump')}

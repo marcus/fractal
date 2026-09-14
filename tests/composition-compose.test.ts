@@ -8,6 +8,7 @@ import { inspectConnection, inspectQualified } from '../src/lib/composition/insp
 import { parseCompositionState, parseLinks } from '../src/lib/composition/parse';
 import { COMPOSITION_METRICS, placeFrames } from '../src/lib/composition/place';
 import { searchComposition } from '../src/lib/composition/search';
+import { REFERENCE_STUB_GAP, referenceStubGeometries } from '../src/lib/composition/stubs';
 import {
   closeProject,
   openProject,
@@ -137,6 +138,40 @@ test('host and plugin compose as two frames with both owned bridges and a not_lo
   assert.deepEqual(stub.target, { model: 'missing-plugin' });
   assert.equal(stub.title, 'Unregistered plugin');
   assert.deepEqual(composed.diagnostics, []);
+});
+
+test('reference cards sharing an anchor stack and participate in composition bounds', async () => {
+  const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
+  const links = host.links!;
+  const modified: ProjectSnapshot = {
+    ...host,
+    links: {
+      ...links,
+      links: links.links.map((link) =>
+        link.id === 'unavailable' ? { ...link, from: 'cli' } : link
+      ),
+      connections: [
+        ...links.connections,
+        {
+          id: 'unavailable-call',
+          source: { model: 'host', element: 'cli' },
+          target: { model: 'missing-plugin', element: 'cli' },
+          title: 'Calls unregistered plugin',
+          kind: 'uses',
+          status: 'current',
+          description: 'A second reference at the same local anchor.',
+          evidence: []
+        }
+      ]
+    }
+  };
+  const composed = await compose(staticResolver([modified, plugin]), openState());
+  const cards = [...referenceStubGeometries(composed).values()];
+
+  assert.equal(cards.length, 2);
+  assert.equal(cards[0].position.x, cards[1].position.x);
+  assert.equal(cards[1].position.y, cards[0].position.y + cards[0].height + REFERENCE_STUB_GAP);
+  assert.ok(composed.height >= cards[1].position.y + cards[1].height);
 });
 
 test('a collapsed project routes to its summary card at the fixed summary size', async () => {

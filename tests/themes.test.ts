@@ -44,6 +44,10 @@ test('Grove is the stable default and old view states remain valid', () => {
       { id: 'midnight', name: 'Midnight', appearance: 'dark' }
     ]
   );
+  for (const theme of THEMES) {
+    assert.notEqual(theme.linkedSurface, theme.surface);
+    assert.notEqual(theme.linkedSurface, theme.canvas);
+  }
   assert.deepEqual(
     project(model, state).elements.map((element) => element.id),
     ['node']

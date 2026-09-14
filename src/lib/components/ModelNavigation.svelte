@@ -28,6 +28,15 @@
   import type { Model, LayoutNode, ThemeId } from '$lib/core/types';
 
   type Journey = { id: string; title: string; status: 'current' | 'proposed' };
+  type StructureProject = {
+    id: string;
+    title: string;
+    model: Model;
+    tree: LayoutNode[];
+    selected: string | null;
+    expanded: string[];
+    allShown: boolean;
+  };
   let {
     surface = 'architecture',
     model,
@@ -57,7 +66,11 @@
     onlens,
     onproposed,
     sourceLabel = '.c4',
-    sections
+    sections,
+    structureProjects,
+    ontogglestructure,
+    onshowallstructure,
+    onselectstructure
   }: {
     /** Which diagram surface the sidebar is navigating; both share the same chrome. */
     surface?: 'architecture' | 'sequence';
@@ -90,6 +103,11 @@
     sourceLabel?: string;
     /** Surface-specific navigation, shown where the architecture outline sits. */
     sections?: Snippet;
+    /** Qualified outlines for every open project in a linked composition. */
+    structureProjects?: StructureProject[];
+    ontogglestructure?: (model: string, id: string) => void;
+    onshowallstructure?: () => void;
+    onselectstructure?: (model: string, id: string) => void;
   } = $props();
   let mac = $state(false);
   let sidebarElement: HTMLElement;
@@ -100,6 +118,40 @@
   let resizeTimer: ReturnType<typeof setTimeout>;
   let perspectivesExpanded = $state(true);
   let sequencesExpanded = $state(true);
+  const outlines = $derived(
+    structureProjects ??
+      (model
+        ? [
+            {
+              id: modelId,
+              title: model.title,
+              model,
+              tree,
+              selected,
+              expanded,
+              allShown
+            }
+          ]
+        : [])
+  );
+  const structureCount = $derived(
+    outlines.reduce((total, project) => total + project.tree.length, 0)
+  );
+  const everyStructureShown = $derived(outlines.every((project) => project.allShown));
+
+  function toggleStructure(project: StructureProject, id: string) {
+    clearPeek?.();
+    if (structureProjects) ontogglestructure?.(project.id, id);
+    else toggle?.(id);
+  }
+  function selectStructure(project: StructureProject, id: string) {
+    if (structureProjects) onselectstructure?.(project.id, id);
+    else selectInOutline?.(id);
+  }
+  function showEveryStructure() {
+    if (structureProjects) onshowallstructure?.();
+    else onshowall?.();
+  }
   onMount(() => {
     mac = /Mac|iPhone|iPad/.test(navigator.platform);
     perspectivesExpanded = navigationSectionExpandedPreference('perspectives');
@@ -172,6 +224,38 @@
     rememberSidebarWidth(sidebarWidth);
   }
 </script>
+
+{#snippet structureTree(project: StructureProject)}
+  <div class="model-tree">
+    {#each project.tree as element}<div
+        class="tree-row"
+        class:chosen={project.selected === element.id}
+        class:proposed={element.status === 'proposed'}
+        title={element.status === 'proposed' ? 'Proposed' : undefined}
+        style={`--depth:${element.depth}`}
+      >
+        {#if project.model.elements.some((candidate) => candidate.parent === element.id)}<button
+            class="tree-toggle"
+            aria-label={`${project.expanded.includes(element.id) ? 'Collapse' : 'Expand'} ${element.title} in ${project.title} outline`}
+            onclick={() => toggleStructure(project, element.id)}
+            onpointerenter={(event) =>
+              project.id === modelId &&
+              requestPeek?.(element.id, event.currentTarget.getBoundingClientRect())}
+            onpointerleave={() => project.id === modelId && clearPeek?.()}
+            onfocus={(event) =>
+              project.id === modelId &&
+              requestPeek?.(element.id, event.currentTarget.getBoundingClientRect())}
+            onblur={() => project.id === modelId && clearPeek?.()}
+            >{#if project.expanded.includes(element.id)}<Minus size={11} />{:else}<Plus
+                size={11}
+              />{/if}</button
+          >{:else}<span class="tree-leaf" style={`background:${element.color}`}></span>{/if}
+        <button class="tree-title" onclick={() => selectStructure(project, element.id)}
+          >{element.title}</button
+        >
+      </div>{/each}
+  </div>
+{/snippet}
 
 <aside
   id="fractal-sidebar"
@@ -271,45 +355,32 @@
             <div class="section-label structure-label">
               <span class="section-name"><Grid size={12} aria-hidden="true" />Structure</span><span
                 class="structure-meta"
-                >{tree.length}<button
+                >{structureCount}<button
                   class="show-all"
                   aria-label="Show all structure"
-                  disabled={allShown}
-                  onclick={onshowall}>Show all</button
+                  disabled={everyStructureShown}
+                  onclick={showEveryStructure}>Show all</button
                 ></span
               >
             </div>
-            <div class="model-tree">
-              {#each tree as element}<div
-                  class="tree-row"
-                  class:chosen={selected === element.id}
-                  class:proposed={element.status === 'proposed'}
-                  title={element.status === 'proposed' ? 'Proposed' : undefined}
-                  style={`--depth:${element.depth}`}
-                >
-                  {#if model?.elements.some((e) => e.parent === element.id)}<button
-                      class="tree-toggle"
-                      aria-label={`${expanded.includes(element.id) ? 'Collapse' : 'Expand'} ${element.title} in outline`}
-                      onclick={() => {
-                        clearPeek?.();
-                        toggle?.(element.id);
-                      }}
-                      onpointerenter={(e) =>
-                        requestPeek?.(element.id, e.currentTarget.getBoundingClientRect())}
-                      onpointerleave={() => clearPeek?.()}
-                      onfocus={(e) =>
-                        requestPeek?.(element.id, e.currentTarget.getBoundingClientRect())}
-                      onblur={() => clearPeek?.()}
-                      >{#if expanded.includes(element.id)}<Minus size={11} />{:else}<Plus
-                          size={11}
-                        />{/if}</button
-                    >{:else}<span class="tree-leaf" style={`background:${element.color}`}
-                    ></span>{/if}
-                  <button class="tree-title" onclick={() => selectInOutline?.(element.id)}
-                    >{element.title}</button
-                  >
-                </div>{/each}
-            </div>
+            {#if outlines.length > 1}
+              <div class="project-outlines">
+                {#each outlines as project (project.id)}
+                  <details class="project-outline" open data-structure-project={project.id}>
+                    <summary>
+                      <span>{project.title}</span><span class="project-outline-meta"
+                        >{project.tree.length}<span class="project-outline-chevron"
+                          ><ChevronDown size={11} /></span
+                        ></span
+                      >
+                    </summary>
+                    {@render structureTree(project)}
+                  </details>
+                {/each}
+              </div>
+            {:else if outlines[0]}
+              {@render structureTree(outlines[0])}
+            {/if}
           </div>
         {/if}
       {/if}
@@ -469,6 +540,52 @@
     overflow: visible;
     padding-left: 0;
     padding-right: 0;
+  }
+  .project-outlines {
+    display: grid;
+    gap: 5px;
+  }
+  .project-outline summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 30px;
+    padding: 4px 5px;
+    border-radius: 5px;
+    color: var(--ui-text, #283d34);
+    font-size: 11px;
+    font-weight: 560;
+    cursor: pointer;
+    list-style: none;
+  }
+  .project-outline summary::-webkit-details-marker {
+    display: none;
+  }
+  .project-outline summary:hover,
+  .project-outline summary:focus-visible {
+    background: var(--ui-hover, #edf1ea);
+    outline: none;
+  }
+  .project-outline-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ui-subtle, #7d887a);
+    font-size: 10px;
+    font-weight: 400;
+  }
+  .project-outline-chevron {
+    display: flex;
+    transition: transform 160ms ease;
+  }
+  .project-outline:not([open]) .project-outline-chevron {
+    transform: rotate(-90deg);
+  }
+  .project-outline .model-tree {
+    padding-bottom: 4px;
+  }
+  .project-outline .tree-row {
+    padding-left: calc(12px + var(--depth) * 11px);
   }
   .architecture-sequences {
     flex-shrink: 0;
