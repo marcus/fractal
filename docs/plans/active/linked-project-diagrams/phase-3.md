@@ -45,7 +45,10 @@ repository model contents.
   separate cache-cleared sample. The browser server starts against a private temporary catalog and
   the heap is read after forced GC before the cycles, at the warm-up boundary (cycle 10) and after
   cycle 50. This is a shared workstation; unrelated background work was not controlled.
-- Commands (the fixture matrix and its sanitized copy):
+- Commands. The baseline command's stdout had no absolute paths and was written to the committed
+  file as-is apart from an added `environment` block; the browser journey's committed copy replaces
+  the private temp catalog path and ephemeral port with placeholders and adds `commit` and
+  `environment`:
   ```sh
   npm run build
   bin/fractal bench --composition --iterations 5 --json \
@@ -165,7 +168,7 @@ Admission limits are 20 participating projects, 10,000 total loaded elements, 20
 relationships, 500 visible nodes, 1,000 visible edges, 5 MiB source bytes per project and 128 MiB
 estimated cache payload, accounting for bridge geometry and in-flight responses. The measured
 cache payload after the 50-cycle run is under 19 KB; the largest measured composition is the
-`visible` fixture at 304 visible nodes / 271 visible edges / 212 KB of serialized geometry. Exceeding
+`visible` fixture at 304 visible nodes / 271 visible edges / 209 KiB of serialized geometry. Exceeding
 a limit returns a shared diagnostic and keeps the last successful view; the CLI benchmark exercises
 the core directly, so it reports over-limit fixtures without refusing them (the `loaded` row at
 10,004 elements). Service/CLI configuration owns overrides.
