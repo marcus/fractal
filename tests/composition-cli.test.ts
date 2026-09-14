@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { encodeCompositionState } from '../src/lib/composition/codec';
+import { parseCompositionState } from '../src/lib/composition/parse';
 import { layout } from '../src/lib/core/layout';
 import { loadModel } from '../src/lib/server/models';
 
@@ -160,26 +162,105 @@ test('layout without composition flags is unchanged and matches the core layout'
   }
 });
 
-test('search in a composition qualifies results and lists unopened links as metadata', async () => {
+test('search in a composition uses the core scorer with link metadata', async () => {
   const { root, run } = await fixture();
   try {
     const { status, stdout } = run(['search', '--model', 'host', '--composition', 'plugins']);
     assert.equal(status, 0);
     const results = JSON.parse(stdout);
-    assert.ok(results.some((entry: { model: string; id: string }) => entry.model === 'plugin'));
-    const links = results.filter((entry: { source: string }) => entry.source === 'link');
+    assert.ok(
+      results.some(
+        (entry: { model: string; kind: string }) =>
+          entry.model === 'plugin' && entry.kind !== 'link'
+      ),
+      'participating models are searched'
+    );
+    for (const entry of results) {
+      assert.ok(entry.selection, 'every hit carries its qualified selection');
+      assert.ok(entry.reveal, 'every hit carries its reveal hint');
+    }
+    const links = results.filter((entry: { kind: string }) => entry.kind === 'link');
     assert.deepEqual(links, [
       {
-        model: 'missing-plugin',
-        source: 'link',
-        type: 'link',
+        model: 'host',
+        kind: 'link',
         id: 'unavailable',
         title: 'Unregistered plugin',
         description: 'host → missing-plugin',
+        score: links[0].score,
+        selection: { kind: 'project', model: 'host' },
+        reveal: { model: 'host', expanded: links[0].reveal.expanded },
         owner: 'host',
+        linkId: 'unavailable',
         target: { model: 'missing-plugin' }
       }
     ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('layout --composition-state accepts an encoded v1. permalink value', async () => {
+  const { root, run } = await fixture();
+  try {
+    const encoded = encodeCompositionState(
+      parseCompositionState(JSON.parse(await readFile(join(FIXTURES, 'composition.json'), 'utf8')))
+    );
+    assert.ok(encoded.startsWith('v1.'));
+    const { status, stdout } = run(['layout', '--model', 'host', '--composition-state', encoded]);
+    assert.equal(status, 0);
+    const composed = JSON.parse(stdout);
+    assert.deepEqual(
+      composed.projects.map((project: { model: string }) => project.model),
+      ['host', 'plugin']
+    );
+
+    const fromFile = join(root, 'state.json');
+    await writeFile(fromFile, await readFile(join(FIXTURES, 'composition.json'), 'utf8'));
+    const filed = run(['layout', '--model', 'host', '--composition-state', fromFile]);
+    assert.equal(filed.status, 0);
+    assert.deepEqual(JSON.parse(filed.stdout).state, composed.state);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('an over-limit composition exits nonzero with budget_exceeded', async () => {
+  const { root, run } = await fixture();
+  try {
+    const projects = ['host'];
+    for (let index = 0; index < 20; index += 1) projects.push(`fake-${index}`);
+    const stateFile = join(root, 'wide.json');
+    await writeFile(
+      stateFile,
+      JSON.stringify({
+        version: 1,
+        root: 'host',
+        projects: projects.map((model) => ({
+          model,
+          mode: 'open',
+          view: { expanded: [], proposed: false, lens: 'structure' }
+        })),
+        theme: 'grove',
+        layout: 'elk-layered'
+      })
+    );
+    const { status, stdout, stderr } = run([
+      'layout',
+      '--model',
+      'host',
+      '--composition-state',
+      stateFile
+    ]);
+    assert.notEqual(status, 0);
+    assert.equal(stdout, '');
+    const failure = JSON.parse(stderr);
+    assert.equal(failure.code, 'budget_exceeded');
+    assert.deepEqual(failure.diagnostics[0].budget, {
+      resource: 'projects',
+      actual: 21,
+      limit: 20
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

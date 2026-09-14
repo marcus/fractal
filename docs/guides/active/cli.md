@@ -44,7 +44,7 @@ Options:
   --directory PATH               Read model.c4 + fractal.json from a directory
   --linked                       Validate the declared linked-project closure
   --composition ID               Authored composition from the root links.json
-  --composition-state FILE       Explicit resolved composition state file
+  --composition-state FILE|v1.… Explicit state file or encoded permalink value
   --selection JSON               Qualified selection for inspect in a composition
   --surface architecture|sequence|portable Shortcut surface (default architecture)
   --journey ID                   Sequence journey identifier

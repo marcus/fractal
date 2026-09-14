@@ -179,6 +179,50 @@ test('catalog selection honors precedence, expands home, and fails explicit miss
   }
 });
 
+test('duplicate catalog IDs are fatal for the whole catalog', async () => {
+  const { root, models, catalog } = await fixture();
+  try {
+    await writeFile(
+      catalog,
+      JSON.stringify({
+        version: 1,
+        projects: [
+          { id: 'delivery', directory: join(models, 'delivery') },
+          { id: 'delivery', directory: join(models, 'observatory') }
+        ]
+      })
+    );
+    const options = { catalog, env: {}, home: join(root, 'home'), cwd: root };
+    await assert.rejects(resolveCatalog(options), /duplicate/);
+    await assert.rejects(listModels(options), /duplicate/);
+    await assert.rejects(loadModel('delivery', options), /duplicate/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('one malformed unrelated model does not block healthy entries', async () => {
+  const { root, models, catalog } = await fixture();
+  try {
+    await writeFile(join(models, 'observatory', 'model.c4'), 'this is not a LikeC4 model');
+    const options = { catalog, env: {}, home: join(root, 'home'), cwd: root };
+    // The picker still lists everything: listing reads companions only, so the broken
+    // source is listed without a diagnostic and reported when the model is opened.
+    const listed = await listModels(options);
+    assert.equal(listed.length, 2);
+    assert.equal(
+      listed.find((project) => project.id === 'observatory')?.diagnostic,
+      undefined,
+      'listing reads companions only, so a broken source is not a listing failure'
+    );
+    assert.equal((await loadModel('delivery', options)).model.id, 'delivery');
+    await assert.rejects(loadModel('observatory', options), /Invalid model/);
+    assert.equal((await loadModel('delivery', options)).model.id, 'delivery');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('project search covers identity, title, and description', () => {
   const projects = [
     {

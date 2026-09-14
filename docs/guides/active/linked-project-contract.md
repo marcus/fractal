@@ -233,14 +233,37 @@ keeps `--directory` as an explicit local entry point whose links resolve through
   targets are never searched and appear as link metadata results.
 
 CLI additions: `fractal links --model X [--json]`; `fractal validate --model X --linked` (exit 1
-and diagnostics JSON when invalid); and `--composition ID` / `--composition-state FILE` on
-`project`, `layout`, `inspect` and `search`. `layout` prints the full `ComposedDiagram`; `project`
-prints it without per-project `diagram` geometry; `inspect --selection '<json>'` prints the
-qualified inspection; `search` searches every participating model. Without the new flags every
-existing command's output is unchanged.
+and diagnostics JSON when invalid); and `--composition ID` / `--composition-state FILE|v1.…` on
+`project`, `layout`, `inspect` and `search`. `--composition-state` accepts either a path to an
+explicit resolved state file or a versioned encoded `v1.` permalink value (as produced by the
+composition codec); the two selectors stay mutually exclusive. `layout` prints the full
+`ComposedDiagram`; `project` prints it without per-project `diagram` geometry;
+`inspect --selection '<json>'` prints the qualified inspection; `search` searches every
+participating model through the shared core scorer, so unopened link targets appear as `link`
+metadata results with their qualified selection and reveal hint, never as searched models.
+An over-limit composition exits nonzero with `code: 'budget_exceeded'` and the refusing
+diagnostics on stderr, and is never truncated. Without the new flags every existing command's
+output is unchanged.
 
 HTTP additions: `GET /api/composition/links?model=X`, `POST /api/composition/validate { model }`,
-and `POST /api/composition/render { root, composition?, state?, revisions? }`. Invalid input
-(contract errors, unknown root, mutually exclusive selectors) is 400; a changed participating
-revision is 409 with `{ error, code: 'revision_changed', model }`; an over-budget state payload is
-422; recoverable target failures stay 200 with diagnostics in the body.
+`POST /api/composition/render { root, composition?, state?, revisions?, generation?, reload? }`,
+and `GET /api/composition/search?model=X&q=…&composition=…&state=…`. Render `state` accepts a
+decoded object or an encoded `v1.` string; search takes the same selectors as URL parameters
+(`composition` for an authored ID, `state` for an encoded `v1.` permalink value, mutually
+exclusive) and answers through the same core scorer as the CLI. `revisions` carries the vector
+the caller composed against: a participating source whose loaded revision differs is 409 with
+`{ error, code: 'revision_changed', model, expected, actual, recovery: 'reload' }`, and only
+successfully validated snapshots contribute revisions (an unopened target adds its revision
+after validation). `generation` is a nonnegative integer echoed verbatim in the result; slow
+responses carry their generation and callers discard any response older than their latest
+dispatch — cancelled or older generations never replace newer state. `reload: true` parses
+every participating snapshot fresh with stamp verification (one retry for concurrent writes,
+then `source_changing` with recovery `retry`) and answers with the new revision vector.
+Invalid input (contract errors, unknown root, mutually exclusive selectors, malformed
+`revisions`/`generation`) is 400; a source changing under the read is 409 with
+`{ error, code: 'source_changing', recovery: 'retry' }`; an over-budget state payload or an
+over-limit composition is 422 with `code: 'budget_exceeded'`; recoverable target failures stay
+200 with diagnostics in the body. Admission limits default to 20 projects, 10,000 loaded
+elements, 20,000 relationships, 500 visible nodes, 1,000 visible edges, 5 MiB source bytes per
+project and 128 MiB estimated cache payload; overrides come from service configuration only,
+never from URLs, state payloads or request bodies.
