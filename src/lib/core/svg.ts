@@ -11,6 +11,18 @@ const xml = (value: unknown): string =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]!
   );
 const number = (value: number): string => Number(value.toFixed(3)).toString();
+
+/**
+ * Shared scalar formatters for SVG exporters. The single-model renderer above keeps its
+ * private copies so its bytes cannot drift; the composition exporter uses these.
+ */
+export const escapeXml = (value: unknown): string =>
+  String(value).replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]!
+  );
+export const formatSvgNumber = (value: number): string => Number(value.toFixed(3)).toString();
 const color = (value: string): string => (/^#[\da-f]{3,8}$/i.test(value) ? value : '#557b70');
 const lines = (
   values: string[],

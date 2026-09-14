@@ -46,6 +46,7 @@ Options:
   --linked                       Validate the declared linked-project closure
   --composition ID               Authored composition from the root links.json
   --composition-state FILE|v1.… Explicit state file or encoded permalink value
+  --allow-unresolved            Export despite failed targets (unavailable cards + manifest)
   --selection JSON               Qualified selection for inspect in a composition
   --surface architecture|sequence|portable Shortcut surface (default architecture)
   --journey ID                   Sequence journey identifier

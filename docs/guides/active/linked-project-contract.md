@@ -293,6 +293,71 @@ every composed result that included it; unrelated projects' layout entries survi
 Invalidation is change-driven: a stamp never seen for a known directory triggers it,
 while a first load (or an identical copy elsewhere) invalidates nothing.
 
+## Composition export
+
+`exportCompositionSvg(composed, models)` in `src/lib/composition/svg.ts` renders the
+exact requested composition as portable SVG: every project frame (title band,
+perimeter), each local diagram translated by its frame transform, perimeter ports,
+reference stubs, and bridges with arrowheads and labels (`×N` for bundles), all in
+theme tokens. Artwork is independent of viewport culling — offscreen content is always
+included — and UI chrome is excluded. Every `id` and `aria-labelledby` reference is
+namespaced per project; the two arrow markers (`cmp-arrow`, `cmp-arrow-proposed`) are
+defined once at the root. Output is escaped and deterministic for the same input.
+`src/lib/server/export.ts` is the export boundary both surfaces call: it composes
+through `composeFromSelector` (so admission limits are checked before any output is
+allocated), enforces the unresolved-target policy, renders PNG through the existing
+renderer (full-page capture so offscreen content survives; the default viewport
+screenshot for single-model export is unchanged), and builds the manifest.
+
+Exports validate endpoints for participating targets but never resolve unopened links
+outside the requested composition. A failed participating target fails the export by
+default — CLI nonzero with `{ error, code: 'export_unresolved', diagnostics }` on
+stderr, HTTP 422 — with diagnostics naming owner, target and recovery. With
+`--allow-unresolved` (CLI) or `allowUnresolved: true` (HTTP) the export renders
+visible unavailable cards and carries the diagnostics in its manifest. Unopened links
+are intentional omissions listed in the manifest, never errors.
+
+Every export returns a JSON manifest:
+
+```json
+{
+  "version": 1,
+  "format": "svg",
+  "root": "harbor",
+  "composition": "plugins",
+  "state": {},
+  "projects": [{ "model": "harbor", "revision": "<hex>", "scene": "overview", "mode": "open" }],
+  "omitted": [
+    {
+      "owner": "harbor",
+      "linkId": "beacon-diagram",
+      "target": { "model": "beacon" },
+      "title": "Beacon architecture"
+    }
+  ],
+  "unresolved": [],
+  "output": "/tmp/harbor-plugins.svg"
+}
+```
+
+(`state` is the resolved composition state; `composition` is present only for
+authored compositions; `output` is present only when the CLI wrote a file.)
+
+CLI: `fractal export --composition ID | --composition-state FILE|v1.…` with
+`--format svg|png`, `--allow-unresolved` and `--output`. With `--output` the file is
+written and the manifest is printed to stdout; without it the artwork goes to stdout
+and `--json` prints the manifest to stderr. PNG requires `--output` (Chromium).
+Single-model export (no composition selector) is byte-identical to before.
+
+HTTP: `POST /api/export { model, composition?, compositionState?, format?,
+allowUnresolved?, revisions? }` (`composition` is an authored ID, `compositionState`
+a decoded state object or `v1.` value, mutually exclusive; `state` keeps its
+single-model ViewState meaning). The artwork is the response body and the manifest —
+the same shape the CLI prints — travels base64url-encoded in the
+`x-fractal-export-manifest` response header. Invalid input is 400, a changed
+participating revision or a source changing under the read is 409, and an unresolved
+or over-limit composition is 422.
+
 Resolution and layout jobs run through one bounded work queue per server: at most two
 concurrent jobs, identical in-flight requests coalesced, a bounded wait (refused with
 `server_busy`, HTTP 429, when full). A request carrying an older `generation` than the
