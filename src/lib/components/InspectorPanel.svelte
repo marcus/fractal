@@ -111,27 +111,13 @@
     );
   }
   /**
-   * The project whose Proposed switch would reveal this hidden claim, derived from the
-   * composed hidden entry plus the endpoint models and their view flags: the claim owner
-   * for owner-hidden claims, otherwise the endpoint project whose switch is off. When
-   * both endpoint switches are off the hidden entry cannot name which endpoint hides the
-   * claim, so the target wins: flipping it reveals the verified target-side journey, and
-   * a single off switch is always that switch. Never "the other project from the one
-   * being inspected."
+   * The project whose Proposed switch would reveal this hidden claim. The composed hidden
+   * entry names it: the claim owner for owner-hidden claims, the hidden endpoint's project
+   * for endpoint-hidden claims. Never "the other project from the one being inspected."
    */
-  function showProposedTarget(
-    claim: (typeof hiddenClaims)[number],
-    authored:
-      | { source: { model: string; element: string }; target: { model: string; element: string } }
-      | undefined
-  ): string {
-    if (claim.reason === 'proposed-owner' || !authored) return claim.owner;
-    return (
-      [authored.target.model, authored.source.model].find((id) => {
-        const entry = composition?.state.projects.find((project) => project.model === id);
-        return entry !== undefined && !entry.view.proposed;
-      }) ?? claim.owner
-    );
+  function showProposedTarget(claim: (typeof hiddenClaims)[number]): string {
+    if (claim.reason === 'proposed-owner') return claim.owner;
+    return claim.endpoint?.model ?? claim.owner;
   }
   function hiddenSwitch(modelId: string): string {
     return `${projectName(modelId)} Proposed`;
@@ -354,7 +340,7 @@
                 {@const authored = composition?.links?.[claim.owner]?.connections.find(
                   (entry) => entry.id === claim.connectionId
                 )}
-                {@const switchProject = showProposedTarget(claim, authored)}
+                {@const switchProject = showProposedTarget(claim)}
                 <div
                   class="linked-item"
                   data-hidden-claim={claim.connectionId}

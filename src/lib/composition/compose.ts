@@ -470,22 +470,25 @@ export async function compose(
       const targetState = effectiveProjects.find(
         (entry) => entry.model === connection.target.model
       )!;
-      if (
-        endpointProposedHidden(
-          resolved.get(connection.source.model)!,
-          sourceState,
-          connection.source.element
-        ) ||
-        endpointProposedHidden(
-          resolved.get(connection.target.model)!,
-          targetState,
-          connection.target.element
-        )
-      ) {
+      const sourceHidden = endpointProposedHidden(
+        resolved.get(connection.source.model)!,
+        sourceState,
+        connection.source.element
+      );
+      const targetHidden = endpointProposedHidden(
+        resolved.get(connection.target.model)!,
+        targetState,
+        connection.target.element
+      );
+      if (sourceHidden || targetHidden) {
+        // Name the hidden endpoint in check order, so inspection offers the switch
+        // that reveals the claim instead of guessing from the endpoints.
+        const hiddenEndpoint = sourceHidden ? connection.source : connection.target;
         hidden.push({
           owner: project.model,
           connectionId: connection.id,
-          reason: 'proposed-endpoint'
+          reason: 'proposed-endpoint',
+          endpoint: { model: hiddenEndpoint.model, element: hiddenEndpoint.element }
         });
         continue;
       }
@@ -552,7 +555,8 @@ export async function compose(
         hidden.push({
           owner: project.model,
           connectionId: connection.id,
-          reason: 'proposed-endpoint'
+          reason: 'proposed-endpoint',
+          endpoint: { model: foreign.local.model, element: foreign.local.element }
         });
         continue;
       }

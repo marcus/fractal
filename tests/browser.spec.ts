@@ -2247,6 +2247,111 @@ model {
   }
 });
 
+test('a linked source-proposed claim offers the source project switch', async ({ page }) => {
+  test.setTimeout(90000);
+  const root = await mkdtemp(join(tmpdir(), 'fractal-linked-source-proposed-'));
+  await cp(join('tests', 'fixtures', 'linked-projects', 'host'), join(root, 'host'), {
+    recursive: true
+  });
+  await cp(join('tests', 'fixtures', 'linked-projects', 'plugin'), join(root, 'plugin'), {
+    recursive: true
+  });
+  await rm(join(root, 'plugin', 'links.json'), { force: true });
+  // Host keeps a current claim to plugin.cli; host.cli is proposed, so the offered switch
+  // must be the source project even though the target project switch is also off.
+  await writeFile(
+    join(root, 'host', 'model.c4'),
+    `// Fictional integration host; no real repository architecture is asserted.
+specification {
+  element subsystem
+  element component
+  relationship calls
+  tag proposed
+}
+model {
+  core = subsystem 'Harbor host' {
+    metadata { uid 'core' }
+    cli = component 'Plugin adapter' {
+      #proposed
+      metadata { uid 'cli' }
+    }
+    fallback = component 'Unannotated helper'
+  }
+  store = component 'Host records' { metadata { uid 'store' } }
+  core.cli -[calls]-> store 'Reads host state' { metadata { uid 'call' } }
+}
+`
+  );
+  const port = await freePort();
+  const server = spawn(
+    'npx',
+    ['vite', 'dev', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        FRACTAL_CATALOG: '',
+        FRACTAL_MODELS_DIR: root,
+        HOST: '127.0.0.1',
+        PORT: String(port)
+      },
+      stdio: ['ignore', 'ignore', 'ignore']
+    }
+  );
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    await waitForServer(`${base}/api/models`);
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${base}/?model=host&scene=overview`);
+    await ready(page);
+
+    // The proposed source element only renders with its switch on, so open the link
+    // first, then hide the claim by switching host proposed content back off.
+    await page.getByRole('checkbox', { name: 'Proposed' }).check();
+    await ready(page);
+    await page.locator('[data-node-id="core"]').click();
+    await page
+      .locator('.inspector')
+      .getByRole('button', { name: 'Plugin adapter' })
+      .click();
+    await ready(page);
+    await page.locator('[data-open-link="plugin"]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-project-frame]')).toHaveCount(2);
+    await expect(
+      page.locator('[data-connection-owner="host"][data-connection-id="call"]')
+    ).toBeVisible();
+    await page.getByRole('checkbox', { name: 'Proposed' }).uncheck();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(
+      page.locator('[data-connection-owner="host"][data-connection-id="call"]')
+    ).toHaveCount(0);
+
+    await page.locator('.composition-canvas svg').focus();
+    await page.keyboard.press('0');
+    await page.locator('[data-node-id="plugin:store"]').click();
+    const hidden = page.locator('[data-hidden-claim="call"]');
+    await expect(hidden).toBeVisible();
+    await expect(hidden).toHaveAttribute('data-hidden-reason', 'proposed-endpoint');
+    await expect(hidden.locator('[data-show-proposed]')).toHaveAttribute(
+      'data-show-proposed',
+      'host'
+    );
+    await expect(hidden).toContainText('Harbor host Proposed');
+    await hidden.locator('[data-show-proposed]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-hidden-claim="call"]')).toHaveCount(0);
+    await expect(
+      page.locator('[data-connection-owner="host"][data-connection-id="call"]')
+    ).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    server.kill('SIGTERM');
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('a linked three-project composition restores permalinks, ports, search and revision reload', async ({
   page
 }) => {

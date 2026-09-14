@@ -294,10 +294,48 @@ test('a proposed endpoint hides the claim even when the owner shows proposed con
   );
 
   assert.deepEqual(composed.hidden, [
-    { owner: 'host', connectionId: 'preview', reason: 'proposed-endpoint' },
+    {
+      owner: 'host',
+      connectionId: 'preview',
+      reason: 'proposed-endpoint',
+      endpoint: { model: 'third', element: 'beta' }
+    },
     { owner: 'third', connectionId: 'future', reason: 'proposed-owner' }
   ]);
   assert.ok(!composed.bridges.some((bridge) => bridge.id === 'preview'));
+});
+
+test('a source-proposed endpoint names the source project as the hidden endpoint', async () => {
+  const [host, plugin, third] = await Promise.all([
+    snapshot('host'),
+    snapshot('plugin'),
+    snapshot('third')
+  ]);
+  const recall: ProjectConnection = {
+    id: 'recall',
+    source: { model: 'third', element: 'beta' },
+    target: { model: 'host', element: 'cli' },
+    title: 'Recalls host state',
+    kind: 'uses',
+    status: 'current',
+    description: 'A current claim from a proposed source endpoint.',
+    evidence: []
+  };
+  const composed = await compose(
+    staticResolver([withConnection(third, recall), host, plugin]),
+    openThree()
+  );
+
+  assert.deepEqual(composed.hidden, [
+    { owner: 'third', connectionId: 'future', reason: 'proposed-owner' },
+    {
+      owner: 'third',
+      connectionId: 'recall',
+      reason: 'proposed-endpoint',
+      endpoint: { model: 'third', element: 'beta' }
+    }
+  ]);
+  assert.ok(!composed.bridges.some((bridge) => bridge.id === 'recall'));
 });
 
 test('a proposed claim draws when its owner and both endpoints are eligible', async () => {
@@ -982,6 +1020,13 @@ test('a current claim whose local endpoint is proposal-hidden is not stubbed', a
   );
   assert.deepEqual(
     composed.hidden.filter((claim) => claim.connectionId === 'future'),
-    [{ owner: 'third', connectionId: 'future', reason: 'proposed-endpoint' }]
+    [
+      {
+        owner: 'third',
+        connectionId: 'future',
+        reason: 'proposed-endpoint',
+        endpoint: { model: 'third', element: 'beta' }
+      }
+    ]
   );
 });

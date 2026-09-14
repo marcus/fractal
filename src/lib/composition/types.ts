@@ -169,6 +169,11 @@ export interface HiddenClaim {
   owner: string;
   connectionId: string;
   reason: 'proposed-owner' | 'proposed-endpoint';
+  /**
+   * The endpoint withheld by its project's Proposed switch. Present only for
+   * `proposed-endpoint`; a `proposed-owner` claim names no endpoint.
+   */
+  endpoint?: { model: string; element: string };
 }
 export interface ReferenceStub {
   owner: string;
