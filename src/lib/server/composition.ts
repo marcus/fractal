@@ -4,12 +4,20 @@ import { decodeCompositionState } from '../composition/codec';
 import { compose } from '../composition/compose';
 import { inspectQualified, type QualifiedInspection } from '../composition/inspect';
 import {
+  BudgetExceededError,
   checkAdmission,
   DEFAULT_COMPOSITION_LIMITS,
   estimateBytes,
+  snapshotAdmissionCounts,
   type CompositionCounts,
   type CompositionLimits
 } from '../composition/limits';
+
+/**
+ * The admission refusal stays importable from the application boundary: existing CLI,
+ * route and test importers keep working while the class itself lives beside the gate.
+ */
+export { BudgetExceededError };
 import { parseCompositionState } from '../composition/parse';
 import {
   revisionConflicts,
@@ -74,21 +82,6 @@ export class RevisionConflictError extends Error {
     this.model = model;
     this.expected = expected;
     this.actual = actual;
-  }
-}
-
-/**
- * The composition exceeds its admission limits. The result is refused whole — never
- * truncated — so the caller collapses, focuses or narrows the composition and retries.
- * Routes translate it to HTTP 422; the CLI exits nonzero.
- */
-export class BudgetExceededError extends Error {
-  readonly code = 'budget_exceeded' as const;
-  readonly diagnostics: CompositionDiagnostic[];
-  constructor(diagnostics: CompositionDiagnostic[]) {
-    super(diagnostics[0]?.message ?? 'The composition exceeds its resource budget.');
-    this.name = 'BudgetExceededError';
-    this.diagnostics = diagnostics;
   }
 }
 
@@ -591,65 +584,6 @@ async function resolveAdditional(
   for (const model of models) {
     if (!outcomes.has(model)) outcomes.set(model, await resolver.resolve(model));
   }
-}
-
-/**
- * Visible geometry toward the `visibleNodes`/`visibleEdges` gates: laid-out local nodes
- * and edges, plus one visible connection per drawn bridge and one visible stand-in per
- * perimeter port and reference stub. Bridge geometry is resource accounting, not free:
- * a composition of quiet projects joined by hundreds of claims is refused under the
- * same visible gates as a dense local diagram.
- */
-export function visibleAdmissionCounts(composed: ComposedDiagram): {
-  visibleNodes: number;
-  visibleEdges: number;
-} {
-  let visibleNodes = composed.stubs.length;
-  let visibleEdges = composed.bridges.length;
-  for (const project of composed.projects) {
-    if (project.diagram) {
-      visibleNodes += project.diagram.nodes.length;
-      visibleEdges += project.diagram.edges.length;
-    }
-    visibleNodes += project.ports.length;
-  }
-  return { visibleNodes, visibleEdges };
-}
-
-/**
- * Admission counts from resolved snapshots and a composed diagram, shared by
- * `composeFromSelector` and the linked HTML export so both gates count the same
- * geometry. Loaded counts cover every resolved snapshot; collapsed projects keep no
- * diagram but their snapshots still load. Source and cache bytes are deterministic
- * serialization-size approximations, not heap measurements. An over-limit composition
- * is refused whole, never truncated.
- */
-export function snapshotAdmissionCounts(
-  projects: number,
-  snapshots: ProjectSnapshot[],
-  composed: ComposedDiagram
-): CompositionCounts {
-  let loadedElements = 0;
-  let relationships = 0;
-  let sourceBytesPerProject = 0;
-  let snapshotBytes = 0;
-  for (const snapshot of snapshots) {
-    loadedElements += snapshot.model.elements.length;
-    relationships += snapshot.model.relationships.length;
-    const bytes = estimateBytes(snapshot);
-    snapshotBytes += bytes;
-    if (bytes > sourceBytesPerProject) sourceBytesPerProject = bytes;
-  }
-  const { visibleNodes, visibleEdges } = visibleAdmissionCounts(composed);
-  return {
-    projects,
-    loadedElements,
-    relationships,
-    visibleNodes,
-    visibleEdges,
-    sourceBytesPerProject,
-    cacheBytes: estimateBytes(composed) + snapshotBytes
-  };
 }
 
 /** Admission counts for a composed result: every resolved outcome's snapshot counts. */

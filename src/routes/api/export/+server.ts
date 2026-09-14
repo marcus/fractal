@@ -9,6 +9,7 @@ import { exportSvg } from '$lib/core/svg';
 import {
   BudgetExceededError,
   CompositionUsageError,
+  effectiveLimits,
   RevisionConflictError
 } from '$lib/server/composition';
 import { ExportUnresolvedError, exportComposition } from '$lib/server/export';
@@ -196,7 +197,8 @@ export const POST: RequestHandler = async ({ request }) => {
             sequences,
             include: include ?? [],
             snapshots,
-            sequencesByModel
+            sequencesByModel,
+            limits: effectiveLimits({})
           }),
           {
             headers: {
@@ -213,6 +215,7 @@ export const POST: RequestHandler = async ({ request }) => {
           state,
           scene: input.scene,
           sequences,
+          limits: effectiveLimits({}),
           diagram: () => renderDiagram(loaded, state)
         }),
         {

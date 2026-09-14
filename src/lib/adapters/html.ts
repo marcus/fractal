@@ -1,12 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { compose } from '../composition/compose';
-import { checkAdmission, type CompositionLimits } from '../composition/limits';
 import {
   BudgetExceededError,
-  effectiveLimits,
-  snapshotAdmissionCounts
-} from '../server/composition';
+  checkAdmission,
+  DEFAULT_COMPOSITION_LIMITS,
+  snapshotAdmissionCounts,
+  type CompositionLimits
+} from '../composition/limits';
 import { openProject, rootState, stateFromComposition } from '../composition/state';
 import { staticResolver, type ProjectSnapshot } from '../composition/snapshot';
 import type { CompositionState, ProjectLinks } from '../composition/types';
@@ -56,13 +57,12 @@ export interface HtmlExportOptions {
   /** Explicit composition state to replay; mutually exclusive with `composition`. */
   compositionState?: CompositionState;
   /**
-   * Admission-limit overrides for the linked export. Only service/CLI configuration
-   * may set this; when omitted the `FRACTAL_COMPOSITION_LIMITS` service environment
-   * (or the plan defaults) applies, exactly like the SVG/PNG export gate.
+   * The effective admission limits for the linked export, resolved by the caller from
+   * service/CLI configuration (the server boundary's `effectiveLimits`, never request
+   * input). The adapter stays below the server boundary: it enforces the given limits
+   * but never reads configuration itself. Defaults to the plan limits.
    */
   limits?: CompositionLimits;
-  /** Environment the service limits are read from; defaults to the process environment. */
-  env?: NodeJS.ProcessEnv;
 }
 
 function viewerAssets(options: HtmlExportOptions): Promise<HtmlExportAssets> {
@@ -157,12 +157,11 @@ export async function exportLinkedDocument(
   const composed = await compose(resolver, composition);
   // The same admission gate as the SVG/PNG export: an over-limit linked document is
   // refused whole before any output is allocated, never truncated. The counts share
-  // the server boundary's helper so both gates count the same bridge/port/stub geometry.
-  const limits =
-    options.limits ?? effectiveLimits(options.env === undefined ? {} : { env: options.env });
+  // the composition core's helper so both gates count the same bridge/port/stub
+  // geometry; the effective limits arrive from the caller.
   const over = checkAdmission(
     snapshotAdmissionCounts(includedIds.length, ordered, composed),
-    limits,
+    options.limits ?? DEFAULT_COMPOSITION_LIMITS,
     ordered[0].id
   );
   if (over.length > 0) throw new BudgetExceededError(over);

@@ -332,6 +332,20 @@ test('inspect --selection is validated through the state parser rules, not cast'
     ]);
     assert.equal(unknownKind.status, 1);
     assert.match(JSON.parse(unknownKind.stderr).error, /composition\.selection\.kind/);
+
+    // Syntactically invalid JSON is the same contract diagnostic, never a raw SyntaxError.
+    const notJson = run([
+      'inspect',
+      '--model',
+      'host',
+      '--composition',
+      'plugins',
+      '--selection',
+      '{'
+    ]);
+    assert.equal(notJson.status, 1);
+    assert.equal(notJson.stdout, '');
+    assert.match(JSON.parse(notJson.stderr).error, /composition\.selection/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
