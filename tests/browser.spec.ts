@@ -4,6 +4,10 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { buildPortableAssets } from '../scripts/portable-assets';
+import { exportLinkedDocument } from '../src/lib/adapters/html';
+import { loadDirectory, snapshotOf } from '../src/lib/server/models';
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -2372,6 +2376,93 @@ test('a linked three-project composition restores permalinks, ports, search and 
     expect(errors).toEqual([]);
   } finally {
     server.kill('SIGTERM');
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('portable HTML linked composition works offline from a file', async ({ page }) => {
+  test.setTimeout(180000);
+  const root = await mkdtemp(join(tmpdir(), 'fractal-portable-linked-'));
+  try {
+    await cp(join('tests', 'fixtures', 'linked-projects', 'host'), join(root, 'host'), {
+      recursive: true
+    });
+    await cp(join('tests', 'fixtures', 'linked-projects', 'plugin'), join(root, 'plugin'), {
+      recursive: true
+    });
+    await cp(join('tests', 'fixtures', 'linked-projects', 'third'), join(root, 'third'), {
+      recursive: true
+    });
+    const linksPath = join(root, 'host', 'links.json');
+    const links = JSON.parse(await readFile(linksPath, 'utf8')) as {
+      links: { id: string; title: string; target: { model: string } }[];
+    };
+    links.links.push({ id: 'third', title: 'Relay architecture', target: { model: 'third' } });
+    await writeFile(linksPath, `${JSON.stringify(links, null, 2)}\n`);
+    const host = await loadDirectory(join(root, 'host'));
+    const plugin = await loadDirectory(join(root, 'plugin'));
+    const { html } = await exportLinkedDocument(host.model, {
+      state: host.model.scenes[0],
+      scene: 'overview',
+      sequences: host.sequences,
+      assets: await buildPortableAssets(),
+      include: ['plugin'],
+      snapshots: [snapshotOf(host), snapshotOf(plugin)],
+      sequencesByModel: { host: host.sequences, plugin: plugin.sequences }
+    });
+    const file = join(root, 'composition.html');
+    await writeFile(file, html);
+    const blocked: string[] = [];
+    await page.route('**', (route) => {
+      const url = route.request().url();
+      if (url.startsWith('file:') || url.startsWith('blob:')) return route.continue();
+      blocked.push(url);
+      return route.abort();
+    });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(pathToFileURL(file).href);
+    await expect(page.locator('[data-linked-contract="1"]')).toBeVisible();
+    await expect(page.locator('[data-project-frame]')).toHaveCount(2);
+    await page.getByRole('button', { name: 'Expand Harbor host', exact: true }).click();
+    await expect(page.locator('[data-node-id="host:cli"]')).toBeVisible({ timeout: 30000 });
+    await page.getByRole('button', { name: 'Expand Beacon plugin', exact: true }).click();
+    await expect(page.locator('[data-node-id="plugin:cli"]')).toBeVisible({ timeout: 30000 });
+    await page
+      .locator('[data-connection-owner="host"][data-connection-id="call"]')
+      .evaluate((element) => (element as SVGGElement).focus());
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.inspector h2')).toHaveText('Invokes plugin CLI');
+    await expect(page.locator('.inspector')).toContainText('Harbor host / Plugin adapter');
+    await expect(page.locator('.inspector')).toContainText('Beacon plugin / Plugin CLI');
+    await expect(page.locator('.inspector')).toContainText('host / cli');
+    await expect(page.locator('.inspector')).toContainText('plugin / cli');
+    await expect(page.locator('[data-stub-target="missing-plugin"]')).toHaveCount(1);
+    await expect(page.locator('[data-stub-target="third"]')).toHaveCount(1);
+    await expect(page.locator('[data-stub-target="missing-plugin"]')).toContainText(
+      'Diagram not opened'
+    );
+    await expect(page.locator('[data-stub-target="third"]')).toContainText('Diagram not opened');
+
+    await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
+    await page.getByRole('menuitemradio', { name: 'Trust and detail' }).click();
+    await expect(page.locator('[data-node-id="plugin:cli"]')).toBeVisible({ timeout: 30000 });
+    await page.waitForFunction(() => location.hash.includes('composition='));
+    await page.reload();
+    await expect(page.locator('[data-linked-contract="1"]')).toBeVisible();
+    await expect(page.locator('[data-node-id="plugin:cli"]')).toBeVisible({ timeout: 30000 });
+
+    await page.getByRole('button', { name: 'Explore', exact: true }).click();
+    await page.getByRole('searchbox').fill('Plugin records');
+    await page
+      .getByRole('navigation', { name: 'Explore document' })
+      .getByRole('button', { name: 'Plugin records' })
+      .click();
+    await expect(page.locator('.inspector h2')).toHaveText('Plugin records');
+
+    expect(blocked).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

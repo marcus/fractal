@@ -46,6 +46,7 @@ Options:
   --linked                       Validate the declared linked-project closure
   --composition ID               Authored composition from the root links.json
   --composition-state FILE|v1.… Explicit state file or encoded permalink value
+  --allow-unresolved            Export despite failed targets (unavailable cards + manifest)
   --selection JSON               Qualified selection for inspect in a composition
   --surface architecture|sequence|portable Shortcut surface (default architecture)
   --journey ID                   Sequence journey identifier
@@ -65,7 +66,8 @@ Options:
   --json                         Structured output
   --element ID                   Inspect a stable element ID
   --query TEXT                   Search titles, identifiers and descriptions
-  --format svg|png|html          Export format (HTML includes the full model; PNG needs Chromium)
+  --format svg|png|html          Export format (HTML includes the full model, or an explicit linked set with --include; PNG needs Chromium)
+  --include ID,ID                HTML export: embed these linked projects with the root
   --output PATH                  Write result to a file
 
 Examples:
