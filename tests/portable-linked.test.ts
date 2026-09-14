@@ -182,7 +182,7 @@ test('export --help advertises --include for HTML', () => {
   const result = spawnSync(resolve('bin/fractal'), ['export', '--help'], { encoding: 'utf8' });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /--include ID,ID/);
-  assert.match(result.stdout, /explicit linked set/);
+  assert.match(result.stdout, /a linked set with --include/);
 });
 
 function cli(args: string[], env: NodeJS.ProcessEnv = {}) {
