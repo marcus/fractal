@@ -215,7 +215,6 @@ export const POST: RequestHandler = async ({ request }) => {
           state,
           scene: input.scene,
           sequences,
-          limits: effectiveLimits({}),
           diagram: () => renderDiagram(loaded, state)
         }),
         {

@@ -436,8 +436,7 @@ async function main() {
             state,
             scene: scene.id,
             sequences,
-            assets,
-            limits: effectiveLimits({})
+            assets
           })
         );
         console.log(
