@@ -23,8 +23,7 @@ import type {
   ComposedDiagram,
   CompositionDiagnostic,
   CompositionState,
-  ProjectLinks,
-  QualifiedSelection
+  ProjectLinks
 } from '../composition/types';
 import type { LayoutEngineId, Model, ThemeId } from '../core/types';
 import { createCache, serverCachePool, type CacheSnapshot } from './cache';
@@ -595,38 +594,55 @@ async function resolveAdditional(
 }
 
 /**
- * Admission counts for a composed result. Loaded counts cover every resolved snapshot;
- * visible counts cover open (laid-out) projects only — collapsed projects keep no diagram.
- * Source and cache bytes are deterministic serialization-size approximations, not heap
- * measurements. An over-limit composition is refused whole, never truncated.
+ * Visible geometry toward the `visibleNodes`/`visibleEdges` gates: laid-out local nodes
+ * and edges, plus one visible connection per drawn bridge and one visible stand-in per
+ * perimeter port and reference stub. Bridge geometry is resource accounting, not free:
+ * a composition of quiet projects joined by hundreds of claims is refused under the
+ * same visible gates as a dense local diagram.
  */
-function admissionCounts(
-  state: CompositionState,
-  outcomes: Map<string, ResolutionOutcome>,
+export function visibleAdmissionCounts(composed: ComposedDiagram): {
+  visibleNodes: number;
+  visibleEdges: number;
+} {
+  let visibleNodes = composed.stubs.length;
+  let visibleEdges = composed.bridges.length;
+  for (const project of composed.projects) {
+    if (project.diagram) {
+      visibleNodes += project.diagram.nodes.length;
+      visibleEdges += project.diagram.edges.length;
+    }
+    visibleNodes += project.ports.length;
+  }
+  return { visibleNodes, visibleEdges };
+}
+
+/**
+ * Admission counts from resolved snapshots and a composed diagram, shared by
+ * `composeFromSelector` and the linked HTML export so both gates count the same
+ * geometry. Loaded counts cover every resolved snapshot; collapsed projects keep no
+ * diagram but their snapshots still load. Source and cache bytes are deterministic
+ * serialization-size approximations, not heap measurements. An over-limit composition
+ * is refused whole, never truncated.
+ */
+export function snapshotAdmissionCounts(
+  projects: number,
+  snapshots: ProjectSnapshot[],
   composed: ComposedDiagram
 ): CompositionCounts {
   let loadedElements = 0;
   let relationships = 0;
   let sourceBytesPerProject = 0;
   let snapshotBytes = 0;
-  for (const outcome of outcomes.values()) {
-    if (outcome.status !== 'resolved') continue;
-    const snapshot = outcome.snapshot;
+  for (const snapshot of snapshots) {
     loadedElements += snapshot.model.elements.length;
     relationships += snapshot.model.relationships.length;
     const bytes = estimateBytes(snapshot);
     snapshotBytes += bytes;
     if (bytes > sourceBytesPerProject) sourceBytesPerProject = bytes;
   }
-  let visibleNodes = 0;
-  let visibleEdges = 0;
-  for (const project of composed.projects) {
-    if (!project.diagram) continue;
-    visibleNodes += project.diagram.nodes.length;
-    visibleEdges += project.diagram.edges.length;
-  }
+  const { visibleNodes, visibleEdges } = visibleAdmissionCounts(composed);
   return {
-    projects: state.projects.length,
+    projects,
     loadedElements,
     relationships,
     visibleNodes,
@@ -634,6 +650,20 @@ function admissionCounts(
     sourceBytesPerProject,
     cacheBytes: estimateBytes(composed) + snapshotBytes
   };
+}
+
+/** Admission counts for a composed result: every resolved outcome's snapshot counts. */
+function admissionCounts(
+  state: CompositionState,
+  outcomes: Map<string, ResolutionOutcome>,
+  composed: ComposedDiagram
+): CompositionCounts {
+  const snapshots: ProjectSnapshot[] = [];
+  for (const outcome of outcomes.values()) {
+    if (outcome.status !== 'resolved') continue;
+    snapshots.push(outcome.snapshot);
+  }
+  return snapshotAdmissionCounts(state.projects.length, snapshots, composed);
 }
 
 function checkGeneration(
@@ -932,15 +962,28 @@ async function participatingSnapshots(
   return snapshots;
 }
 
-/** Qualified inspection over a composition. Only participating projects are inspected. */
+/**
+ * Qualified inspection over a composition. Only participating projects are inspected.
+ * The selection arrives as raw JSON (the CLI's `--selection` flag): it runs through
+ * the state parser's selection rules, so a malformed selection is a contract
+ * diagnostic with a path, never a cast. Re-parsing the just-composed state also
+ * checks owner participation against the actual member list.
+ */
 export async function inspectInComposition(
   root: string | ProjectSnapshot,
   selector: CompositionSelector,
-  selection: QualifiedSelection,
+  selection: unknown,
   options: CompositionRequest = {}
 ): Promise<QualifiedInspection> {
   const { state, composed } = await composeFromSelector(root, selector, options);
-  return inspectQualified(composed, await participatingSnapshots(root, state, options), selection);
+  const parsed = parseCompositionState({ ...state, selection });
+  if (parsed.selection === undefined)
+    throw new CompositionUsageError('inspect with --composition requires --selection JSON');
+  return inspectQualified(
+    composed,
+    await participatingSnapshots(root, state, options),
+    parsed.selection
+  );
 }
 
 /**

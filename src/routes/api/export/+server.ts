@@ -234,6 +234,13 @@ export const POST: RequestHandler = async ({ request }) => {
       }
     );
   } catch (error) {
+    // The linked HTML export shares the composition admission gate: an over-limit
+    // document is 422 like the SVG/PNG export, never a 400 or a truncation.
+    if (error instanceof BudgetExceededError)
+      return json(
+        { error: error.message, code: error.code, diagnostics: error.diagnostics },
+        { status: 422 }
+      );
     return json({ error: String(error) }, { status: 400 });
   }
 };
