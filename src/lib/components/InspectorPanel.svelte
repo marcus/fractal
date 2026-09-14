@@ -96,10 +96,6 @@
       );
     });
   });
-  function hiddenSwitch(reason: 'proposed-owner' | 'proposed-endpoint', owner: string): string {
-    if (reason === 'proposed-owner') return `${projectName(owner)} Proposed`;
-    return "an endpoint project's Proposed";
-  }
   function projectName(id: string): string {
     return (
       composition?.models[id]?.title ??
@@ -113,6 +109,45 @@
         (entry) => entry.id === claim.connectionId
       )?.title ?? claim.connectionId
     );
+  }
+  /** True when this project's Proposed switch being off is what hides the endpoint. */
+  function endpointHidesProposed(modelId: string, elementId: string): boolean {
+    const entry = composition?.state.projects.find((project) => project.model === modelId);
+    if (!entry || entry.view.proposed) return false;
+    const elements = composition?.models[modelId]?.elements ?? [];
+    let current = elements.find((element) => element.id === elementId);
+    while (current) {
+      if (current.status === 'proposed') return true;
+      current = current.parent
+        ? elements.find((element) => element.id === current!.parent)
+        : undefined;
+    }
+    return false;
+  }
+  /**
+   * The project whose Proposed switch would reveal this hidden claim. For a proposed-endpoint
+   * claim that is the endpoint (source, then target) whose switch is off; never "the other
+   * project from the one being inspected."
+   */
+  function showProposedTarget(
+    claim: (typeof hiddenClaims)[number],
+    authored:
+      | { source: { model: string; element: string }; target: { model: string; element: string } }
+      | undefined
+  ): string {
+    if (claim.reason === 'proposed-owner' || !authored) return claim.owner;
+    if (endpointHidesProposed(authored.source.model, authored.source.element))
+      return authored.source.model;
+    if (endpointHidesProposed(authored.target.model, authored.target.element))
+      return authored.target.model;
+    const off = [authored.source.model, authored.target.model].find((id) => {
+      const entry = composition?.state.projects.find((project) => project.model === id);
+      return entry !== undefined && !entry.view.proposed;
+    });
+    return off ?? claim.owner;
+  }
+  function hiddenSwitch(modelId: string): string {
+    return `${projectName(modelId)} Proposed`;
   }
   const linkedDiagrams = $derived(
     (links?.links?.links ?? []).filter((link) => link.from === selected || link.from === undefined)
@@ -332,14 +367,16 @@
                 {@const authored = composition?.links?.[claim.owner]?.connections.find(
                   (entry) => entry.id === claim.connectionId
                 )}
+                {@const switchProject = showProposedTarget(claim, authored)}
                 <div
                   class="linked-item"
                   data-hidden-claim={claim.connectionId}
                   data-hidden-owner={claim.owner}
+                  data-hidden-reason={claim.reason}
                 >
                   <strong class="item-title">{hiddenTitle(claim)}</strong>
                   <p class="meta">
-                    Hidden because {hiddenSwitch(claim.reason, claim.owner)} is off.
+                    Hidden because {hiddenSwitch(switchProject)} is off.
                   </p>
                   {#if authored}
                     <p class="detail-copy">
@@ -352,19 +389,8 @@
                   {#if onshowproposed}
                     <button
                       class="button"
-                      data-show-proposed={claim.reason === 'proposed-owner'
-                        ? claim.owner
-                        : authored?.source.model === model.id
-                          ? authored.target.model
-                          : authored?.source.model}
-                      onclick={() =>
-                        onshowproposed(
-                          claim.reason === 'proposed-owner'
-                            ? claim.owner
-                            : authored?.source.model === model.id
-                              ? authored.target.model
-                              : (authored?.source.model ?? claim.owner)
-                        )}>Show proposed</button
+                      data-show-proposed={switchProject}
+                      onclick={() => onshowproposed(switchProject)}>Show proposed</button
                     >
                   {/if}
                 </div>

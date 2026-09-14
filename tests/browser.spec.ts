@@ -2083,6 +2083,112 @@ test('a linked project opens beside its host with two frames and one bridge', as
   }
 });
 
+test('a linked proposed-endpoint claim is revealed by the endpoint project Proposed switch', async ({
+  page
+}) => {
+  test.setTimeout(90000);
+  const root = await mkdtemp(join(tmpdir(), 'fractal-linked-proposed-'));
+  await cp(join('tests', 'fixtures', 'linked-projects', 'host'), join(root, 'host'), {
+    recursive: true
+  });
+  await cp(join('tests', 'fixtures', 'linked-projects', 'plugin'), join(root, 'plugin'), {
+    recursive: true
+  });
+  await rm(join(root, 'plugin', 'links.json'), { force: true });
+  // Host keeps a current claim to plugin.cli; plugin.cli is proposed, so the owner's
+  // switch cannot show the claim until the endpoint project's Proposed switch is on.
+  await writeFile(
+    join(root, 'plugin', 'model.c4'),
+    `specification {
+  element subsystem
+  element component
+  relationship calls
+  tag proposed
+}
+model {
+  core = subsystem 'Beacon plugin' {
+    metadata { uid 'core' }
+    cli = component 'Plugin CLI' {
+      #proposed
+      metadata { uid 'cli' }
+    }
+    fallback = component 'Unannotated helper'
+  }
+  store = component 'Plugin records' { metadata { uid 'store' } }
+  core.cli -[calls]-> store 'Reads plugin state' { metadata { uid 'call' } }
+}
+`
+  );
+  const port = await freePort();
+  const server = spawn(
+    'npx',
+    ['vite', 'dev', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        FRACTAL_CATALOG: '',
+        FRACTAL_MODELS_DIR: root,
+        HOST: '127.0.0.1',
+        PORT: String(port)
+      },
+      stdio: ['ignore', 'ignore', 'ignore']
+    }
+  );
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    await waitForServer(`${base}/api/models`);
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${base}/?model=host&scene=overview`);
+    await ready(page);
+
+    await page.locator('[data-node-id="core"]').click();
+    await page.getByRole('button', { name: 'Plugin adapter', exact: true }).click();
+    await ready(page);
+    await page.locator('[data-open-link="plugin"]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-project-frame]')).toHaveCount(2);
+    await expect(
+      page.locator('[data-connection-owner="host"][data-connection-id="call"]')
+    ).toHaveCount(0);
+    await page.locator('.composition-canvas svg').focus();
+    await page.keyboard.press('0');
+    await expect
+      .poll(async () => {
+        const area = (await page.locator('.diagram-area').boundingBox())!;
+        const frame = (await page.locator('[data-project-frame="plugin"]').boundingBox())!;
+        return (
+          frame.x >= area.x - 1 &&
+          frame.y >= area.y - 1 &&
+          frame.x + frame.width <= area.x + area.width + 1 &&
+          frame.y + frame.height <= area.y + area.height + 1
+        );
+      })
+      .toBe(true);
+
+    await page.locator('[data-node-id="plugin:store"]').click({ force: true });
+    const hidden = page.locator('[data-hidden-claim="call"]');
+    await expect(hidden).toBeVisible();
+    await expect(hidden).toHaveAttribute('data-hidden-reason', 'proposed-endpoint');
+    await expect(hidden.locator('[data-show-proposed]')).toHaveAttribute(
+      'data-show-proposed',
+      'plugin'
+    );
+    await expect(hidden).toContainText('Beacon plugin Proposed');
+    await hidden.locator('[data-show-proposed]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-hidden-claim="call"]')).toHaveCount(0);
+    await expect(
+      page.locator('[data-connection-owner="host"][data-connection-id="call"]')
+    ).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    server.kill('SIGTERM');
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('a linked three-project composition restores permalinks, ports, search and revision reload', async ({
   page
 }) => {
