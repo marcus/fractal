@@ -4,7 +4,13 @@ import { cp, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseCatalog, searchProjects } from '../src/lib/core/catalog';
-import { listModels, listProjects, loadModel, resolveCatalog } from '../src/lib/server/models';
+import {
+  listModels,
+  listProjects,
+  loadModel,
+  resolveCatalog,
+  validateCatalog
+} from '../src/lib/server/models';
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'fractal-catalog-'));
@@ -86,6 +92,7 @@ test('explicit catalogs load fresh models, expose summaries, and enforce durable
     );
     assert.equal((await loadModel('observatory', options)).model.id, 'observatory');
 
+    // Listing is now lightweight: a bad entry is reported, never thrown, and healthy entries load.
     await writeFile(
       catalog,
       JSON.stringify({
@@ -96,7 +103,27 @@ test('explicit catalogs load fresh models, expose summaries, and enforce durable
         ]
       })
     );
-    await assert.rejects(listModels(options));
+    assert.deepEqual(
+      (await listModels(options)).map(({ id, title, diagnostic }) => ({
+        id,
+        title,
+        hasDiagnostic: Boolean(diagnostic)
+      })),
+      [
+        { id: 'delivery', title: 'Fictional Delivery Service', hasDiagnostic: false },
+        { id: 'missing', title: 'missing', hasDiagnostic: true }
+      ]
+    );
+    await assert.rejects(loadModel('missing', options), /Model directory missing:/);
+    assert.equal((await loadModel('delivery', options)).model.id, 'delivery');
+    assert.deepEqual((await validateCatalog(options)).projects, [
+      { id: 'delivery', directory: join(models, 'delivery') },
+      {
+        id: 'missing',
+        directory: join(root, 'missing'),
+        error: `Model directory missing: ${join(root, 'missing')}`
+      }
+    ]);
 
     await writeFile(
       catalog,
@@ -106,9 +133,12 @@ test('explicit catalogs load fresh models, expose summaries, and enforce durable
       })
     );
     await assert.rejects(
-      listModels(options),
+      loadModel('wrong-id', options),
       new RegExp(`Catalog ${catalog} project wrong-id.*does not match companion model ID delivery`)
     );
+    const [wrong] = await listModels(options);
+    assert.equal(wrong.title, 'wrong-id');
+    assert.match(wrong.diagnostic ?? '', /does not match companion model ID delivery/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

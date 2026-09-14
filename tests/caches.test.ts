@@ -7,6 +7,7 @@ import {
   clearModelCache,
   listProjects,
   loadDirectory,
+  loadModel,
   modelCacheStats
 } from '../src/lib/server/models';
 import {
@@ -104,7 +105,7 @@ test('the parsed-model cache is keyed per directory', async () => {
   }
 });
 
-test('an invalid model keeps failing, from loadDirectory and from the project list', async () => {
+test('an invalid model keeps failing to load while the project list stays lightweight', async () => {
   const { root, path } = await directory();
   const previous = process.env.FRACTAL_MODELS_DIR;
   clearModelCache();
@@ -115,8 +116,15 @@ test('an invalid model keeps failing, from loadDirectory and from the project li
     }
     assert.equal(modelCacheStats().hits, 0, 'a failed parse is never remembered');
     process.env.FRACTAL_MODELS_DIR = root;
-    await assert.rejects(listProjects());
-    await assert.rejects(listProjects());
+    await assert.rejects(loadModel('delivery'), 'a targeted load still reports the bad model');
+    assert.deepEqual(
+      (await listProjects()).map(({ id, title, diagnostic }) => ({
+        id,
+        title,
+        hasDiagnostic: Boolean(diagnostic)
+      })),
+      [{ id: 'delivery', title: 'Fictional Delivery Service', hasDiagnostic: false }]
+    );
   } finally {
     if (previous === undefined) delete process.env.FRACTAL_MODELS_DIR;
     else process.env.FRACTAL_MODELS_DIR = previous;
