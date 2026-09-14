@@ -125,13 +125,14 @@ async function validateEntry(catalog: ResolvedCatalog, entry: CatalogEntry): Pro
       readFile(join(entry.directory, 'fractal.json'), 'utf8'),
       access(join(entry.directory, 'model.c4'))
     ]);
-    if (catalog.kind === 'catalog') {
-      const metadata = JSON.parse(companion) as { id?: unknown };
-      if (metadata.id !== entry.id)
-        throw new Error(
-          `catalog ID ${entry.id} does not match companion model ID ${String(metadata.id)}`
-        );
-    }
+    // The companion owns the model identity in every catalog kind: a directory name
+    // must never select an identity, so a mismatch is invalid everywhere, not only in
+    // explicit catalogs.
+    const metadata = JSON.parse(companion) as { id?: unknown };
+    if (metadata.id !== entry.id)
+      throw new Error(
+        `catalog ID ${entry.id} does not match companion model ID ${String(metadata.id)}`
+      );
   } catch (error) {
     throw new Error(
       `Catalog ${catalog.path} project ${entry.id} (${entry.directory}) is invalid: ${(error as Error).message}`
@@ -413,7 +414,16 @@ export function catalogResolver(options: CatalogOptions = {}): SnapshotResolver 
         return { status: 'invalid', code: 'model_invalid', message };
       }
       try {
-        return { status: 'resolved', snapshot: snapshotOf(await loadDirectory(entry.directory)) };
+        const snapshot = snapshotOf(await loadDirectory(entry.directory));
+        // Identity is the companion's, never the directory's: a models-directory entry
+        // whose companion names another model is invalid, not a model by that name.
+        if (snapshot.id !== model)
+          return {
+            status: 'invalid',
+            code: 'model_invalid',
+            message: `Catalog project ${model} does not match companion model ID ${snapshot.id}`
+          };
+        return { status: 'resolved', snapshot };
       } catch (error) {
         if (error instanceof CompositionContractError && error.code === 'unsupported_version')
           return { status: 'invalid', code: 'unsupported_version', message: error.message };
@@ -447,16 +457,23 @@ export function catalogReloader(options: CatalogOptions = {}): SnapshotResolver 
           return { status: 'unavailable', code: 'model_unavailable', message };
         return { status: 'invalid', code: 'model_invalid', message };
       }
-      return { status: 'resolved', snapshot: snapshotOf(await reloadDirectory(entry.directory)) };
+      const snapshot = snapshotOf(await reloadDirectory(entry.directory));
+      if (snapshot.id !== model)
+        return {
+          status: 'invalid',
+          code: 'model_invalid',
+          message: `Catalog project ${model} does not match companion model ID ${snapshot.id}`
+        };
+      return { status: 'resolved', snapshot };
     }
   };
 }
 
 export async function loadModel(id: string, options: CatalogOptions = {}) {
   if (!/^[a-z0-9-]+$/.test(id)) throw new Error('Invalid model identifier');
-  const { catalog, entry } = await resolveProject(id, options);
+  const { entry } = await resolveProject(id, options);
   const loaded = await loadDirectory(entry.directory);
-  if (catalog.kind === 'catalog' && loaded.model.id !== id)
+  if (loaded.model.id !== id)
     throw new Error(`Catalog project ${id} does not match companion model ID ${loaded.model.id}`);
   return loaded;
 }
@@ -499,7 +516,8 @@ async function projectSummary(
       title?: unknown;
       description?: unknown;
     };
-    if (catalog.kind === 'catalog' && companion.id !== entry.id)
+    // Like validateEntry: the companion owns the identity in every catalog kind.
+    if (companion.id !== entry.id)
       throw new Error(
         `catalog ID ${entry.id} does not match companion model ID ${String(companion.id)}`
       );

@@ -285,7 +285,12 @@ never from URLs, state payloads or request bodies.
 
 Admission is checked on loaded counts, visible counts, per-project source bytes and
 estimated cache bytes in `composeFromSelector`, which serves the render and export paths
-alike. Overrides come from service/CLI configuration only: an explicit
+alike. Visible counts cover laid-out local nodes and edges plus the composed bridge,
+port and stub geometry: each drawn bridge counts toward `visibleEdges`, and each
+perimeter port and reference stub toward `visibleNodes`, so a composition of quiet
+projects joined by many claims is refused under the same visible gates. The linked
+HTML export (`exportLinkedDocument`) enforces the same gate with the same counts
+before allocating any output. Overrides come from service/CLI configuration only: an explicit
 `CatalogOptions.limits`, or the `FRACTAL_COMPOSITION_LIMITS` JSON object from the service
 environment (parsed once per environment; an empty value means defaults). Limits join the
 composed-result cache key, so a stricter configuration is never served a result admitted
@@ -319,8 +324,12 @@ defined once at the root. Output is escaped and deterministic for the same input
 `src/lib/server/export.ts` is the export boundary both surfaces call: it composes
 through `composeFromSelector` (so admission limits are checked before any output is
 allocated), enforces the unresolved-target policy, renders PNG through the existing
-renderer (full-page capture so offscreen content survives; the default viewport
-screenshot for single-model export is unchanged), and builds the manifest.
+renderer (full-page capture with the viewport sized to the artwork so the PNG keeps
+the composed aspect instead of a letterboxed viewport screenshot; the default viewport
+screenshot for single-model export is unchanged), and builds the manifest. The linked
+HTML export checks the same admission limits before allocating its document; an
+over-limit linked document is refused with `budget_exceeded` (HTTP 422, CLI nonzero)
+like the other formats.
 
 Exports validate endpoints for participating targets but never resolve unopened links
 outside the requested composition. A failed participating target fails the export by

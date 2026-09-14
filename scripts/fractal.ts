@@ -7,6 +7,7 @@ import {
   BudgetExceededError,
   composedProjectSummary,
   composeFromSelector,
+  effectiveLimits,
   getCompositionStats,
   inspectInComposition,
   linksFor,
@@ -25,8 +26,7 @@ import {
   type CompositionExportFormat
 } from '../src/lib/server/export';
 import { SourceChangingError } from '../src/lib/server/models';
-import { parseCompositionState } from '../src/lib/composition/parse';
-import type { QualifiedSelection } from '../src/lib/composition/types';
+import { CompositionContractError, parseCompositionState } from '../src/lib/composition/parse';
 import { inspectComponent } from '../src/lib/core/inspect';
 import { project } from '../src/lib/core/projection';
 import { showAllStructure } from '../src/lib/core/navigation';
@@ -324,7 +324,18 @@ async function main() {
     if (command === 'inspect') {
       if (values.selection === undefined)
         throw new Error('inspect with --composition requires --selection JSON');
-      const selection = JSON.parse(values.selection) as QualifiedSelection;
+      // Raw JSON: inspectInComposition validates it through the state parser's
+      // selection rules, so a malformed selection is a contract diagnostic with a path.
+      let selection: unknown;
+      try {
+        selection = JSON.parse(values.selection);
+      } catch {
+        throw new CompositionContractError(
+          'composition.selection',
+          'must be valid JSON',
+          'invalid_contract'
+        );
+      }
       await printResult(await inspectInComposition(root, selector, selection, catalogOptions));
       return;
     }
@@ -412,7 +423,8 @@ async function main() {
             assets,
             include: extras,
             snapshots,
-            sequencesByModel
+            sequencesByModel,
+            limits: effectiveLimits({})
           });
           await writeFile(values.output, html);
           console.log(JSON.stringify({ output: resolve(values.output), ...report }));

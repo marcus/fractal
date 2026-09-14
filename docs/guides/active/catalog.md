@@ -18,7 +18,10 @@ resolve through the same file.
 
 The entry ID must equal the `id` in that directory's `fractal.json`. Keep it stable when
 a repository moves; update only the absolute directory. Duplicate IDs and broken catalog
-JSON are fatal configuration errors — nothing loads until they are fixed.
+JSON are fatal configuration errors — nothing loads until they are fixed. The same rule
+holds for the other catalog kinds: in a `FRACTAL_MODELS_DIR` directory or the bundled
+`examples/`, the directory name must equal its `fractal.json` `id`, and a mismatch is
+invalid — a directory name never selects a model identity.
 
 The default catalog is `~/.config/fractal/catalog.json` (or
 `$XDG_CONFIG_HOME/fractal/catalog.json`). `--catalog PATH` overrides it for one command;

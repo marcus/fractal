@@ -306,6 +306,39 @@ test('CLI HTML export of a root without links.json stays a single-model document
   }
 });
 
+test('a malformed FRACTAL_COMPOSITION_LIMITS leaves single-model HTML export untouched', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'fractal-portable-single-limits-'));
+  const previousLimits = process.env.FRACTAL_COMPOSITION_LIMITS;
+  try {
+    // Composition limits are never read on the non-composition path: garbage
+    // service configuration must not break a plain single-model export.
+    const out = join(root, 'delivery.html');
+    const result = cli(['export', '--model', 'delivery', '--format', 'html', '--output', out], {
+      FRACTAL_COMPOSITION_LIMITS: 'garbage'
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    process.env.FRACTAL_COMPOSITION_LIMITS = 'garbage';
+    resetCompositionState();
+    await ensurePortableJson();
+    const { model } = await loadDirectory(resolve('examples/delivery'));
+    const response = await POST(
+      post({
+        model: 'delivery',
+        format: 'html',
+        scene: 'overview',
+        state: model.scenes[0]
+      })
+    );
+    assert.equal(response.status, 200);
+  } finally {
+    if (previousLimits === undefined) delete process.env.FRACTAL_COMPOSITION_LIMITS;
+    else process.env.FRACTAL_COMPOSITION_LIMITS = previousLimits;
+    resetCompositionState();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('POST /api/export HTML of a linked root without include is root-only with excluded links', async () => {
   const root = await mkdtemp(join(tmpdir(), 'fractal-portable-route-linked-'));
   const previous = process.env.FRACTAL_CATALOG;
@@ -372,5 +405,51 @@ test('POST /api/export rejects include unless format is html', async () => {
     assert.deepEqual(await response.json(), {
       error: '--include is only supported for HTML export'
     });
+  }
+});
+
+test('an over-limit linked HTML export is 422 on HTTP and nonzero on the CLI', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'fractal-portable-html-limits-'));
+  const previousCatalog = process.env.FRACTAL_CATALOG;
+  const previousLimits = process.env.FRACTAL_COMPOSITION_LIMITS;
+  try {
+    const { catalog, host } = await hostPlugin(root);
+    process.env.FRACTAL_CATALOG = catalog;
+    process.env.FRACTAL_COMPOSITION_LIMITS = '{"projects": 1}';
+    resetCompositionState();
+    await ensurePortableJson();
+    // Two included projects under a one-project budget: refused whole, like svg/png.
+    const response = await POST(
+      post({
+        model: 'host',
+        format: 'html',
+        scene: 'overview',
+        state: host.model.scenes[0],
+        include: ['plugin']
+      })
+    );
+    assert.equal(response.status, 422);
+    const failure = await response.json();
+    assert.equal(failure.code, 'budget_exceeded');
+    assert.deepEqual(failure.diagnostics[0].budget, {
+      resource: 'projects',
+      actual: 2,
+      limit: 1
+    });
+
+    const out = join(root, 'host.html');
+    const refused = cli(
+      ['export', '--model', 'host', '--format', 'html', '--include', 'plugin', '--output', out],
+      { FRACTAL_CATALOG: catalog, FRACTAL_COMPOSITION_LIMITS: '{"projects": 1}' }
+    );
+    assert.notEqual(refused.status, 0);
+    assert.equal(JSON.parse(refused.stderr).code, 'budget_exceeded');
+  } finally {
+    if (previousCatalog === undefined) delete process.env.FRACTAL_CATALOG;
+    else process.env.FRACTAL_CATALOG = previousCatalog;
+    if (previousLimits === undefined) delete process.env.FRACTAL_COMPOSITION_LIMITS;
+    else process.env.FRACTAL_COMPOSITION_LIMITS = previousLimits;
+    resetCompositionState();
+    await rm(root, { recursive: true, force: true });
   }
 });

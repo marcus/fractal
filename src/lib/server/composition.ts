@@ -4,12 +4,20 @@ import { decodeCompositionState } from '../composition/codec';
 import { compose } from '../composition/compose';
 import { inspectQualified, type QualifiedInspection } from '../composition/inspect';
 import {
+  BudgetExceededError,
   checkAdmission,
   DEFAULT_COMPOSITION_LIMITS,
   estimateBytes,
+  snapshotAdmissionCounts,
   type CompositionCounts,
   type CompositionLimits
 } from '../composition/limits';
+
+/**
+ * The admission refusal stays importable from the application boundary: existing CLI,
+ * route and test importers keep working while the class itself lives beside the gate.
+ */
+export { BudgetExceededError };
 import { parseCompositionState } from '../composition/parse';
 import {
   revisionConflicts,
@@ -23,8 +31,7 @@ import type {
   ComposedDiagram,
   CompositionDiagnostic,
   CompositionState,
-  ProjectLinks,
-  QualifiedSelection
+  ProjectLinks
 } from '../composition/types';
 import type { LayoutEngineId, Model, ThemeId } from '../core/types';
 import { createCache, serverCachePool, type CacheSnapshot } from './cache';
@@ -75,21 +82,6 @@ export class RevisionConflictError extends Error {
     this.model = model;
     this.expected = expected;
     this.actual = actual;
-  }
-}
-
-/**
- * The composition exceeds its admission limits. The result is refused whole — never
- * truncated — so the caller collapses, focuses or narrows the composition and retries.
- * Routes translate it to HTTP 422; the CLI exits nonzero.
- */
-export class BudgetExceededError extends Error {
-  readonly code = 'budget_exceeded' as const;
-  readonly diagnostics: CompositionDiagnostic[];
-  constructor(diagnostics: CompositionDiagnostic[]) {
-    super(diagnostics[0]?.message ?? 'The composition exceeds its resource budget.');
-    this.name = 'BudgetExceededError';
-    this.diagnostics = diagnostics;
   }
 }
 
@@ -594,46 +586,18 @@ async function resolveAdditional(
   }
 }
 
-/**
- * Admission counts for a composed result. Loaded counts cover every resolved snapshot;
- * visible counts cover open (laid-out) projects only — collapsed projects keep no diagram.
- * Source and cache bytes are deterministic serialization-size approximations, not heap
- * measurements. An over-limit composition is refused whole, never truncated.
- */
+/** Admission counts for a composed result: every resolved outcome's snapshot counts. */
 function admissionCounts(
   state: CompositionState,
   outcomes: Map<string, ResolutionOutcome>,
   composed: ComposedDiagram
 ): CompositionCounts {
-  let loadedElements = 0;
-  let relationships = 0;
-  let sourceBytesPerProject = 0;
-  let snapshotBytes = 0;
+  const snapshots: ProjectSnapshot[] = [];
   for (const outcome of outcomes.values()) {
     if (outcome.status !== 'resolved') continue;
-    const snapshot = outcome.snapshot;
-    loadedElements += snapshot.model.elements.length;
-    relationships += snapshot.model.relationships.length;
-    const bytes = estimateBytes(snapshot);
-    snapshotBytes += bytes;
-    if (bytes > sourceBytesPerProject) sourceBytesPerProject = bytes;
+    snapshots.push(outcome.snapshot);
   }
-  let visibleNodes = 0;
-  let visibleEdges = 0;
-  for (const project of composed.projects) {
-    if (!project.diagram) continue;
-    visibleNodes += project.diagram.nodes.length;
-    visibleEdges += project.diagram.edges.length;
-  }
-  return {
-    projects: state.projects.length,
-    loadedElements,
-    relationships,
-    visibleNodes,
-    visibleEdges,
-    sourceBytesPerProject,
-    cacheBytes: estimateBytes(composed) + snapshotBytes
-  };
+  return snapshotAdmissionCounts(state.projects.length, snapshots, composed);
 }
 
 function checkGeneration(
@@ -932,15 +896,28 @@ async function participatingSnapshots(
   return snapshots;
 }
 
-/** Qualified inspection over a composition. Only participating projects are inspected. */
+/**
+ * Qualified inspection over a composition. Only participating projects are inspected.
+ * The selection arrives as raw JSON (the CLI's `--selection` flag): it runs through
+ * the state parser's selection rules, so a malformed selection is a contract
+ * diagnostic with a path, never a cast. Re-parsing the just-composed state also
+ * checks owner participation against the actual member list.
+ */
 export async function inspectInComposition(
   root: string | ProjectSnapshot,
   selector: CompositionSelector,
-  selection: QualifiedSelection,
+  selection: unknown,
   options: CompositionRequest = {}
 ): Promise<QualifiedInspection> {
   const { state, composed } = await composeFromSelector(root, selector, options);
-  return inspectQualified(composed, await participatingSnapshots(root, state, options), selection);
+  const parsed = parseCompositionState({ ...state, selection });
+  if (parsed.selection === undefined)
+    throw new CompositionUsageError('inspect with --composition requires --selection JSON');
+  return inspectQualified(
+    composed,
+    await participatingSnapshots(root, state, options),
+    parsed.selection
+  );
 }
 
 /**

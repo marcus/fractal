@@ -141,6 +141,48 @@ test('a composition export returns artwork plus a decodable manifest header', as
   }
 });
 
+function pngSize(png: Buffer): { width: number; height: number } {
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], 'the body is a PNG');
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+}
+
+function svgSize(svg: string): { width: number; height: number } {
+  const opening = svg.slice(0, svg.indexOf('>') + 1);
+  const width = Number(/width="([\d.]+)"/.exec(opening)?.[1]);
+  const height = Number(/height="([\d.]+)"/.exec(opening)?.[1]);
+  assert.ok(width > 0 && height > 0, 'the exported SVG declares its artwork size');
+  return { width, height };
+}
+
+test('composition PNG renders full-page artwork at the composed aspect', async () => {
+  const { root, restore } = await fixture();
+  try {
+    const response = await POST(post({ model: 'host', composition: 'plugins', format: 'png' }));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+    const { width, height } = pngSize(Buffer.from(await response.arrayBuffer()));
+    // A viewport screenshot would be exactly the 1920x1080 viewport at 2x; the
+    // full-page capture carries the wide composed artwork instead.
+    assert.ok(
+      !(width === 3840 && height === 2160),
+      `not a letterboxed viewport screenshot (${width}x${height})`
+    );
+    const artwork = await POST(post({ model: 'host', composition: 'plugins' }));
+    assert.equal(artwork.status, 200);
+    const declared = svgSize(await artwork.text());
+    const drift =
+      Math.abs(width / height - declared.width / declared.height) /
+      (declared.width / declared.height);
+    assert.ok(drift < 0.01, `PNG aspect ${width}/${height} matches the artwork`);
+    const header = response.headers.get('x-fractal-export-manifest');
+    assert.ok(header, 'the manifest travels in the response header');
+    assert.equal(JSON.parse(Buffer.from(header, 'base64url').toString('utf8')).format, 'png');
+  } finally {
+    restore();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('a non-JSON body keeps the exact single-model error and the new composition error', async () => {
   const { root, restore } = await fixture();
   try {

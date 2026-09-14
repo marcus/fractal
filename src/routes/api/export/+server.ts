@@ -9,6 +9,7 @@ import { exportSvg } from '$lib/core/svg';
 import {
   BudgetExceededError,
   CompositionUsageError,
+  effectiveLimits,
   RevisionConflictError
 } from '$lib/server/composition';
 import { ExportUnresolvedError, exportComposition } from '$lib/server/export';
@@ -196,7 +197,8 @@ export const POST: RequestHandler = async ({ request }) => {
             sequences,
             include: include ?? [],
             snapshots,
-            sequencesByModel
+            sequencesByModel,
+            limits: effectiveLimits({})
           }),
           {
             headers: {
@@ -234,6 +236,13 @@ export const POST: RequestHandler = async ({ request }) => {
       }
     );
   } catch (error) {
+    // The linked HTML export shares the composition admission gate: an over-limit
+    // document is 422 like the SVG/PNG export, never a 400 or a truncation.
+    if (error instanceof BudgetExceededError)
+      return json(
+        { error: error.message, code: error.code, diagnostics: error.diagnostics },
+        { status: 422 }
+      );
     return json({ error: String(error) }, { status: 400 });
   }
 };

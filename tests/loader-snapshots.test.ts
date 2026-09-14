@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { parseModelWithOrigins } from '../src/lib/adapters/likec4';
 import {
+  catalogReloader,
   catalogResolver,
   clearModelCache,
   listProjects,
@@ -236,5 +237,69 @@ test('a bad links.json makes the directory invalid and reports unsupported versi
     assert.equal(unsupported.code, 'unsupported_version');
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a models-directory entry is invalid when its companion names another model', async () => {
+  const { root, models } = await fixture();
+  clearModelCache();
+  try {
+    // A directory named `impostor` holding the plugin model: the companion still
+    // calls itself `plugin`, so the directory name must never select that identity.
+    await cp(join(models, 'plugin'), join(models, 'impostor'), { recursive: true });
+    const directory = {
+      env: { FRACTAL_MODELS_DIR: models },
+      home: join(root, 'home'),
+      cwd: root
+    };
+    const resolved = await catalogResolver(directory).resolve('impostor');
+    assert.equal(resolved.status, 'invalid');
+    if (resolved.status !== 'invalid') throw new Error('unreachable');
+    assert.equal(resolved.code, 'model_invalid');
+    assert.match(resolved.message, /does not match companion model ID plugin/);
+
+    const reloaded = await catalogReloader(directory).resolve('impostor');
+    assert.equal(reloaded.status, 'invalid');
+    if (reloaded.status !== 'invalid') throw new Error('unreachable');
+    assert.equal(reloaded.code, 'model_invalid');
+
+    await assert.rejects(
+      loadModel('impostor', directory),
+      /does not match companion model ID plugin/
+    );
+
+    const validation = await validateCatalog(directory);
+    assert.equal(
+      validation.projects
+        .find((project) => project.id === 'impostor')
+        ?.error?.includes('does not match companion model ID plugin'),
+      true
+    );
+    // The healthy sibling still resolves by its companion identity.
+    const healthy = await catalogResolver(directory).resolve('plugin');
+    assert.equal(healthy.status, 'resolved');
+    if (healthy.status !== 'resolved') throw new Error('unreachable');
+    assert.equal(healthy.snapshot.id, 'plugin');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('the bundled examples still load once directory names stop selecting identity', async () => {
+  clearModelCache();
+  const home = await mkdtemp(join(tmpdir(), 'fractal-examples-home-'));
+  try {
+    // No catalog, no models directory and no configured default: resolution falls
+    // through to the bundled examples, whose companion IDs match their directories.
+    const options = { env: {}, home, cwd: process.cwd() };
+    for (const id of ['delivery', 'observatory']) {
+      const loaded = await loadModel(id, options);
+      assert.equal(loaded.model.id, id);
+      const resolved = await catalogResolver(options).resolve(id);
+      assert.equal(resolved.status, 'resolved');
+    }
+  } finally {
+    clearModelCache();
+    await rm(home, { recursive: true, force: true });
   }
 });
