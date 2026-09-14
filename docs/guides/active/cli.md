@@ -123,13 +123,23 @@ and reports composition quality. Deterministic order, no interaction, structured
 Stages: load (read and parse), project, measure (node content), layout (the engine call and
 assembly), svg, and sequence layout for models with journeys.
 
+Composition mode (--composition) times linked compositions instead of single models. With no
+value it generates the fixture matrix under a temporary catalog and removes it afterwards:
+resolve, parse, local projection/measure/layout, frame placement, bridge routing and
+serialization are timed separately, with counts, estimated bytes and a geometry fingerprint.
+With a value it measures one local composition from --catalog and --model, so real repository
+models are read only where they live and are never bundled.
+
 Options:
   --catalog PATH                 Use a specific catalog.json instead of the resolved one
-  --model ID[,ID]                Measure only these models
+  --model ID[,ID]                Measure only these models (composition: the root model ID)
   --directory PATH[,PATH]        Measure these model directories instead of a catalog
   --synthetic N[,N]              Also measure generated models of N elements (alone: only these)
   --views scene|all|both         Authored scenes, show-all of the first scene, or both (default both)
   --engine ID[,ID]               Layout engines to compare (default all: elk-layered, elk-layered-down)
+  --composition [ID]             Measure the generated composition fixture matrix, or ID with
+                                 --catalog/--model for a local steel thread
+  --fixture ID[,ID]              Composition fixtures to generate (default all: see below)
   --iterations N                 Measured runs after one discarded warm-up (default 5)
   --json                         One JSON document on stdout
   --output FILE                  Write JSONL, one row per model, view and engine
@@ -137,10 +147,14 @@ Options:
   --fail-on-geometry-change      Exit nonzero when a fingerprint differs (needs --baseline)
   -h, --help                     Show this text
 
+Composition fixtures: unopened, visible, loaded, bridges, chain, cycle, diamond, labels.
+
 Examples:
   bin/fractal bench
   bin/fractal bench --model delivery --views scene --json
   bin/fractal bench --synthetic 60,240 --iterations 3
   bin/fractal bench --output artifacts/bench/today.jsonl
   bin/fractal bench --baseline artifacts/bench/baseline.jsonl --fail-on-geometry-change
+  bin/fractal bench --composition --iterations 1 --json
+  bin/fractal bench --composition plugins --catalog /tmp/catalog.json --model sidecar --json
 ```
