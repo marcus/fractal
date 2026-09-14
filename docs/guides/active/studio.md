@@ -58,6 +58,20 @@ messages and nested presentation phases; alternatives, loops, concurrency and ac
 outside its scope. See the [sequence guide](sequences.md) for the versioned JSON contract, CLI/API
 commands and authoring examples.
 
+## Linked project diagrams
+
+When a model declares `links.json`, its targets can share the canvas. Open one from the
+source element's inspector or outline action, or with **Mod+Shift+L**; the target frame
+appears beside the source without moving it. Each title band carries a menu for scene,
+focus, collapse, fit, close and standalone opening. Bridges run between the visible
+endpoint representatives, perimeter ports stand in for out-of-scope endpoints, and bridge
+inspection leads with the readable route before exact identities and evidence. **Copy
+view link** carries the composition in the URL; when a source changes, the studio holds
+its last coherent view until you reload (**Mod+Shift+R**). Search reaches every
+participating project with qualified results. See [Working with linked
+diagrams](usage.md) for the full journey, including exports and the two refinements
+still in flight.
+
 ## Reload after editing
 
 Edit the model files, then use **Model source > Reload model** (or **Reload sequence**). Render and

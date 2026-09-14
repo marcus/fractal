@@ -178,6 +178,33 @@ content differs. A one-line sequence header is 44 model units tall; an architect
 starts 32 units down and its controls sit in a 24-unit row at the top right. These are reference
 outcomes, not mandates to shrink every component by the same amount.
 
+## Linked projects share the canvas
+
+When several repository-owned models share the canvas, each project reads as one calm
+frame: a quiet solid perimeter in theme tokens with a measured title band on the canvas,
+not a nested toolbar. The frame is presentation geometry — it claims no trust, no
+permission, no new parent. Trust memberships stay a distinct optional lens inside each
+frame, never inherited from a host by its plugin, and the dashed proposed treatment is
+never reused to mean "another repository". Project identity stays visible in the
+ordinary Structure view.
+
+Bridges run in the theme edge color from the visible representative of each endpoint,
+with the arrow direction retained at every detail level and a halo that separates the
+line from the ground beneath it, like canvas text. Current bridges are solid; proposed
+bridges are dashed and say so in the inspector. Bundles carry a `×N` count rather than
+merging unrelated claims. Endpoints outside a project's scene scope land on labeled
+perimeter ports with an outside-scope count and a reveal action — ports are clearly not
+components. A collapsed project keeps a titled summary with its connection anchors, and
+reopening restores its last view. Unavailable targets are honest cards with a recovery
+step, never fabricated components.
+
+Bridge inspection follows the same lead-with-meaning order as everything else: the
+readable project/component route first, then the claim description, then exact
+`{model, element}` endpoints with the drawn representative reported separately, then
+source evidence under its disclosure. Frames, ports and bridges share the selected
+theme; UI chrome never reaches exports, and every SVG identity is namespaced per
+project so colliding local IDs cannot collide on the canvas.
+
 ## Preserve the reader's place
 
 Separate model meaning, a shareable view, and the reader's workspace preferences.

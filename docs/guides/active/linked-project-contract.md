@@ -1,15 +1,15 @@
 # Linked project contract, version 1
 
-Status: phase 0 contract foundation. The shared library parses and tests these values, but the
-studio, CLI, model loader and portable reader do **not** consume `links.json` or composition state
-yet. This guide freezes the contract for the
-[linked-project implementation plan](../../plans/active/linked-project-diagrams.md); it is not a
-claim that linked rendering has shipped. Existing single-project commands remain unchanged.
+Status: shipped through phases 1–4. The model loader reads `links.json` into snapshots,
+the composition core resolves and lays out linked projects, and the CLI, HTTP routes, studio
+canvas and portable reader all consume the contract below. This guide freezes the contract for the
+[linked-project implementation plan](../../plans/active/linked-project-diagrams.md).
+Existing single-project commands remain unchanged: without a composition selector, every
+command's output is byte-identical to before.
 
-A capable reader must explicitly advertise support for **linked-project contract v1**. There is
-no released minimum application version yet. The application's current `0.0.1` version does not
-establish support. Future artifacts/tooling must check capability and never report a complete
-composition when only its root was rendered.
+A capable reader must explicitly advertise support for **linked-project contract v1**. The
+application version alone does not establish support; artifacts and tooling must check
+capability and never report a complete composition when only its root was rendered.
 
 ## Repository-owned links
 
@@ -90,13 +90,14 @@ on delimiters. Evidence may carry its owner's entity ID and evidence path as sep
 members. This function is an internal identity key, **not** a safe SVG/DOM ID encoder; phase 1 and
 export work must namespace and escape element IDs and every fragment reference separately.
 
-`IdentityOrigins` defines explicit/fallback maps for elements and relationships. It is a future
-adapter snapshot contract. The existing LikeC4 adapter does not produce it yet. `links.from` and
-connection endpoints must ultimately use explicit UIDs; metadata origin establishes that fact,
-not matching an ID's spelling against a source path. The
-[fixtures](../../../tests/fixtures/linked-projects/README.md) include an explicit UID equal to the
-source ID and a fallback ID equal to its source ID. Their expected maps are hand-authored test
-metadata, not supported companion files. Phase 1 must preserve and validate origin for real loads.
+`IdentityOrigins` defines explicit/fallback maps for elements and relationships. The LikeC4
+adapter produces it at load time (`parseModelWithOrigins`), recording whether every element and
+relationship ID was authored (`uid`) or generated. `links.from` and connection endpoints must
+use explicit UIDs; metadata origin establishes that fact, not matching an ID's spelling against
+a source path. The [fixtures](../../../tests/fixtures/linked-projects/README.md) include an
+explicit UID equal to the source ID and a fallback ID equal to its source ID. Their expected
+maps are hand-authored test metadata, not supported companion files. Link validation rejects
+fallback identities at real loads; single-model imports without explicit UIDs remain valid.
 
 ## Resolved composition state
 
@@ -184,8 +185,10 @@ Codes are `model_unavailable`, `model_invalid`, `unsupported_version`, `scene_mi
 
 Budget-exceeded diagnostics require `budget: { resource, actual, limit }`, with finite nonnegative
 counts; other codes reject budget fields. `not_loaded` is an ordinary reference state, not a
-failure diagnostic. No resolver, revision checks, budget accounting, recovery behavior, error-to-HTTP
-mapping or unavailable cards ship in phase 0.
+failure diagnostic: a link whose target was never opened renders a reference stub ("diagram not
+opened") and stays an intentional omission in exports, never an error. Only a participating
+project that fails to resolve is `unavailable` or `invalid`, and only that fails a strict
+validation or a default export.
 
 ## Contract proof and remaining implementation
 
@@ -198,17 +201,18 @@ node --import tsx --import ./tests/setup.ts --test tests/composition-contracts.t
 They compile the two small fictional models through the existing adapter, retain intentional
 cross-project collisions, distinguish expected explicit/fallback identity metadata, exercise
 ownership and parser errors, round-trip resolved state and diagnostics, and reject ambiguous
-presentation overrides and oversized state. They do not prove linked diagram rendering.
+presentation overrides and oversized state.
 
-Phase 1 adds loader integration, revision hashing, targeted resolution and real explicit UID
-validation alongside CLI/HTTP/canvas wiring. Later slices add state URL replay, proposed/scene
-projection rules, runtime limits, SVG namespaces and portable/export behavior. None should be
-inferred from the successful phase 0 parsers.
+Loader integration, revision hashing, targeted resolution, real explicit-UID validation,
+state URL replay, proposed/scene projection rules, runtime limits, SVG namespaces and
+portable/export behavior all shipped in phases 1–4 against this frozen contract; the
+[phase 1 record](../../plans/active/linked-project-diagrams/phase-1.md) covers the first
+production slice. Parse the contract here before inferring behavior from any single surface.
 
 ## CLI and HTTP
 
-Phase 1 ships a thin application boundary in `src/lib/server/composition.ts` that the CLI and the
-HTTP routes both call; no resolution, validation or caching rule is duplicated in a handler. Only
+One thin application boundary in `src/lib/server/composition.ts` serves the CLI and the
+HTTP routes alike; no resolution, validation or caching rule is duplicated in a handler. Only
 the configured catalog is read: routes accept model IDs, never directories or URLs, while the CLI
 keeps `--directory` as an explicit local entry point whose links resolve through the catalog.
 

@@ -104,8 +104,17 @@ identity, resolution, boundaries, performance budgets, surface parity and portab
 phase 0 contracts, fixtures, baseline evidence and visual proposal are complete, and phase 1
 delivered the first production slice: `links.json` in the loader, a composition core, CLI and
 HTTP composition surfaces, and a studio canvas that reveals td beside Sidecar with one inspectable
-bridge; see the [phase 1 record](linked-project-diagrams/phase-1.md). Phase 2 (complete meaning
-and failure behavior) is next.
+bridge; see the [phase 1 record](linked-project-diagrams/phase-1.md). Phases 2–4 have since
+shipped on top of that foundation: collapse, scene and scope changes, qualified search and
+selection, permalinks, outside-scope ports, aggregated bridges and revision conflict/reload
+behavior; bounded work with byte accounting, targeted invalidation, queue ownership and
+composition stats; and combined SVG/PNG exports with manifests plus explicit-set portable
+HTML snapshots that open offline. The studio canvas renders each project in a titled frame
+with a project menu, draws bridges from each endpoint's visible representative, and keeps
+unopened links as labeled stubs rather than errors. Phase 5 (the real Sidecar → td →
+Recall steel thread with source-owned models, plus this documentation alignment) is in
+progress. Still ahead: viewport culling with low-zoom detail as pure rendering savings,
+and composition options in the studio Export dialog.
 
 ## Saved workspace idea
 

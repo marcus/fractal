@@ -172,6 +172,74 @@ The prototype focuses through authored scenes and computes its visible context f
 the shared model. It does not yet support a general query language, source-code drift
 analysis, round-trip visual editing or arbitrary scene animation timelines.
 
+## Linking to other projects
+
+An optional `links.json` beside `model.c4` and `fractal.json` declares cross-project
+navigation and architecture claims. Without it the project behaves exactly as before;
+with it the file is compiled into the model snapshot and participates in its revision.
+Links name catalog model IDs, never directories or URLs. The full field contract lives in
+the [linked project contract](linked-project-contract.md); the authoring shape is:
+
+```json
+{
+  "version": 1,
+  "links": [
+    {
+      "id": "beacon-diagram",
+      "from": "plugins.beacon",
+      "target": { "model": "beacon", "scene": "overview" },
+      "title": "Beacon architecture"
+    }
+  ],
+  "connections": [
+    {
+      "id": "invoke-beacon",
+      "source": { "model": "harbor", "element": "plugins.beacon" },
+      "target": { "model": "beacon", "element": "cli" },
+      "title": "Invokes plugin CLI",
+      "kind": "uses",
+      "status": "current",
+      "description": "The local adapter calls the plugin's CLI.",
+      "evidence": ["src/plugins/beacon.ts"]
+    }
+  ],
+  "compositions": [
+    {
+      "id": "plugins",
+      "title": "Harbor and its plugins",
+      "rootScene": "overview",
+      "projects": [{ "model": "beacon", "scene": "overview", "mode": "open" }]
+    }
+  ]
+}
+```
+
+A link is navigation, not a dependency claim: it says where the reader can go next.
+`from` is an existing local element ID and may be omitted for a root-level link; the
+target scene is optional. A connection is the separately authored directed claim — one
+project embeds, calls or monitors another — with required source, target, title and kind.
+At least one endpoint must belong to the authoring model, every foreign model must be
+declared by a link, and local relationships stay in LikeC4 rather than here. An authored
+composition names the set that opens together; its root is implicit, first and open, and
+an empty project list is a valid root-only composition.
+
+Every `from` and connection endpoint must carry an explicit `uid` in its own `model.c4`:
+fallback IDs change when a model is reorganized, so validation rejects them here even
+though plain single-model imports accept them. Evidence entries are inert
+repository-relative paths carried as text; the compiler never opens or runs them.
+
+Check the file with:
+
+```sh
+bin/fractal validate --model harbor --catalog /path/to/catalog.json --json
+bin/fractal validate --model harbor --catalog /path/to/catalog.json --linked --json
+```
+
+Plain validation compiles the file with the model; `--linked` resolves the declared link
+closure across catalogs and exits nonzero with structured diagnostics for unresolved
+claims. Unknown fields fail with precise JSON paths, so a typo cannot silently become a
+missing claim.
+
 ## Language dependency
 
 The initial adapter uses LikeC4 1.59.3. It consumes the public model API and does not
