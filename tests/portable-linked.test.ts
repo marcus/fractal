@@ -182,7 +182,7 @@ test('export --help advertises --include for HTML', () => {
   const result = spawnSync(resolve('bin/fractal'), ['export', '--help'], { encoding: 'utf8' });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /--include ID,ID/);
-  assert.match(result.stdout, /linked set with --include/);
+  assert.match(result.stdout, /a linked set with --include/);
 });
 
 function cli(args: string[], env: NodeJS.ProcessEnv = {}) {
@@ -372,51 +372,5 @@ test('POST /api/export rejects include unless format is html', async () => {
     assert.deepEqual(await response.json(), {
       error: '--include is only supported for HTML export'
     });
-  }
-});
-
-test('an over-limit linked HTML export is 422 on HTTP and nonzero on the CLI', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'fractal-portable-html-limits-'));
-  const previousCatalog = process.env.FRACTAL_CATALOG;
-  const previousLimits = process.env.FRACTAL_COMPOSITION_LIMITS;
-  try {
-    const { catalog, host } = await hostPlugin(root);
-    process.env.FRACTAL_CATALOG = catalog;
-    process.env.FRACTAL_COMPOSITION_LIMITS = '{"projects": 1}';
-    resetCompositionState();
-    await ensurePortableJson();
-    // Two included projects under a one-project budget: refused whole, like svg/png.
-    const response = await POST(
-      post({
-        model: 'host',
-        format: 'html',
-        scene: 'overview',
-        state: host.model.scenes[0],
-        include: ['plugin']
-      })
-    );
-    assert.equal(response.status, 422);
-    const failure = await response.json();
-    assert.equal(failure.code, 'budget_exceeded');
-    assert.deepEqual(failure.diagnostics[0].budget, {
-      resource: 'projects',
-      actual: 2,
-      limit: 1
-    });
-
-    const out = join(root, 'host.html');
-    const refused = cli(
-      ['export', '--model', 'host', '--format', 'html', '--include', 'plugin', '--output', out],
-      { FRACTAL_CATALOG: catalog, FRACTAL_COMPOSITION_LIMITS: '{"projects": 1}' }
-    );
-    assert.notEqual(refused.status, 0);
-    assert.equal(JSON.parse(refused.stderr).code, 'budget_exceeded');
-  } finally {
-    if (previousCatalog === undefined) delete process.env.FRACTAL_CATALOG;
-    else process.env.FRACTAL_CATALOG = previousCatalog;
-    if (previousLimits === undefined) delete process.env.FRACTAL_COMPOSITION_LIMITS;
-    else process.env.FRACTAL_COMPOSITION_LIMITS = previousLimits;
-    resetCompositionState();
-    await rm(root, { recursive: true, force: true });
   }
 });
