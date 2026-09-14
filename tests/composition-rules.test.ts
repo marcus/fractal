@@ -684,6 +684,34 @@ test('focusProject focuses and clears the focused project', async () => {
   assert.throws(() => focusProject(openThree(), 'absent'), /must participate/);
 });
 
+test('a proposed claim to an unopened target hides when the owner switch is off', async () => {
+  const [host, third] = await Promise.all([snapshot('host'), snapshot('third')]);
+  const pair = (thirdProposed: boolean): CompositionState =>
+    stateOf([
+      { model: 'host', scene: 'overview', mode: 'open', view: view() },
+      { model: 'third', scene: 'overview', mode: 'open', view: view([], thirdProposed) }
+    ]);
+
+  const off = await compose(staticResolver([host, third]), pair(false));
+  assert.deepEqual(off.hidden, [
+    { owner: 'third', connectionId: 'future', reason: 'proposed-owner' }
+  ]);
+  assert.ok(!off.stubs.some((stub) => stub.connectionId === 'future'));
+  // Navigation links are unaffected: the unopened plugin still reads as a link stub.
+  assert.ok(
+    off.stubs.some(
+      (stub) => stub.owner === 'third' && stub.linkId === 'plugin' && stub.state === 'not_loaded'
+    )
+  );
+
+  const on = await compose(staticResolver([host, third]), pair(true));
+  assert.deepEqual(on.hidden, []);
+  const stub = on.stubs.find((candidate) => candidate.connectionId === 'future')!;
+  assert.equal(stub.owner, 'third');
+  assert.deepEqual(stub.target, { model: 'plugin', element: 'cli' });
+  assert.equal(stub.state, 'not_loaded');
+});
+
 test('port bridges stay out of title bands and compose stays deterministic', async () => {
   const [host, plugin, third] = await Promise.all([
     snapshot('host'),

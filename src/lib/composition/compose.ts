@@ -477,6 +477,16 @@ export async function compose(
       if (validation.badConnections.has(connection.id)) continue;
       const foreign = foreignEndpoint(project.model, connection);
       if (!foreign || resolved.has(foreign.ref.model)) continue;
+      // Proposal eligibility applies to unopened targets too: with the owner's switch off,
+      // a proposed claim is hidden just as if the target were open, never stubbed.
+      if (connection.status === 'proposed' && !project.view.proposed) {
+        hidden.push({
+          owner: project.model,
+          connectionId: connection.id,
+          reason: 'proposed-owner'
+        });
+        continue;
+      }
       stubs.push({
         owner: project.model,
         connectionId: connection.id,
