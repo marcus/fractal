@@ -1,12 +1,14 @@
 # Linked project diagrams on one canvas
 
-Status: phase 1 complete, 2026-09-13. Planning task: `td-1c460e`; phase 0: `td-b67c0a`; phase 1:
-`td-e673b8`.
-The [product plan](fractal.md) controls product scope; this document controls linked architecture
-composition. Phase 0 established contracts and evidence; phase 1 delivered the first production slice
-(Sidecar → td through the CLI, HTTP and one real canvas); phase 2 starts next.
+Status: complete, 2026-09-14. Planning task: `td-1c460e`; phase 0:
+`td-b67c0a`; phase 1: `td-e673b8`; phase 2: `td-9e7271`; phase 3: `td-07a927`; phase 4:
+`td-93c60e`; phase 5: `td-7ecb7a`.
+The [product plan](../active/fractal.md) controls product scope; this document controls linked architecture
+composition. Each delivery slice below links its evidence record; the
+[final independent review](linked-project-diagrams/final-review.md) and its resolved findings close
+the work.
 [DESIGN.md](../../../DESIGN.md) controls visual language;
-[layout performance and engines](layout-performance-and-engines.md) controls local geometry and
+[layout performance and engines](../active/layout-performance-and-engines.md) controls local geometry and
 its existing benchmarks. This plan adds composition measurements and does not replace that seam.
 
 ## Outcome and steel thread
@@ -410,7 +412,9 @@ shared-state replay. Verify exported artwork includes offscreen content and omis
 bridge direction, readable labels and project identities in all themes. Open the HTML offline and
 expand both projects; excluded or unavailable links remain honest placeholders.
 
-### 5. Complete the real steel thread and documentation
+### 5. Complete the real steel thread and documentation — complete
+
+Evidence: [phase 5 record](linked-project-diagrams/phase-5.md).
 
 In source-owned follow-on work, author Recall's model from inspected code, add Sidecar's Recall
 integration element/link and precise connection claims, and verify td's endpoint contract. Confirm
@@ -428,14 +432,14 @@ link/diff checks, not a service reinstall or application test run.
 
 ## Completion checklist and handoff
 
-- [ ] Complete Sidecar → td → Recall journey, including absent-diagram recovery and third plugin.
-- [ ] Qualified identity, cycle/diamond, source ownership and proposed-state tests pass.
-- [ ] Every collapse/scope state preserves exact inspectable bridge provenance.
-- [ ] Catalog isolation and stale-response/revision conflicts have process-level proof.
-- [ ] CLI, HTTP, permalink and portable reader agree on projection and diagnostics.
-- [ ] Reference-machine performance gates and bounded-memory proof recorded.
-- [ ] Light/dark, keyboard, narrow viewport, reduced-motion and export artwork reviewed.
-- [ ] Source-owned guides/models updated, independent reviewer recorded, installed studio verified.
+- [x] Complete Sidecar → td → Recall journey, including absent-diagram recovery and third plugin.
+- [x] Qualified identity, cycle/diamond, source ownership and proposed-state tests pass.
+- [x] Every collapse/scope state preserves exact inspectable bridge provenance.
+- [x] Catalog isolation and stale-response/revision conflicts have process-level proof.
+- [x] CLI, HTTP, permalink and portable reader agree on projection and diagnostics.
+- [x] Reference-machine performance gates and bounded-memory proof recorded.
+- [x] Light/dark, keyboard, narrow viewport, reduced-motion and export artwork reviewed.
+- [x] Source-owned guides/models updated, independent reviewer recorded, installed studio verified.
 
 Remaining product exploration is deliberately separate: arbitrary spatial workspaces, multiple
 instances/revisions of a project, sequence-to-architecture bridges, remote URL/Git resolution,

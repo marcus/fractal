@@ -97,24 +97,14 @@ as the fingerprinted default, adds a layout benchmark CLI, and opens a layout-en
 
 ## Linked project diagrams
 
-[Linked project diagrams on one canvas](linked-project-diagrams.md) is the proposed implementation
-plan for revealing repository-owned architecture diagrams together, with explicit cross-project
-connections and independent project layouts. Sidecar → td and Recall is the steel thread. It covers
-identity, resolution, boundaries, performance budgets, surface parity and portable exports;
-phase 0 contracts, fixtures, baseline evidence and visual proposal are complete, and phase 1
-delivered the first production slice: `links.json` in the loader, a composition core, CLI and
-HTTP composition surfaces, and a studio canvas that reveals td beside Sidecar with one inspectable
-bridge; see the [phase 1 record](linked-project-diagrams/phase-1.md). Phases 2–4 have since
-shipped on top of that foundation: collapse, scene and scope changes, qualified search and
-selection, permalinks, outside-scope ports, aggregated bridges and revision conflict/reload
-behavior; bounded work with byte accounting, targeted invalidation, queue ownership and
-composition stats; and combined SVG/PNG exports with manifests plus explicit-set portable
-HTML snapshots that open offline. The studio canvas renders each project in a titled frame
-with a project menu, draws bridges from each endpoint's visible representative, and keeps
-unopened links as labeled stubs rather than errors. Phase 5 (the real Sidecar → td →
-Recall steel thread with source-owned models, plus this documentation alignment) is in
-progress. Still ahead: viewport culling with low-zoom detail as pure rendering savings,
-and composition options in the studio Export dialog.
+[Linked project diagrams on one canvas](../implemented/linked-project-diagrams.md) is the
+implemented plan for revealing repository-owned architecture diagrams together, with explicit
+cross-project connections and independent project layouts. All five phases are complete: `links.json`
+in the loader, a composition core with ports, aggregated bridges and honest stubs, CLI and HTTP
+parity, permalinks, revision reload, bounded work and measured gates, composed SVG/PNG and portable
+HTML exports, source-owned Sidecar, td and Recall models, and a final independent review. Evidence
+records live beside the plan (`phase-0.md` through `phase-5.md` and `final-review.md`). The real
+Sidecar → td → Recall composition runs on the installed studio.
 
 ## Saved workspace idea
 

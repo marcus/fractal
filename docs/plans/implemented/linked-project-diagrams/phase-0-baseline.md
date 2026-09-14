@@ -212,7 +212,7 @@ Compare single-model geometry using the committed baseline:
 ```sh
 bin/fractal bench --directory examples/delivery --synthetic 60,240 \
   --views both --engine elk-layered --iterations 10 \
-  --baseline docs/plans/active/linked-project-diagrams/phase-0-baseline.json \
+  --baseline docs/plans/implemented/linked-project-diagrams/phase-0-baseline.json \
   --fail-on-geometry-change
 ```
 
@@ -224,7 +224,7 @@ absolute source paths with repository-relative labels before publication.
 ```sh
 bin/fractal bench --directory ../sidecar/docs/diagrams/fractal,../td/docs/diagrams/fractal \
   --views scene --engine elk-layered --iterations 5 --json \
-  --baseline docs/plans/active/linked-project-diagrams/steel-thread-baseline.json \
+  --baseline docs/plans/implemented/linked-project-diagrams/steel-thread-baseline.json \
   --fail-on-geometry-change > artifacts/linked-phase0/steel-thread.json
 ```
 

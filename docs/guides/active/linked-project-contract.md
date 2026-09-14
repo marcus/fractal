@@ -3,7 +3,7 @@
 Status: shipped through phases 1–4. The model loader reads `links.json` into snapshots,
 the composition core resolves and lays out linked projects, and the CLI, HTTP routes, studio
 canvas and portable reader all consume the contract below. This guide freezes the contract for the
-[linked-project implementation plan](../../plans/active/linked-project-diagrams.md).
+[linked-project implementation plan](../../plans/implemented/linked-project-diagrams.md).
 Existing single-project commands remain unchanged: without a composition selector, every
 command's output is byte-identical to before.
 
@@ -211,7 +211,7 @@ presentation overrides and oversized state.
 Loader integration, revision hashing, targeted resolution, real explicit-UID validation,
 state URL replay, proposed/scene projection rules, runtime limits, SVG namespaces and
 portable/export behavior all shipped in phases 1–4 against this frozen contract; the
-[phase 1 record](../../plans/active/linked-project-diagrams/phase-1.md) covers the first
+[phase 1 record](../../plans/implemented/linked-project-diagrams/phase-1.md) covers the first
 production slice. Parse the contract here before inferring behavior from any single surface.
 
 ## CLI and HTTP

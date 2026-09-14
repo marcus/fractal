@@ -58,7 +58,7 @@ repository model contents.
   npm run build
   # composition fixture matrix
   bin/fractal bench --composition --iterations 5 --json \
-    > docs/plans/active/linked-project-diagrams/phase-3-baseline.json
+    > docs/plans/implemented/linked-project-diagrams/phase-3-baseline.json
   # real Sidecar + td + Recall journey over a temporary copy of the registered directories
   node --import tsx scripts/bench-browser.ts --composition plugins \
     --catalog TEMP/catalog.json --model sidecar --cycles 50 --warmup-cycles 10 \
@@ -70,11 +70,11 @@ repository model contents.
   bin/fractal bench --catalog TEMP/catalog.json --model sidecar --composition plugins --json
   bin/fractal bench --directory ../sidecar/docs/diagrams/fractal,../td/docs/diagrams/fractal \
     --views scene --engine elk-layered --iterations 5 \
-    --baseline docs/plans/active/linked-project-diagrams/steel-thread-baseline.json \
+    --baseline docs/plans/implemented/linked-project-diagrams/steel-thread-baseline.json \
     --fail-on-geometry-change
   bin/fractal bench --directory examples/delivery --synthetic 60,240 --views both \
     --engine elk-layered --iterations 10 \
-    --baseline docs/plans/active/linked-project-diagrams/phase-0-baseline.json \
+    --baseline docs/plans/implemented/linked-project-diagrams/phase-0-baseline.json \
     --fail-on-geometry-change
   ```
 
@@ -184,7 +184,7 @@ Every row is measured with the harness above; no number is inferred.
 | Sidecar + td + Recall warm local toggle        | p95 input-to-geometry ≤ 100 ms                          | 20 expand/collapse pairs (40 samples) on the toggled target component: p50 **31.1 ms**, p95 **33.2 ms**                                                                                               | **PASS**                               |
 | Sidecar + td + Recall warm local toggle        | Unrelated project layout calls = 0                      | Server `layouts.misses` delta **0**, `composed.misses` delta **0** across the measured loop                                                                                                           | **PASS**                               |
 | Cold target reveal ≤ 500 elements / 1,000 rels | p95 ≤ 1 s                                               | 5 fresh-page loads of the td link: p50 **27.6 ms**, p95 **249.1 ms**                                                                                                                                  | **PASS**                               |
-| Cold target reveal ≤ 500 elements / 1,000 rels | Busy feedback by 150 ms                                 | Badge never appeared in the natural reveals (the 249 ms case is source-fetch time before the 150 ms busy timer); a forced 400 ms render shows the badge at **166.4 ms** after the click               | **FAIL**                               |
+| Cold target reveal ≤ 500 elements / 1,000 rels | Busy feedback by 150 ms                                 | After the studio fix (busy state starts at the reveal action, 100 ms timer): badge **100.8 ms** after the click on a forced-slow reveal, never on fast reveals; measured on commit 7070763            | **PASS**                               |
 | Pan/zoom ≤ 300 visible nodes / 600 edges       | Frame p99 ≤ 25 ms                                       | Generated scale pair, **300 nodes / 573 edges**, 181 frames: p99 **19.7 ms**                                                                                                                          | **PASS**                               |
 | Pan/zoom ≤ 300 visible nodes / 600 edges       | Zero composition-induced main-thread tasks > 50 ms      | **0** long tasks across the scale pan/zoom (and across the real journey)                                                                                                                              | **PASS**                               |
 | Repeated open/close, 50 cycles                 | Warm-up-excluded retained heap growth ≤ 10%             | Real composition: warm-up-excluded (cycles 10 → 50) **2.93%** (7,627,090 → 7,850,671 B); raw 50-cycle **10.16%**                                                                                      | **PASS**                               |
