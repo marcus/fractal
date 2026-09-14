@@ -2311,10 +2311,7 @@ model {
     await page.getByRole('checkbox', { name: 'Proposed' }).check();
     await ready(page);
     await page.locator('[data-node-id="core"]').click();
-    await page
-      .locator('.inspector')
-      .getByRole('button', { name: 'Plugin adapter' })
-      .click();
+    await page.locator('.inspector').getByRole('button', { name: 'Plugin adapter' }).click();
     await ready(page);
     await page.locator('[data-open-link="plugin"]').click();
     await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
@@ -2842,8 +2839,8 @@ test('composition export dialog writes SVG, PNG and HTML in every theme', async 
     } finally {
       await fast.close();
     }
-    // The source-model load takes 400 ms here, so a badge within 500 ms of the click proves
-    // the clock starts at the action: the render request only goes out once the load lands.
+    // The source-model load takes 400 ms here, so a badge inside the 150 ms gate of the
+    // click proves the 120 ms timer starts at the action, not after the load lands.
     const slow = await page.context().newPage();
     try {
       await slow.route('**/api/models/plugin', async (route) => {
@@ -2858,8 +2855,8 @@ test('composition export dialog writes SVG, PNG and HTML in every theme', async 
       const clicked = Date.now();
       await slow.locator('[data-open-link="plugin"]').click();
       await expect(slow.locator('.diagram-area')).toHaveAttribute('aria-busy', 'true');
-      await expect(slow.locator('.loading-badge')).toBeVisible({ timeout: 400 });
-      expect(Date.now() - clicked).toBeLessThan(500);
+      await expect(slow.locator('.loading-badge')).toBeVisible({ timeout: 150 });
+      expect(Date.now() - clicked).toBeLessThan(150);
       await expect(slow.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false', {
         timeout: 30000
       });

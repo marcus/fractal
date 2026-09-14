@@ -534,9 +534,9 @@ test('elk-layered-down places later frames below, left-aligned', async () => {
     'elk-layered-down'
   );
   const composed = await compose(staticResolver([host, plugin]), state);
-  assert.equal(composed.projects[0].frame.x, 0);
+  assert.equal(composed.projects[0].frame.x, composed.projects[1].frame.x);
+  assert.ok(composed.projects[0].frame.x >= 0);
   assert.equal(composed.projects[0].frame.y, 0);
-  assert.equal(composed.projects[1].frame.x, 0);
   assert.equal(
     composed.projects[1].frame.y,
     composed.projects[0].frame.y + composed.projects[0].frame.height + COMPOSITION_METRICS.gap
@@ -601,6 +601,41 @@ test('bridge crossings and labels stay in the inter-frame corridor, clear of eve
       }
     }
   }
+});
+
+test('a left escape lane is shifted so composed geometry stays at x >= 0', async () => {
+  const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
+  const composed = await compose(
+    staticResolver([host, plugin]),
+    stateOf(
+      [
+        { model: 'host', scene: 'overview', mode: 'open', view: view() },
+        { model: 'plugin', scene: 'overview', mode: 'collapsed', view: view() }
+      ],
+      'elk-layered-down'
+    )
+  );
+  assert.ok(composed.bridges.length >= 1);
+  const xs = composed.bridges.flatMap((bridge) => [
+    bridge.label.x,
+    ...bridge.points.map((point) => point.x)
+  ]);
+  assert.equal(Math.min(...xs), 0, 'left escape lane should sit on the origin after the shift');
+  assert.equal(composed.projects[0].frame.x, COMPOSITION_METRICS.gap / 2);
+  for (const bridge of composed.bridges) {
+    for (const point of [
+      ...bridge.points,
+      bridge.label,
+      bridge.source.point,
+      bridge.target.point
+    ]) {
+      assert.ok(point.x >= 0, `x ${point.x} is negative`);
+      assert.ok(point.x <= composed.width, `x ${point.x} exceeds width ${composed.width}`);
+      assert.ok(point.y >= 0, `y ${point.y} is negative`);
+      assert.ok(point.y <= composed.height, `y ${point.y} exceeds height ${composed.height}`);
+    }
+  }
+  assert.deepEqual(await compose(staticResolver([host, plugin]), composed.state), composed);
 });
 
 test('a collapsed frame grows with its measured title band', () => {

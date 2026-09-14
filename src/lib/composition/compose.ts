@@ -4,7 +4,7 @@ import { wrapText } from '../core/projection';
 import type { Diagram, Point } from '../core/types';
 import { parseCompositionState } from './parse';
 import { placeFrames } from './place';
-import { routeBridge } from './route';
+import { routeAxis, routeBridge } from './route';
 import type { RouteEndpoint } from './route';
 import type { ProjectSnapshot, ResolutionOutcome, SnapshotResolver } from './snapshot';
 import type {
@@ -112,11 +112,9 @@ function representative(
 
 /** The frame side facing the other endpoint's project; mirrors the routing axis choice. */
 function portSide(from: Frame, to: Frame): PortSide {
-  const fromCenter = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
-  const toCenter = { x: to.x + to.width / 2, y: to.y + to.height / 2 };
-  if (Math.abs(toCenter.x - fromCenter.x) >= Math.abs(toCenter.y - fromCenter.y))
-    return toCenter.x >= fromCenter.x ? 'right' : 'left';
-  return toCenter.y >= fromCenter.y ? 'bottom' : 'top';
+  if (routeAxis(from, to) === 'horizontal')
+    return to.x + to.width / 2 >= from.x + from.width / 2 ? 'right' : 'left';
+  return to.y + to.height / 2 >= from.y + from.height / 2 ? 'bottom' : 'top';
 }
 
 const SIDE_ORDER: PortSide[] = ['left', 'right', 'top', 'bottom'];
@@ -674,14 +672,24 @@ export async function compose(
         return {
           frame: placed.frame,
           content: placed.content,
-          node: placed.diagram?.nodes.find((node) => node.id === representative.id)
+          node: placed.diagram?.nodes.find((node) => node.id === representative.id),
+          titleHeight: placed.titleHeight
         };
       if (representative.kind === 'port') {
         const side = portSide(placed.frame, framesByModel.get(other.model)!.frame);
         const point = portPoints.get(`${endpoint.model}\n${side}\n${endpoint.element}`)!;
-        return { frame: placed.frame, content: placed.content, port: point };
+        return {
+          frame: placed.frame,
+          content: placed.content,
+          port: point,
+          titleHeight: placed.titleHeight
+        };
       }
-      return { frame: placed.frame, content: placed.content };
+      return {
+        frame: placed.frame,
+        content: placed.content,
+        titleHeight: placed.titleHeight
+      };
     };
     const otherFrames = placed.projects
       .filter(
@@ -740,8 +748,17 @@ export async function compose(
     (a, b) => compare(a.ownerModel, b.ownerModel) || compare(a.path ?? '', b.path ?? '')
   );
 
-  // An above-lane escape can leave y < 0. Shift so camera fit and export origin stay at 0
-  // without changing two-frame stacked routes, which escape in x instead.
+  // An above-lane or left-lane escape can leave y < 0 or x < 0. Shift so camera fit and
+  // export origin stay at 0 without changing two-frame stacked routes that already escape
+  // into positive x.
+  const geometryX = [
+    ...projects.flatMap((project) => [
+      project.frame.x,
+      project.frame.x + project.frame.width,
+      ...project.ports.map((port) => port.point.x)
+    ]),
+    ...bridges.flatMap((bridge) => [bridge.label.x, ...bridge.points.map((point) => point.x)])
+  ];
   const geometryY = [
     ...projects.flatMap((project) => [
       project.frame.y,
@@ -750,29 +767,40 @@ export async function compose(
     ]),
     ...bridges.flatMap((bridge) => [bridge.label.y, ...bridge.points.map((point) => point.y)])
   ];
+  const minX = geometryX.length ? Math.min(...geometryX) : 0;
   const minY = geometryY.length ? Math.min(...geometryY) : 0;
-  if (minY < 0) {
-    const dy = -minY;
+  const dx = minX < 0 ? -minX : 0;
+  const dy = minY < 0 ? -minY : 0;
+  if (dx !== 0 || dy !== 0) {
     for (const project of projects) {
+      project.frame.x += dx;
       project.frame.y += dy;
+      project.content.x += dx;
       project.content.y += dy;
-      for (const port of project.ports) port.point.y += dy;
+      for (const port of project.ports) {
+        port.point.x += dx;
+        port.point.y += dy;
+      }
     }
     for (const bridge of bridges) {
+      bridge.label.x += dx;
       bridge.label.y += dy;
-      for (const point of bridge.points) point.y += dy;
+      for (const point of bridge.points) {
+        point.x += dx;
+        point.y += dy;
+      }
       bridge.source.point = bridge.points[0];
       bridge.target.point = bridge.points[bridge.points.length - 1];
     }
   }
 
   const width = Math.max(
-    placed.width,
+    placed.width + dx,
     ...projects.map((project) => project.frame.x + project.frame.width),
     ...bridges.flatMap((bridge) => [bridge.label.x, ...bridge.points.map((point) => point.x)])
   );
   const height = Math.max(
-    placed.height + Math.max(0, -minY),
+    placed.height + dy,
     ...projects.map((project) => project.frame.y + project.frame.height),
     ...bridges.flatMap((bridge) => [bridge.label.y, ...bridge.points.map((point) => point.y)])
   );

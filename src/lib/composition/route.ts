@@ -15,6 +15,8 @@ export interface RouteEndpoint {
   content: Frame;
   node?: LayoutNode;
   port?: Point;
+  /** Title-band height of `frame`; project representatives anchor below it. */
+  titleHeight?: number;
 }
 
 export interface BridgeRoute {
@@ -36,6 +38,55 @@ function rectFor(endpoint: RouteEndpoint): Frame {
 
 function center(frame: Frame): Point {
   return { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 };
+}
+
+function overlaps(a0: number, a1: number, b0: number, b1: number): boolean {
+  return a0 < b1 && b0 < a1;
+}
+
+function clearGap(a0: number, a1: number, b0: number, b1: number): number {
+  if (a1 < b0) return b0 - a1;
+  if (b1 < a0) return a0 - b1;
+  return 0;
+}
+
+/**
+ * Axis from the frames' actual separation, not their centres: stacked frames (overlap in x)
+ * route vertically even when a wide neighbour's centre sits far to one side; side-by-side
+ * frames (overlap in y) route horizontally. When neither overlaps, the larger clear gap wins.
+ */
+export function routeAxis(from: Frame, to: Frame): 'horizontal' | 'vertical' {
+  const overlapX = overlaps(from.x, from.x + from.width, to.x, to.x + to.width);
+  const overlapY = overlaps(from.y, from.y + from.height, to.y, to.y + to.height);
+  if (overlapX && !overlapY) return 'vertical';
+  if (overlapY && !overlapX) return 'horizontal';
+  if (!overlapX && !overlapY)
+    return clearGap(from.x, from.x + from.width, to.x, to.x + to.width) >=
+      clearGap(from.y, from.y + from.height, to.y, to.y + to.height)
+      ? 'horizontal'
+      : 'vertical';
+  return 'vertical';
+}
+
+/** Facing-side anchor for a project representative, always below that frame's title band. */
+function projectAnchor(
+  frame: Frame,
+  titleHeight: number,
+  horizontal: boolean,
+  right: boolean,
+  down: boolean
+): Point {
+  const bandBottom = frame.y + titleHeight;
+  const body = Math.max(0, frame.height - titleHeight);
+  if (horizontal) {
+    const midY = frame.y + frame.height / 2;
+    const y = midY >= bandBottom ? midY : bandBottom + body / 2;
+    return { x: right ? frame.x + frame.width : frame.x, y };
+  }
+  return {
+    x: frame.x + frame.width / 2,
+    y: down ? frame.y + frame.height : frame.y
+  };
 }
 
 /** The frame gap on the side of `from` that faces `to`, always outside both title bands. */
@@ -102,6 +153,9 @@ function dropDuplicatePoints(points: Point[]): Point[] {
  * between the two project frames (never a representative rectangle, so the crossing and label
  * stay out of every title band and node card), and enters the target on its facing side. Frames
  * side by side cross at a corridor x; stacked frames escape beside both frames and cross at a y.
+ * The axis follows frame overlap, not centre deltas, so a narrow stacked frame beside a wide
+ * one still routes vertically. A project representative anchors below its title band on the
+ * facing side (the same rule as port slots), never at mid-height inside the band.
  * When `otherFrames` is supplied and the direct corridor or any segment intersects a
  * non-endpoint frame, the path escapes to a lane outside every intervening frame instead.
  * Two-adjacent-frame routes (no other frames, or no intersection) keep the direct corridor.
@@ -117,24 +171,31 @@ export function routeBridge(
 ): BridgeRoute {
   const from = rectFor(source);
   const to = rectFor(target);
-  const fromCenter = center(from);
-  const toCenter = center(to);
   const sourceFrameCenter = center(source.frame);
   const targetFrameCenter = center(target.frame);
-  const horizontal =
-    Math.abs(targetFrameCenter.x - sourceFrameCenter.x) >=
-    Math.abs(targetFrameCenter.y - sourceFrameCenter.y);
+  const horizontal = routeAxis(source.frame, target.frame) === 'horizontal';
   let sourcePoint: Point;
   let targetPoint: Point;
   let points: Point[];
   let crossing: Point;
   const involved = [source.frame, target.frame, ...otherFrames];
+  const projectPoint = (
+    endpoint: RouteEndpoint,
+    rect: Frame,
+    right: boolean,
+    down: boolean
+  ): Point =>
+    endpoint.node
+      ? horizontal
+        ? { x: right ? rect.x + rect.width : rect.x, y: rect.y + rect.height / 2 }
+        : { x: rect.x + rect.width / 2, y: down ? rect.y + rect.height : rect.y }
+      : projectAnchor(endpoint.frame, endpoint.titleHeight ?? 0, horizontal, right, down);
 
   if (horizontal) {
     const right = targetFrameCenter.x >= sourceFrameCenter.x;
     const x = corridorX(source.frame, target.frame, right);
-    sourcePoint = source.port ?? { x: right ? from.x + from.width : from.x, y: fromCenter.y };
-    targetPoint = target.port ?? { x: right ? to.x : to.x + to.width, y: toCenter.y };
+    sourcePoint = source.port ?? projectPoint(source, from, right, false);
+    targetPoint = target.port ?? projectPoint(target, to, right, false);
     const direct =
       sourcePoint.y === targetPoint.y
         ? [sourcePoint, { x, y: sourcePoint.y }, targetPoint]
@@ -169,8 +230,8 @@ export function routeBridge(
   } else {
     const down = targetFrameCenter.y >= sourceFrameCenter.y;
     const right = targetFrameCenter.x >= sourceFrameCenter.x;
-    sourcePoint = source.port ?? { x: fromCenter.x, y: down ? from.y + from.height : from.y };
-    targetPoint = target.port ?? { x: toCenter.x, y: down ? to.y : to.y + to.height };
+    sourcePoint = source.port ?? projectPoint(source, from, right, down);
+    targetPoint = target.port ?? projectPoint(target, to, right, down);
     const directX = escapeX([source.frame, target.frame], right);
     const direct = [
       sourcePoint,

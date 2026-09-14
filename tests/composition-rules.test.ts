@@ -870,6 +870,32 @@ function assertBridgesAvoidNonEndpoints(
         `${label} ${bridge.owner}/${bridge.id} label sits inside ${other.model}`
       );
     }
+    for (const project of composed.projects) {
+      const band = titleBand(project);
+      for (let index = 1; index < bridge.points.length; index++)
+        assert.equal(
+          crossesRect(bridge.points[index - 1], bridge.points[index], band),
+          false,
+          `${label} ${bridge.owner}/${bridge.id} segment ${index} crosses the ${project.model} title band`
+        );
+      assert.equal(
+        pointInside(bridge.label, band),
+        false,
+        `${label} ${bridge.owner}/${bridge.id} label sits in the ${project.model} title band`
+      );
+    }
+    for (const point of [...bridge.points, bridge.label]) {
+      assert.ok(point.x >= 0, `${label} ${bridge.owner}/${bridge.id} x ${point.x} is negative`);
+      assert.ok(
+        point.x <= composed.width,
+        `${label} ${bridge.owner}/${bridge.id} x ${point.x} exceeds width ${composed.width}`
+      );
+      assert.ok(point.y >= 0, `${label} ${bridge.owner}/${bridge.id} y ${point.y} is negative`);
+      assert.ok(
+        point.y <= composed.height,
+        `${label} ${bridge.owner}/${bridge.id} y ${point.y} exceeds height ${composed.height}`
+      );
+    }
   }
 }
 

@@ -128,9 +128,10 @@
    * Waiting long enough to be worth saying so. `busy` still governs what a reader may do; this
    * governs only what the canvas shows about it, so a warm toggle that answers in a few
    * milliseconds never flashes a badge and never dims the diagram the reader is looking at.
+   * 120 ms leaves observer latency inside the 150 ms busy-feedback gate.
    */
   let slow = $state(false);
-  const SLOW_REQUEST_MS = 150;
+  const SLOW_REQUEST_MS = 120;
   let error = $state('');
   let toast = $state('');
   let presentation = $state(false);
