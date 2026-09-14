@@ -7,6 +7,7 @@ import type { CompositionState } from '../composition/types';
 import { layout } from '../core/layout';
 import {
   collectExcludedLinks,
+  LINKED_CONTRACT_VERSION,
   linkedHtmlReport,
   linkedPortableHtml,
   linkedSnapshots,
