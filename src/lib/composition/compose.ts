@@ -134,9 +134,10 @@ function portPoint(
 ): Point {
   if (side === 'left' || side === 'right') {
     const top = frame.y + titleHeight;
+    const span = Math.max(0, frame.height - titleHeight);
     return {
       x: side === 'left' ? frame.x : frame.x + frame.width,
-      y: top + ((index + 1) * (frame.height - titleHeight)) / (total + 1)
+      y: top + ((index + 1) * span) / (total + 1)
     };
   }
   return {
@@ -274,6 +275,56 @@ function failureRecovery(code: Failure['code']): CompositionDiagnostic['recovery
   return 'repair';
 }
 
+/**
+ * Drop unknown expanded ids and an unknown or proposal-hidden scope so `layout()` can run.
+ * The original state is left intact; diagnostics name the owning project and field.
+ */
+function sanitizeView(
+  snapshot: ProjectSnapshot,
+  project: ProjectState,
+  index: number,
+  diagnostics: CompositionDiagnostic[]
+): ProjectState['view'] {
+  const byId = new Map(snapshot.model.elements.map((element) => [element.id, element]));
+  const expanded = project.view.expanded.filter((id) => {
+    if (byId.has(id)) return true;
+    diagnostics.push({
+      code: 'endpoint_missing',
+      ownerModel: project.model,
+      message: `Expanded element ${id} is missing from ${project.model}.`,
+      path: `composition.projects[${index}].view.expanded`,
+      target: { model: project.model, element: id },
+      recovery: 'repair'
+    });
+    return false;
+  });
+  let scope = project.view.scope;
+  if (scope !== undefined) {
+    const element = byId.get(scope);
+    const hidden = element !== undefined && endpointProposedHidden(snapshot, project, scope);
+    if (element === undefined || hidden) {
+      diagnostics.push({
+        code: 'endpoint_missing',
+        ownerModel: project.model,
+        message:
+          element === undefined
+            ? `Scope ${scope} is missing from ${project.model}.`
+            : `Scope ${scope} is hidden by the proposal filter in ${project.model}.`,
+        path: `composition.projects[${index}].view.scope`,
+        target: { model: project.model, element: scope },
+        recovery: 'repair'
+      });
+      scope = undefined;
+    }
+  }
+  return {
+    expanded,
+    proposed: project.view.proposed,
+    lens: project.view.lens,
+    ...(scope === undefined ? {} : { scope })
+  };
+}
+
 function stubState(model: string, failed: Map<string, Failure>): ReferenceStub['state'] {
   const failure = failed.get(model);
   if (!failure) return 'not_loaded';
@@ -353,8 +404,14 @@ export async function compose(
     effectiveScenes.set(project.model, (named ?? snapshot.model.scenes[0])?.id ?? '');
   });
 
+  const effectiveProjects: ProjectState[] = projectStates.map((project, index) => {
+    const snapshot = resolved.get(project.model);
+    if (!snapshot) return project;
+    return { ...project, view: sanitizeView(snapshot, project, index, diagnostics) };
+  });
+
   const diagrams = new Map<string, Diagram | null>();
-  for (const project of projectStates) {
+  for (const project of effectiveProjects) {
     const snapshot = resolved.get(project.model);
     if (!snapshot) continue;
     if (project.mode === 'collapsed') {
@@ -372,7 +429,7 @@ export async function compose(
   }
 
   const placed = placeFrames(
-    projectStates
+    effectiveProjects
       .filter((project) => resolved.has(project.model))
       .map((project) => ({
         model: project.model,
@@ -386,7 +443,7 @@ export async function compose(
   const stubs: ReferenceStub[] = [];
   const hidden: HiddenClaim[] = [];
   const raws: RawBridge[] = [];
-  for (const project of projectStates) {
+  for (const project of effectiveProjects) {
     const snapshot = resolved.get(project.model);
     if (!snapshot?.links) continue;
     const validation = validations.get(project.model)!;
@@ -407,8 +464,12 @@ export async function compose(
       // Each endpoint must be eligible under its own project's view. A proposed endpoint
       // whose project filters proposed content hides the claim; the owner's switch never
       // overrides that.
-      const sourceState = projectStates.find((entry) => entry.model === connection.source.model)!;
-      const targetState = projectStates.find((entry) => entry.model === connection.target.model)!;
+      const sourceState = effectiveProjects.find(
+        (entry) => entry.model === connection.source.model
+      )!;
+      const targetState = effectiveProjects.find(
+        (entry) => entry.model === connection.target.model
+      )!;
       if (
         endpointProposedHidden(
           resolved.get(connection.source.model)!,
@@ -484,6 +545,14 @@ export async function compose(
           owner: project.model,
           connectionId: connection.id,
           reason: 'proposed-owner'
+        });
+        continue;
+      }
+      if (endpointProposedHidden(snapshot, project, foreign.local.element)) {
+        hidden.push({
+          owner: project.model,
+          connectionId: connection.id,
+          reason: 'proposed-endpoint'
         });
         continue;
       }
@@ -610,10 +679,16 @@ export async function compose(
       }
       return { frame: placed.frame, content: placed.content };
     };
+    const otherFrames = placed.projects
+      .filter(
+        (project) => project.model !== first.source.model && project.model !== first.target.model
+      )
+      .map((project) => project.frame);
     const route = routeBridge(
       toRoute(first.source, first.target),
       toRoute(first.target, first.source),
-      labelLines
+      labelLines,
+      otherFrames
     );
     bridges.push({
       id: first.connection.id,
@@ -661,6 +736,43 @@ export async function compose(
     (a, b) => compare(a.ownerModel, b.ownerModel) || compare(a.path ?? '', b.path ?? '')
   );
 
+  // An above-lane escape can leave y < 0. Shift so camera fit and export origin stay at 0
+  // without changing two-frame stacked routes, which escape in x instead.
+  const geometryY = [
+    ...projects.flatMap((project) => [
+      project.frame.y,
+      project.frame.y + project.frame.height,
+      ...project.ports.map((port) => port.point.y)
+    ]),
+    ...bridges.flatMap((bridge) => [bridge.label.y, ...bridge.points.map((point) => point.y)])
+  ];
+  const minY = geometryY.length ? Math.min(...geometryY) : 0;
+  if (minY < 0) {
+    const dy = -minY;
+    for (const project of projects) {
+      project.frame.y += dy;
+      project.content.y += dy;
+      for (const port of project.ports) port.point.y += dy;
+    }
+    for (const bridge of bridges) {
+      bridge.label.y += dy;
+      for (const point of bridge.points) point.y += dy;
+      bridge.source.point = bridge.points[0];
+      bridge.target.point = bridge.points[bridge.points.length - 1];
+    }
+  }
+
+  const width = Math.max(
+    placed.width,
+    ...projects.map((project) => project.frame.x + project.frame.width),
+    ...bridges.flatMap((bridge) => [bridge.label.x, ...bridge.points.map((point) => point.x)])
+  );
+  const height = Math.max(
+    placed.height + Math.max(0, -minY),
+    ...projects.map((project) => project.frame.y + project.frame.height),
+    ...bridges.flatMap((bridge) => [bridge.label.y, ...bridge.points.map((point) => point.y)])
+  );
+
   return {
     state: normalized,
     projects,
@@ -668,8 +780,8 @@ export async function compose(
     stubs,
     hidden,
     diagnostics,
-    width: placed.width,
-    height: placed.height
+    width,
+    height
   };
 }
 

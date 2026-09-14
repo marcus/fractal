@@ -23,7 +23,7 @@ import type {
 } from '../src/lib/composition/types';
 import { wrapText } from '../src/lib/core/projection';
 import { EDGE_LABEL_SIZE, EDGE_LABEL_WIDTH } from '../src/lib/core/measure';
-import type { Point } from '../src/lib/core/types';
+import type { Element, Model, Point } from '../src/lib/core/types';
 
 const fixture = (path: string) =>
   readFile(new URL(`./fixtures/linked-projects/${path}`, import.meta.url), 'utf8');
@@ -776,4 +776,212 @@ test('port bridges stay out of title bands and compose stays deterministic', asy
     assert.equal(ports.length, 1);
     assert.ok(ports[0].labelLines.length >= 1 && ports[0].labelLines[0].length >= 1);
   }
+});
+
+function pointInside(point: Point, rect: Frame): boolean {
+  return (
+    point.x > rect.x &&
+    point.x < rect.x + rect.width &&
+    point.y > rect.y &&
+    point.y < rect.y + rect.height
+  );
+}
+
+function assertBridgesAvoidNonEndpoints(
+  composed: Awaited<ReturnType<typeof compose>>,
+  label: string
+): void {
+  assert.ok(composed.bridges.length >= 1, `${label} has bridges`);
+  for (const project of composed.projects)
+    assert.ok(
+      project.titleHeight <= project.frame.height,
+      `${label} ${project.model} title band fits in its frame`
+    );
+  for (const bridge of composed.bridges) {
+    assert.deepEqual(
+      bridge.points[0],
+      bridge.source.point,
+      `${label} ${bridge.owner}/${bridge.id} starts at source.point`
+    );
+    assert.deepEqual(
+      bridge.points[bridge.points.length - 1],
+      bridge.target.point,
+      `${label} ${bridge.owner}/${bridge.id} ends at target.point`
+    );
+    for (let index = 1; index < bridge.points.length; index++) {
+      const from = bridge.points[index - 1];
+      const to = bridge.points[index];
+      assert.ok(
+        from.x === to.x || from.y === to.y,
+        `${label} ${bridge.owner}/${bridge.id} segment ${index} is not axis-aligned (${from.x},${from.y})→(${to.x},${to.y})`
+      );
+    }
+    const others = composed.projects.filter(
+      (project) => project.model !== bridge.source.model && project.model !== bridge.target.model
+    );
+    for (const other of others) {
+      for (let index = 1; index < bridge.points.length; index++)
+        assert.equal(
+          crossesRect(bridge.points[index - 1], bridge.points[index], other.frame),
+          false,
+          `${label} ${bridge.owner}/${bridge.id} segment ${index} crosses ${other.model}`
+        );
+      assert.equal(
+        pointInside(bridge.label, other.frame),
+        false,
+        `${label} ${bridge.owner}/${bridge.id} label sits inside ${other.model}`
+      );
+    }
+  }
+}
+
+const modes = ['open', 'collapsed'] as const;
+const engines = ['elk-layered', 'elk-layered-down'] as const;
+
+test('three-frame bridges never cross a non-endpoint frame, for every engine and collapse mix', async () => {
+  const [host, plugin, third] = await Promise.all([
+    snapshot('host'),
+    snapshot('plugin'),
+    snapshot('third')
+  ]);
+  for (const engine of engines) {
+    for (const hostMode of modes) {
+      for (const pluginMode of modes) {
+        for (const thirdMode of modes) {
+          const state = stateOf(
+            [
+              { model: 'host', scene: 'overview', mode: hostMode, view: view() },
+              { model: 'plugin', scene: 'overview', mode: pluginMode, view: view() },
+              { model: 'third', scene: 'overview', mode: thirdMode, view: view() }
+            ],
+            engine
+          );
+          const composed = await compose(staticResolver([host, plugin, third]), state);
+          assertBridgesAvoidNonEndpoints(
+            composed,
+            `${engine} host=${hostMode} plugin=${pluginMode} third=${thirdMode}`
+          );
+        }
+      }
+    }
+  }
+});
+
+function chainElement(id: string, title: string, parent: string | null): Element {
+  return {
+    id,
+    sourceId: id,
+    parent,
+    title,
+    kind: parent ? 'component' : 'subsystem',
+    description: '',
+    technology: '',
+    status: 'current',
+    color: '#267566',
+    evidence: []
+  };
+}
+
+function chainSnapshot(id: string, hops: string[]): ProjectSnapshot {
+  const model: Model = {
+    version: 1,
+    id,
+    title: id,
+    description: '',
+    provenance: '',
+    elements: [chainElement('core', `${id} core`, null), chainElement('cli', `${id} cli`, 'core')],
+    relationships: [],
+    boundaries: [],
+    scenes: [
+      {
+        id: 'overview',
+        title: 'Overview',
+        description: '',
+        expanded: [],
+        proposed: false,
+        lens: 'structure'
+      }
+    ]
+  };
+  return {
+    id,
+    model,
+    links: {
+      version: 1,
+      links: hops.map((target) => ({
+        id: target,
+        from: 'cli',
+        target: { model: target, scene: 'overview' },
+        title: `To ${target}`
+      })),
+      connections: hops.map((target) => ({
+        id: `${id}-${target}`,
+        source: { model: id, element: 'cli' },
+        target: { model: target, element: 'cli' },
+        title: `${id} to ${target}`,
+        kind: 'uses',
+        status: 'current' as const,
+        description: '',
+        evidence: []
+      })),
+      compositions: []
+    },
+    origins: { elements: { core: 'explicit', cli: 'explicit' }, relationships: {} },
+    revision: id
+  };
+}
+
+test('a generated chain of 4 never crosses a non-endpoint frame', async () => {
+  const a = chainSnapshot('a', ['b', 'd']);
+  const b = chainSnapshot('b', ['c']);
+  const c = chainSnapshot('c', ['d']);
+  const d = chainSnapshot('d', []);
+  const ids = ['a', 'b', 'c', 'd'] as const;
+  for (const engine of engines) {
+    for (let mask = 0; mask < 16; mask++) {
+      const state = parseCompositionState({
+        version: 1,
+        root: 'a',
+        projects: ids.map((model, index) => ({
+          model,
+          scene: 'overview',
+          mode: mask & (1 << index) ? 'collapsed' : 'open',
+          view: view()
+        })),
+        theme: 'grove',
+        layout: engine
+      });
+      const composed = await compose(staticResolver([a, b, c, d]), state);
+      assertBridgesAvoidNonEndpoints(composed, `${engine} mask=${mask}`);
+    }
+  }
+});
+
+test('a current claim whose local endpoint is proposal-hidden is not stubbed', async () => {
+  const [host, third] = await Promise.all([snapshot('host'), snapshot('third')]);
+  const future = third.links!.connections.find((connection) => connection.id === 'future')!;
+  const rewritten: ProjectSnapshot = {
+    ...third,
+    links: {
+      ...third.links!,
+      connections: third.links!.connections.map((connection) =>
+        connection.id === 'future' ? { ...future, status: 'current' } : connection
+      )
+    }
+  };
+  const composed = await compose(
+    staticResolver([host, rewritten]),
+    stateOf([
+      { model: 'host', scene: 'overview', mode: 'open', view: view() },
+      { model: 'third', scene: 'overview', mode: 'open', view: view([], false) }
+    ])
+  );
+  assert.equal(
+    composed.stubs.some((stub) => stub.connectionId === 'future'),
+    false
+  );
+  assert.deepEqual(
+    composed.hidden.filter((claim) => claim.connectionId === 'future'),
+    [{ owner: 'third', connectionId: 'future', reason: 'proposed-endpoint' }]
+  );
 });

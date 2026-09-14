@@ -17,6 +17,7 @@ import type {
 } from '../src/lib/composition/types';
 import { exportCompositionSvg } from '../src/lib/composition/svg';
 import { layout } from '../src/lib/core/layout';
+import { getTheme } from '../src/lib/core/themes';
 import { exportSvg, escapeXml, formatSvgNumber } from '../src/lib/core/svg';
 import { buildExportManifest, omittedLinks, unresolvedTargets } from '../src/lib/server/export';
 
@@ -102,7 +103,33 @@ test('composed SVG includes all offscreen content with no viewport culling', asy
   );
   assert.ok(expected.length > 0);
   for (const marker of expected) assert.ok(svg.includes(marker), `missing ${marker}`);
-  assert.ok(!svg.includes('data-export-layer'), 'no single-model slide chrome leaks in');
+  assert.ok(svg.includes('data-export-layer="title"'));
+  assert.ok(svg.includes('data-export-layer="subtitle"'));
+  assert.ok(svg.includes('data-export-layer="diagram"'));
+  assert.ok(svg.includes('data-export-layer="footer"'));
+});
+
+test('composed SVG page framing uses the theme canvas and names participating projects', async () => {
+  const snapshots = await Promise.all([snapshot('host'), snapshot('plugin'), snapshot('third')]);
+  const models = modelsOf(snapshots);
+  for (const themeId of ['grove', 'graphite', 'midnight'] as const) {
+    const composed = await compose(
+      staticResolver(snapshots),
+      parseCompositionState({ ...openThree(), theme: themeId })
+    );
+    const svg = exportCompositionSvg(composed, models);
+    const theme = getTheme(themeId);
+    assert.ok(svg.includes(`data-theme="${themeId}"`));
+    assert.ok(svg.includes(`fill="${theme.canvas}"`));
+    assert.ok(svg.includes('Harbor host'));
+    assert.ok(svg.includes('Beacon plugin / detail'));
+    assert.ok(svg.includes('Relay plugin / detail'));
+    assert.ok(svg.includes('host · plugin · third'));
+    assert.ok(svg.includes('FRACTAL / LINKED COMPOSITION'));
+    assert.ok(svg.includes('id="cmp-title"'));
+    assert.ok(svg.includes('id="cmp-arrow"'));
+    assert.equal(svg, exportCompositionSvg(composed, models), `${themeId} is deterministic`);
+  }
 });
 
 test('bridge arrows end at the target point with the claim label', async () => {
