@@ -160,3 +160,25 @@ test('search in a composition qualifies results and lists unopened links as meta
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('refuses --composition together with --composition-state', async () => {
+  const { root, run } = await fixture();
+  try {
+    const stateFile = join(root, 'state.json');
+    await cp(join(FIXTURES, 'composition.json'), stateFile);
+    const { status, stdout, stderr } = run([
+      'layout',
+      '--model',
+      'host',
+      '--composition',
+      'plugins',
+      '--composition-state',
+      stateFile
+    ]);
+    assert.notEqual(status, 0);
+    assert.equal(stdout, '');
+    assert.match(stderr, /--composition and --composition-state are mutually exclusive/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

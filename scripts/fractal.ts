@@ -163,6 +163,12 @@ async function main() {
     return;
   }
   const compositionStateFile = values['composition-state'];
+  if (
+    values.composition !== undefined &&
+    compositionStateFile !== undefined &&
+    compositionCommands.includes(command)
+  )
+    throw new Error('--composition and --composition-state are mutually exclusive');
   let explicitCompositionState: ReturnType<typeof parseCompositionState> | undefined;
   if (compositionStateFile !== undefined && compositionCommands.includes(command)) {
     explicitCompositionState = parseCompositionState(
