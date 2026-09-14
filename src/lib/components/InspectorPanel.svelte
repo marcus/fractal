@@ -110,24 +110,14 @@
       )?.title ?? claim.connectionId
     );
   }
-  /** True when this project's Proposed switch being off is what hides the endpoint. */
-  function endpointHidesProposed(modelId: string, elementId: string): boolean {
-    const entry = composition?.state.projects.find((project) => project.model === modelId);
-    if (!entry || entry.view.proposed) return false;
-    const elements = composition?.models[modelId]?.elements ?? [];
-    let current = elements.find((element) => element.id === elementId);
-    while (current) {
-      if (current.status === 'proposed') return true;
-      current = current.parent
-        ? elements.find((element) => element.id === current!.parent)
-        : undefined;
-    }
-    return false;
-  }
   /**
-   * The project whose Proposed switch would reveal this hidden claim. For a proposed-endpoint
-   * claim that is the endpoint (source, then target) whose switch is off; never "the other
-   * project from the one being inspected."
+   * The project whose Proposed switch would reveal this hidden claim, derived from the
+   * composed hidden entry plus the endpoint models and their view flags: the claim owner
+   * for owner-hidden claims, otherwise the endpoint project whose switch is off. When
+   * both endpoint switches are off the hidden entry cannot name which endpoint hides the
+   * claim, so the target wins: flipping it reveals the verified target-side journey, and
+   * a single off switch is always that switch. Never "the other project from the one
+   * being inspected."
    */
   function showProposedTarget(
     claim: (typeof hiddenClaims)[number],
@@ -136,15 +126,12 @@
       | undefined
   ): string {
     if (claim.reason === 'proposed-owner' || !authored) return claim.owner;
-    if (endpointHidesProposed(authored.source.model, authored.source.element))
-      return authored.source.model;
-    if (endpointHidesProposed(authored.target.model, authored.target.element))
-      return authored.target.model;
-    const off = [authored.source.model, authored.target.model].find((id) => {
-      const entry = composition?.state.projects.find((project) => project.model === id);
-      return entry !== undefined && !entry.view.proposed;
-    });
-    return off ?? claim.owner;
+    return (
+      [authored.target.model, authored.source.model].find((id) => {
+        const entry = composition?.state.projects.find((project) => project.model === id);
+        return entry !== undefined && !entry.view.proposed;
+      }) ?? claim.owner
+    );
   }
   function hiddenSwitch(modelId: string): string {
     return `${projectName(modelId)} Proposed`;

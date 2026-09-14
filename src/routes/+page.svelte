@@ -1636,20 +1636,21 @@
     ];
     const seen = new Set<string>();
     const excluded: string[] = [];
-    const note = (key: string, text: string) => {
-      if (!seen.has(key)) {
-        seen.add(key);
+    // Dedup on the rendered text: the same link arrives twice, once from the authored
+    // link lists and once from the manifest omissions.
+    const note = (text: string) => {
+      if (!seen.has(text)) {
+        seen.add(text);
         excluded.push(text);
       }
     };
     for (const owner of selected)
       for (const link of exportLinksOf(owner))
-        if (!selected.includes(link.target.model))
-          note(`link:${link.id}`, `${link.id} → ${link.target.model}`);
+        if (!selected.includes(link.target.model)) note(`${link.id} → ${link.target.model}`);
     for (const omission of exportManifest?.omitted ?? []) {
       if (!selected.includes(omission.owner) || selected.includes(omission.target.model)) continue;
       const id = omission.linkId ?? omission.connectionId ?? omission.target.model;
-      note(`omitted:${id}`, `${id} → ${omission.target.model}`);
+      note(`${id} → ${omission.target.model}`);
     }
     return `Includes: ${selected.join(', ')}${excluded.length ? `; excluded links: ${excluded.join(', ')}` : ''}`;
   });

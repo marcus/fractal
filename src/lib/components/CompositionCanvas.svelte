@@ -781,6 +781,13 @@
           </g>
         {/if}
       {/each}
+      <!-- The bridge echo paints the visible line and label above project content, like
+        the composed SVG export, while the interactive bridge below keeps clicks, focus and
+        selection. The echo is never interactive, so a bridge crossing a card cannot steal
+        that card's clicks. -->
+      {#each composed.bridges.filter( (bridge) => bridgeMounted(bridge) ) as bridge (`${bridge.owner}/${bridge.id}`)}
+        <BridgeEdge {bridge} selected={selectedBridge(bridge)} onselect={selectBridge} passive />
+      {/each}
       {#each composed.stubs as stub (`${stub.owner}/${stub.linkId ?? stub.connectionId ?? ''}`)}
         {@const position = stubPosition(stub.anchor)}
         {@const guidance = stubGuidance(stub)}

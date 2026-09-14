@@ -2602,8 +2602,9 @@ test('composition export dialog writes SVG, PNG and HTML in every theme', async 
       await expect(scope).toContainText('Includes: host');
       await expect(dialog.getByRole('checkbox', { name: /Harbor host/ })).toBeDisabled();
       await dialog.getByRole('checkbox', { name: 'Beacon plugin' }).check();
-      await expect(scope).toContainText('Includes: host, plugin');
-      await expect(scope).toContainText('excluded links: unavailable → missing-plugin');
+      await expect(scope).toHaveText(
+        'Includes: host, plugin; excluded links: unavailable → missing-plugin'
+      );
       const manifest = page.locator('[data-export-manifest]');
       await expect(manifest).toContainText('Projects:');
       await expect(manifest).toContainText('host');
