@@ -1,0 +1,667 @@
+{
+  "version": 1,
+  "mode": "composition",
+  "commit": "350fb6e70a1ef42a91272ebdbd2d6a70c8cc7a9b",
+  "timestamp": "2026-09-14T08:38:04.547Z",
+  "iterations": 5,
+  "generated": {
+    "digest": "29081ac6c7792df63efe42603be412a662312149aeb17ce45b37544ff02edac3",
+    "models": 57,
+    "bytes": 1602910,
+    "fixtures": [
+      {
+        "id": "unopened",
+        "title": "Root with 20 unopened links",
+        "root": "unopened-hub",
+        "composition": "root-only"
+      },
+      {
+        "id": "visible",
+        "title": "Three projects, 100 visible nodes each, fully linked",
+        "root": "visible-root",
+        "composition": "all-open"
+      },
+      {
+        "id": "loaded",
+        "title": "Ten projects of 1,000 loaded elements, collapsed",
+        "root": "loaded-root",
+        "composition": "collapsed"
+      },
+      {
+        "id": "bridges",
+        "title": "Dense cross-project bridges",
+        "root": "bridge-root",
+        "composition": "dense"
+      },
+      {
+        "id": "chain",
+        "title": "Chain of eight projects",
+        "root": "chain-c0",
+        "composition": "chain"
+      },
+      {
+        "id": "cycle",
+        "title": "Project cycle",
+        "root": "cycle-c0",
+        "composition": "cycle"
+      },
+      {
+        "id": "diamond",
+        "title": "Project diamond",
+        "root": "diamond-c0",
+        "composition": "diamond"
+      },
+      {
+        "id": "labels",
+        "title": "Long labels and overlapping trust",
+        "root": "labels-root",
+        "composition": "labels"
+      }
+    ]
+  },
+  "rows": [
+    {
+      "model": "unopened",
+      "view": "composition",
+      "engine": "elk-layered",
+      "source": "unopened-hub::root-only",
+      "nodes": 4,
+      "edges": 1,
+      "width": 777.86,
+      "height": 313,
+      "iterations": 5,
+      "stages": {
+        "resolve": {
+          "p50": 0.377,
+          "p95": 0.474,
+          "samples": 5
+        },
+        "parse": {
+          "p50": 0.072,
+          "p95": 0.081,
+          "samples": 5
+        },
+        "local": {
+          "p50": 6.166,
+          "p95": 7.666,
+          "samples": 5
+        },
+        "compose": {
+          "p50": 5.86,
+          "p95": 6.544,
+          "samples": 5
+        },
+        "place": {
+          "p50": 0,
+          "p95": 0.029,
+          "samples": 5
+        },
+        "serialize": {
+          "p50": 0.022,
+          "p95": 0.025,
+          "samples": 5
+        }
+      },
+      "fingerprint": "06e1461b404873861f96c7e0298fb86c2ce325936b2800263f0925e65be13315",
+      "quality": {
+        "crossings": 0,
+        "bends": 0,
+        "edgeLength": 211.86,
+        "area": 243470.18,
+        "aspectRatio": 2.4852
+      },
+      "counts": {
+        "projects": 1,
+        "loadedElements": 4,
+        "loadedRelationships": 1,
+        "visibleNodes": 4,
+        "visibleEdges": 1,
+        "bridges": 0,
+        "stubs": 20,
+        "diagnostics": 0,
+        "cacheHits": 6,
+        "cacheMisses": 1,
+        "cacheEntries": 1
+      },
+      "bytes": 5957,
+      "coldParseMs": 85.173,
+      "commit": "350fb6e70a1ef42a91272ebdbd2d6a70c8cc7a9b",
+      "timestamp": "2026-09-14T08:38:04.547Z"
+    },
+    {
+      "model": "visible",
+      "view": "composition",
+      "engine": "elk-layered",
+      "source": "visible-root::all-open",
+      "nodes": 304,
+      "edges": 271,
+      "width": 22365.29,
+      "height": 7529,
+      "iterations": 5,
+      "stages": {
+        "resolve": {
+          "p50": 1.041,
+          "p95": 1.059,
+          "samples": 5
+        },
+        "parse": {
+          "p50": 0.216,
+          "p95": 0.236,
+          "samples": 5
+        },
+        "local": {
+          "p50": 300.991,
+          "p95": 320.22,
+          "samples": 5
+        },
+        "compose": {
+          "p50": 300.745,
+          "p95": 340.424,
+          "samples": 5
+        },
+        "place": {
+          "p50": 10.14,
+          "p95": 28.552,
+          "samples": 5
+        },
+        "serialize": {
+          "p50": 0.571,
+          "p95": 0.639,
+          "samples": 5
+        }
+      },
+      "fingerprint": "a2a3856feadc8936d846ca7d970d7ab78a6a5217a61ba4375b3ad7234269b994",
+      "quality": {
+        "crossings": 2212,
+        "bends": 984,
+        "edgeLength": 1607334.86,
+        "area": 168388268.41,
+        "aspectRatio": 2.9706
+      },
+      "counts": {
+        "projects": 4,
+        "loadedElements": 304,
+        "loadedRelationships": 271,
+        "visibleNodes": 304,
+        "visibleEdges": 271,
+        "bridges": 12,
+        "stubs": 0,
+        "diagnostics": 0,
+        "cacheHits": 24,
+        "cacheMisses": 4,
+        "cacheEntries": 4
+      },
+      "bytes": 214090,
+      "coldParseMs": 360.884,
+      "commit": "350fb6e70a1ef42a91272ebdbd2d6a70c8cc7a9b",
+      "timestamp": "2026-09-14T08:38:04.547Z"
+    },
+    {
+      "model": "loaded",
+      "view": "composition",
+      "engine": "elk-layered",
+      "source": "loaded-root::collapsed",
+      "nodes": 4,
+      "edges": 1,
+      "width": 4097.86,
+      "height": 313,
+      "iterations": 5,
+      "stages": {
+        "resolve": {
+          "p50": 1.997,
+          "p95": 4.146,
+          "samples": 5
+        },
+        "parse": {
+          "p50": 0.473,
+          "p95": 0.832,
+          "samples": 5
+        },
+        "local": {
+          "p50": 4.753,
+          "p95": 4.84,
+          "samples": 5
+        },
+        "compose": {
+          "p50": 5.363,
+          "p95": 5.864,
+          "samples": 5
+        },
+        "place": {
+          "p50": 0.623,
+          "p95": 1.064,
+          "samples": 5
+        },
+        "serialize": {
+          "p50": 0.05,
+          "p95": 0.054,
+          "samples": 5
+        }
+      },
+      "fingerprint": "e4cd19e33c5897fc55abff0d785f9a547b4e8618c2491c0f5db2d03f593c8e22",
+      "quality": {
+        "crossings": 0,
+        "bends": 20,
+        "edgeLength": 21965.46,
+        "area": 1282630.18,
+        "aspectRatio": 13.0922
+      },
+      "counts": {
+        "projects": 11,
+        "loadedElements": 10004,
+        "loadedRelationships": 9901,
+        "visibleNodes": 4,
+        "visibleEdges": 1,
+        "bridges": 10,
+        "stubs": 0,
+        "diagnostics": 0,
+        "cacheHits": 66,
+        "cacheMisses": 11,
+        "cacheEntries": 11
+      },
+      "bytes": 14456,
+      "coldParseMs": 2411.296,
+      "commit": "350fb6e70a1ef42a91272ebdbd2d6a70c8cc7a9b",
+      "timestamp": "2026-09-14T08:38:04.547Z"
+    },
+    {
+      "model": "bridges",
+      "view": "composition",
+      "engine": "elk-layered",
+      "source": "bridge-root::dense",
+      "nodes": 204,
+      "edges": 181,
+      "width": 15169.48,
+      "height": 7529,
+      "iterations": 5,
+      "stages": {
+        "resolve": {
+          "p50": 1.399,
+          "p95": 1.558,
+          "samples": 5
+        },
+        "parse": {
+          "p50": 0.168,
+          "p95": 0.172,
+          "samples": 5
+        },
+        "local": {
+          "p50": 218.453,
+          "p95": 245.405,
+          "samples": 5
+        },
+        "compose": {
+          "p50": 228.91,
+          "p95": 255.754,
+          "samples": 5
+        },
+        "place": {
+          "p50": 5.664,
+          "p95": 37.301,
+          "samples": 5
+        },
+        "serialize": {
+          "p50": 0.675,
+          "p95": 0.793,
+          "samples": 5
+        }
+      },
+      "fingerprint": "a976314d6be4555da8cbf0e4f3ca85cc2e4d89ad20e07fc12dab5faa8615250b",
+      "quality": {
+        "crossings": 12181,
+        "bends": 1248,
+        "edgeLength": 3680549.39,
+        "area": 114211014.92,
+        "aspectRatio": 2.0148
+      },
+      "counts": {
+        "projects": 3,
+        "loadedElements": 204,
+        "loadedRelationships": 181,
+        "visibleNodes": 204,
+        "visibleEdges": 181,
+        "bridges": 300,
+        "stubs": 0,
+        "diagnostics": 0,
+        "cacheHits": 18,
+        "cacheMisses": 3,
+        "cacheEntries": 3
+      },
+      "bytes": 355491,
+      "coldParseMs": 249.077,
+      "commit": "350fb6e70a1ef42a91272ebdbd2d6a70c8cc7a9b",
+      "timestamp": "2026-09-14T08:38:04.547Z"
+    },
+    {
+      "model": "chain",
+      "view": "composition",
+      "engine": "elk-layered",
+      "source": "chain-c0::chain",
+      "nodes": 32,
+      "edges": 8,
+      "width": 6726.88,
+      "height": 313,
+      "iterations": 5,
+      "stages": {
+        "resolve": {
+          "p50": 1.533,
+          "p95": 2.916,
+          "samples": 5
+        },
+        "parse": {
+          "p50": 0.365,
+          "p95": 0.41,
+          "samples": 5
+        },
+        "local": {
+          "p50": 35.851,
+          "p95": 36.441,
+          "samples": 5
+        },
+        "compose": {
+          "p50": 36.163,
+          "p95": 36.558,
+          "samples": 5
+        },
+        "place": {
+          "p50": 0.075,
+          "p95": 1.462,
+          "samples": 5
+        },
+        "serialize": {
+          "p50": 0.073,
+          "p95": 0.073,
+          "samples": 5
+        }
+      },
+      "fingerprint": "20cd695a33febc4d258e9f4f731753ee2a4eb326748a61a2c6d8472a7e78abaa",
+      "quality": {
+        "crossings": 0,
+        "bends": 0,
+        "edgeLength": 5809.9,
+        "area": 2105513.44,
+        "aspectRatio": 21.4916
+      },
+      "counts": {
+        "projects": 8,
+        "loadedElements": 32,
+        "loadedRelationships": 8,
+        "visibleNodes": 32,
+        "visibleEdges": 8,
+        "bridges": 7,
+        "stubs": 0,
+        "diagnostics": 0,
+        "cacheHits": 48,
+        "cacheMisses": 8,
+        "cacheEntries": 8
+      },
+      "bytes": 21615,
+      "coldParseMs": 597.527,
+      "commit": "350fb6e70a1ef42a91272ebdbd2d6a70c8cc7a9b",
+      "timestamp": "2026-09-14T08:38:04.547Z"
+    },
+    {
+      "model": "cycle",
+      "view": "composition",
+      "engine": "elk-layered",
+      "source": "cycle-c0::cycle",
+      "nodes": 12,
+      "edges": 3,
+      "width": 2477.58,
+      "height": 313,
+      "iterations": 5,
+      "stages": {
+        "resolve": {
+          "p50": 0.71,
+          "p95": 0.81,
+          "samples": 5
+        },
+        "parse": {
+          "p50": 0.188,
+          "p95": 0.23,
+          "samples": 5
+        },
+        "local": {
+          "p50": 12.532,
+          "p95": 14.061,
+          "samples": 5
+        },
+        "compose": {
+          "p50": 12.649,
+          "p95": 12.799,
+          "samples": 5
+        },
+        "place": {
+          "p50": 0,
+          "p95": 0.473,
+          "samples": 5
+        },
+        "serialize": {
+          "p50": 0.039,
+          "p95": 0.046,
+          "samples": 5
+        }
+      },
+      "fingerprint": "d4a365b9852ff3e36d0bcf47a7c41773e58e666463e8848e57784d5254346cde",
+      "quality": {
+        "crossings": 0,
+        "bends": 0,
+        "edgeLength": 3249.02,
+        "area": 775482.54,
+        "aspectRatio": 7.9156
+      },
+      "counts": {
+        "projects": 3,
+        "loadedElements": 12,
+        "loadedRelationships": 3,
+        "visibleNodes": 12,
+        "visibleEdges": 3,
+        "bridges": 3,
+        "stubs": 0,
+        "diagnostics": 0,
+        "cacheHits": 18,
+        "cacheMisses": 3,
+        "cacheEntries": 3
+      },
+      "bytes": 8451,
+      "coldParseMs": 220.577,
+      "commit": "350fb6e70a1ef42a91272ebdbd2d6a70c8cc7a9b",
+      "timestamp": "2026-09-14T08:38:04.547Z"
+    },
+    {
+      "model": "diamond",
+      "view": "composition",
+      "engine": "elk-layered",
+      "source": "diamond-c0::diamond",
+      "nodes": 16,
+      "edges": 4,
+      "width": 3327.44,
+      "height": 313,
+      "iterations": 5,
+      "stages": {
+        "resolve": {
+          "p50": 0.986,
+          "p95": 1.037,
+          "samples": 5
+        },
+        "parse": {
+          "p50": 0.229,
+          "p95": 0.296,
+          "samples": 5
+        },
+        "local": {
+          "p50": 17.829,
+          "p95": 18.208,
+          "samples": 5
+        },
+        "compose": {
+          "p50": 17.517,
+          "p95": 18.383,
+          "samples": 5
+        },
+        "place": {
+          "p50": 0.553,
+          "p95": 1.611,
+          "samples": 5
+        },
+        "serialize": {
+          "p50": 0.045,
+          "p95": 0.046,
+          "samples": 5
+        }
+      },
+      "fingerprint": "063cea47980a400bdd67d4f81549f0dccff8b6d192067baf4a5d50a9b24a213d",
+      "quality": {
+        "crossings": 0,
+        "bends": 0,
+        "edgeLength": 4898.6,
+        "area": 1041488.72,
+        "aspectRatio": 10.6308
+      },
+      "counts": {
+        "projects": 4,
+        "loadedElements": 16,
+        "loadedRelationships": 4,
+        "visibleNodes": 16,
+        "visibleEdges": 4,
+        "bridges": 4,
+        "stubs": 0,
+        "diagnostics": 0,
+        "cacheHits": 24,
+        "cacheMisses": 4,
+        "cacheEntries": 4
+      },
+      "bytes": 11326,
+      "coldParseMs": 297.432,
+      "commit": "350fb6e70a1ef42a91272ebdbd2d6a70c8cc7a9b",
+      "timestamp": "2026-09-14T08:38:04.547Z"
+    },
+    {
+      "model": "labels",
+      "view": "composition",
+      "engine": "elk-layered",
+      "source": "labels-root::labels",
+      "nodes": 28,
+      "edges": 13,
+      "width": 5304.74,
+      "height": 1006,
+      "iterations": 5,
+      "stages": {
+        "resolve": {
+          "p50": 0.759,
+          "p95": 1.198,
+          "samples": 5
+        },
+        "parse": {
+          "p50": 0.214,
+          "p95": 0.259,
+          "samples": 5
+        },
+        "local": {
+          "p50": 20.088,
+          "p95": 21.455,
+          "samples": 5
+        },
+        "compose": {
+          "p50": 19.901,
+          "p95": 20.96,
+          "samples": 5
+        },
+        "place": {
+          "p50": 0,
+          "p95": 1.307,
+          "samples": 5
+        },
+        "serialize": {
+          "p50": 0.077,
+          "p95": 0.083,
+          "samples": 5
+        }
+      },
+      "fingerprint": "a464acd2196b2d8f789aba2723fb6d679f01041e0ea494733192406fb0358aca",
+      "quality": {
+        "crossings": 14,
+        "bends": 28,
+        "edgeLength": 22921.7,
+        "area": 5336568.44,
+        "aspectRatio": 5.2731
+      },
+      "counts": {
+        "projects": 3,
+        "loadedElements": 28,
+        "loadedRelationships": 13,
+        "visibleNodes": 28,
+        "visibleEdges": 13,
+        "bridges": 4,
+        "stubs": 0,
+        "diagnostics": 0,
+        "cacheHits": 18,
+        "cacheMisses": 3,
+        "cacheEntries": 3
+      },
+      "bytes": 22594,
+      "coldParseMs": 228.839,
+      "commit": "350fb6e70a1ef42a91272ebdbd2d6a70c8cc7a9b",
+      "timestamp": "2026-09-14T08:38:04.547Z"
+    }
+  ],
+  "stats": {
+    "version": 1,
+    "limits": {
+      "projects": 20,
+      "loadedElements": 10000,
+      "relationships": 20000,
+      "visibleNodes": 500,
+      "visibleEdges": 1000,
+      "sourceBytesPerProject": 5242880,
+      "cacheBytes": 134217728
+    },
+    "caches": {
+      "models": {
+        "hits": 18,
+        "misses": 3,
+        "evictions": 0,
+        "entries": 3,
+        "bytes": 14441,
+        "size": 3
+      },
+      "layouts": {
+        "hits": 0,
+        "misses": 0,
+        "evictions": 0,
+        "entries": 0,
+        "bytes": 0,
+        "size": 0
+      },
+      "composed": {
+        "hits": 0,
+        "misses": 0,
+        "evictions": 0,
+        "entries": 0,
+        "bytes": 0,
+        "size": 0
+      }
+    },
+    "queue": {
+      "active": 0,
+      "queued": 0,
+      "completed": 0,
+      "coalesced": 0
+    },
+    "rejected": {
+      "stale": 0,
+      "overLimit": 0
+    }
+  },
+  "environment": {
+    "machine": "Apple M4 Pro, 14 logical CPUs, 64 GiB RAM",
+    "os": "macOS 26.6.2 (Darwin 25.6.0), arm64",
+    "node": "v26.5.1",
+    "chromium": "153.0.8010.12",
+    "viewport": "1512x982",
+    "reducedMotion": "reduce",
+    "layoutEngine": "elk-layered",
+    "applicationCommit": "95adfb8fa3899089e322aaea9a96b6876b91c1b3",
+    "state": "One discarded warm-up per fixture; measured parse passes are warm stamp lookups. coldParseMs is the cache-cleared sample. Composition is measured through the transport-neutral core, not the server admission boundary."
+  }
+}

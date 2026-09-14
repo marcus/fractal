@@ -17,8 +17,13 @@ export const COMPOSITION_METRICS = {
   /** Horizontal and vertical breathing room around a project title. */
   titleClearance: 16,
   titleLineHeight: NODE_METRICS.titleLineHeight,
-  /** A collapsed project is a fixed-size summary card, not a layout. */
-  summary: { width: 260, height: 88 }
+  /** A collapsed project is a summary card, not a layout. */
+  summary: { width: 260, height: 88 },
+  /**
+   * Space below the title band for the collapsed caption. A one-line title plus this body
+   * equals `summary.height`; taller wrapped titles grow the card instead of overflowing.
+   */
+  summaryBodyHeight: 36
 } as const;
 
 export interface FrameEntry {
@@ -49,8 +54,12 @@ function sizeFrame(entry: FrameEntry): FrameSize {
     titleLines.length * COMPOSITION_METRICS.titleLineHeight +
     COMPOSITION_METRICS.titleClearance * 2;
   if (collapsed) {
+    const height = Math.max(
+      COMPOSITION_METRICS.summary.height,
+      titleHeight + COMPOSITION_METRICS.summaryBodyHeight
+    );
     return {
-      frame: { x: 0, y: 0, width, height: COMPOSITION_METRICS.summary.height },
+      frame: { x: 0, y: 0, width, height },
       titleLines,
       titleHeight,
       content: { x: 0, y: 0, width: 0, height: 0 }

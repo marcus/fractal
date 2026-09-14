@@ -3,7 +3,7 @@ import type { LayoutEdge, LayoutNode, Model } from '../core/types';
 import { getTheme } from '../core/themes';
 import { ARCHITECTURE_NODE_METRICS as METRICS } from '../core/node-metrics';
 import { kindIcon } from '../core/kind-icons';
-import { textWidth, wrapText } from '../core/projection';
+import { textWidth, truncateText, wrapText } from '../core/projection';
 import { COMPOSITION_METRICS } from './place';
 import { escapeXml, formatSvgNumber } from '../core/svg';
 
@@ -20,6 +20,14 @@ const PORT_CAPTION = 'outside scope';
 
 function color(value: string): string {
   return /^#[\da-f]{3,8}$/i.test(value) ? value : '#557b70';
+}
+
+function boundedLines(text: string, width: number, size: number, limit: number): string[] {
+  const wrapped = wrapText(text, width, size);
+  if (wrapped.length <= limit) return wrapped;
+  const visible = wrapped.slice(0, limit);
+  visible[limit - 1] = truncateText(visible[limit - 1] + '…', width, size);
+  return visible;
 }
 
 const textLines = (
@@ -196,7 +204,8 @@ function frameSvg(
  * by its frame transform), perimeter port, reference stub and bridge draws from composed
  * coordinates, independent of viewport culling: offscreen content is always included and UI
  * chrome is excluded. Ids are namespaced per project; the two arrow markers are defined
- * once at the root. Output is deterministic for the same input.
+ * once at the root. Output is deterministic for the same input. Page framing matches
+ * single-model `exportSvg`: themed full-document background, title, subtitle, and footer.
  */
 export function exportCompositionSvg(
   composed: ComposedDiagram,
@@ -204,24 +213,60 @@ export function exportCompositionSvg(
   options: { title?: string; subtitle?: string } = {}
 ): string {
   const theme = getTheme(composed.state.theme);
-  const title =
-    options.title ??
-    `${models[composed.state.root]?.title ?? composed.state.root} linked composition`;
+  const rootTitle = models[composed.state.root]?.title ?? composed.state.root;
+  const title = options.title ?? rootTitle;
   const subtitle =
     options.subtitle ??
-    composed.projects.map((project) => models[project.model]?.title ?? project.model).join(' · ');
+    composed.projects
+      .map((project) => {
+        const name = models[project.model]?.title ?? project.title;
+        return project.scene ? `${name} / ${project.scene}` : name;
+      })
+      .join(' · ');
+  const identities = composed.projects.map((project) => project.model).join(' · ');
+  const anyProposed = composed.state.projects.some((project) => project.view.proposed);
+  const anyTrust = composed.state.projects.some((project) => project.view.lens === 'trust');
 
-  const bounds: Frame = { x: 0, y: 0, width: composed.width, height: composed.height };
+  let minX = 0;
+  let minY = 0;
+  let maxX = composed.width;
+  let maxY = composed.height;
+  const includePoint = (x: number, y: number, extraX = 0, extraY = 0) => {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + extraX);
+    maxY = Math.max(maxY, y + extraY);
+  };
   for (const stub of composed.stubs) {
     const origin = stubOrigin(composed, stub);
-    bounds.width = Math.max(bounds.width, origin.x + STUB_WIDTH);
-    bounds.height = Math.max(bounds.height, origin.y + 120);
+    includePoint(origin.x, origin.y, STUB_WIDTH, 120);
   }
+  for (const bridge of composed.bridges) {
+    includePoint(bridge.label.x, bridge.label.y);
+    for (const point of bridge.points) includePoint(point.x, point.y);
+  }
+  const bounds: Frame = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+
+  const marginX = 96;
   const pad = 48;
-  const viewWidth = bounds.width + pad * 2;
-  const viewHeight = bounds.height + pad * 2;
-  const ox = pad - bounds.x;
-  const oy = pad - bounds.y;
+  const viewWidth = Math.max(bounds.width + marginX * 2, 960);
+  const copyWidth = viewWidth - marginX * 2;
+  const titleLines = boundedLines(title, copyWidth, 48, 2);
+  const subtitleLines = boundedLines(subtitle, copyWidth, 19, 3);
+  const headerBottom = 92 + titleLines.length * 54 + subtitleLines.length * 26 + 38;
+  const ox = marginX - bounds.x;
+  const oy = headerBottom + pad - bounds.y;
+  const footerY = headerBottom + pad + bounds.height + pad;
+  const viewHeight = footerY + 70;
+  const footerLeft = anyTrust ? 'AUTHORITY & TRUST · EXACT MEMBER OUTLINES' : 'STRUCTURE';
+  const footerStatus = anyProposed ? 'CURRENT + PROPOSED' : 'CURRENT SYSTEM';
+  const footerRight = truncateText(
+    identities.length
+      ? `${identities} · Linked architecture`
+      : `${composed.state.root} · Linked architecture`,
+    copyWidth / 2,
+    13
+  );
 
   // One origin shift wraps every composed-coordinate layer; local diagram content nests
   // its frame transform inside it, so the same numbers the canvas draws are exported.
@@ -270,11 +315,15 @@ export function exportCompositionSvg(
     .join('');
 
   const stubs = composed.stubs.map((stub) => stubCard(composed, stub, theme)).join('');
-  const artwork = `<g transform="translate(${number(ox)} ${number(oy)})">${layers.join('')}${bridges}${stubs}</g>`;
+  const artwork = `<g data-export-layer="diagram" transform="translate(${number(ox)} ${number(oy)})">${layers.join('')}${bridges}${stubs}</g>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${number(viewWidth)}" height="${number(viewHeight)}" viewBox="0 0 ${number(viewWidth)} ${number(viewHeight)}" role="img" aria-labelledby="cmp-title cmp-description" data-theme="${theme.id}" data-theme-appearance="${theme.appearance}">
   <title id="cmp-title">${xml(title)}</title><desc id="cmp-description">${xml(subtitle)}</desc>
   <defs><marker id="cmp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="${theme.edge}" stroke-width="1.5"/></marker><marker id="cmp-arrow-proposed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="${theme.proposed}" stroke-width="1.5"/></marker></defs>
   <rect width="${number(viewWidth)}" height="${number(viewHeight)}" fill="${theme.canvas}"/>
-  <g font-family="Arial, Helvetica, sans-serif">${artwork}</g></svg>`;
+  <g font-family="Arial, Helvetica, sans-serif"><text x="${marginX}" y="58" font-size="12" letter-spacing="3" fill="${theme.eyebrow}">FRACTAL / LINKED COMPOSITION</text>
+  <g data-export-layer="title">${textLines(titleLines, marginX, 116, 48, 54, theme.text, 600)}</g>
+  <g data-export-layer="subtitle">${textLines(subtitleLines, marginX, 116 + titleLines.length * 54, 19, 26, theme.subtitle)}</g>
+  ${artwork}
+  <g data-export-layer="footer"><path d="M${marginX} ${number(footerY)}H${number(viewWidth - marginX)}" stroke="${theme.divider}"/><text x="${marginX}" y="${number(footerY + 34)}" font-size="13" fill="${theme.subtle}">${xml(footerLeft)} · ${footerStatus}</text><text x="${number(viewWidth - marginX)}" y="${number(footerY + 34)}" text-anchor="end" font-size="13" fill="${theme.subtle}">${xml(footerRight)}</text></g></g></svg>`;
 }
