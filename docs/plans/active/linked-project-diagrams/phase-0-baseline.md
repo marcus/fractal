@@ -85,6 +85,9 @@ parsing. Page open is therefore a fresh browser and first root geometry render w
 warm model cache, **not a cold studio startup**. The initial page still requests the catalog,
 selected model and render routes. Cold studio startup remains a specific phase 3 measurement.
 
+> Phase 1 (td-4bfcce) made `/api/models` a lightweight companion-metadata list, so it no longer
+> primes model parsing. This section is a record of how the phase-0 baseline was measured.
+
 | Reader operation                         | Median ms | Maximum ms | Samples |
 | ---------------------------------------- | --------: | ---------: | ------: |
 | Studio page open through visible diagram |     257.0 |      277.0 |       5 |
