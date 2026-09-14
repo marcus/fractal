@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import FitControl from './FitControl.svelte';
   import ProjectFrame from './ProjectFrame.svelte';
   import BridgeEdge from './BridgeEdge.svelte';
@@ -9,6 +9,13 @@
   import { getTheme } from '$lib/core/themes';
   import { ARCHITECTURE_NODE_METRICS as METRICS } from '$lib/core/node-metrics';
   import { kindHint, kindIcon } from '$lib/core/kind-icons';
+  import {
+    isLowZoom,
+    overscanRect,
+    rectsIntersect,
+    routeBounds,
+    worldViewFromCamera
+  } from './composition-viewport';
   import type {
     ComposedBridge,
     ComposedDiagram,
@@ -16,7 +23,7 @@
     CompositionDiagnostic,
     QualifiedSelection
   } from '$lib/composition/types';
-  import type { LayoutNode, Model, Point } from '$lib/core/types';
+  import type { LayoutEdge, LayoutNode, Model, Point } from '$lib/core/types';
   import type { Direction } from '$lib/core/navigation';
 
   type Insets = { left: number; right: number; bottom: number; top: number };
@@ -64,6 +71,9 @@
   let dragging: { x: number; y: number; originX: number; originY: number } | null = null;
   let moved = false;
   const theme = $derived(getTheme(composed.state.theme));
+  /** World-space view plus one extra viewport of overscan; pan/zoom only recomputes this. */
+  const cullBounds = $derived(overscanRect(worldViewFromCamera(transform, size)));
+  const lowZoom = $derived(isLowZoom(transform.scale));
 
   function childIdsFor(model: string): Set<string> {
     const source = models[model];
@@ -237,11 +247,16 @@
             x: entry.content.x + node.x + node.width / 2,
             y: entry.content.y + node.y + (node.expanded ? 28 : node.height / 2),
             focus: () => {
-              const el = svg.querySelector<SVGGElement>(
+              ensureVisible({
+                x: entry.content.x + node.x,
+                y: entry.content.y + node.y,
+                width: node.width,
+                height: node.height
+              });
+              onselect({ kind: 'element', model: entry.model, element: node.id });
+              void focusMounted(
                 `[data-project="${CSS.escape(entry.model)}"][data-local-id="${CSS.escape(node.id)}"]`
               );
-              el?.focus({ preventScroll: true });
-              onselect({ kind: 'element', model: entry.model, element: node.id });
             }
           });
         }
@@ -266,11 +281,11 @@
         x: bridge.label.x,
         y: bridge.label.y,
         focus: () => {
-          const el = svg.querySelector<SVGGElement>(
+          ensureVisible(routeBounds(bridge.points));
+          onselect({ kind: 'connection', ownerModel: bridge.owner, connectionId: bridge.id });
+          void focusMounted(
             `[data-connection-owner="${CSS.escape(bridge.owner)}"][data-connection-id="${CSS.escape(bridge.id)}"]`
           );
-          el?.focus({ preventScroll: true });
-          onselect({ kind: 'connection', ownerModel: bridge.owner, connectionId: bridge.id });
         }
       });
     }
@@ -453,6 +468,45 @@
       selection.connectionId === bridge.id
     );
   }
+  /**
+   * Culling is a drawing choice: selection, inspection and search still see every claim.
+   * Outlines, ports and the focused/selected element stay mounted so keyboard restore works.
+   */
+  function nodeMounted(
+    model: string,
+    node: LayoutNode,
+    content: { x: number; y: number }
+  ): boolean {
+    if (selectedElement(model, node.id)) return true;
+    return rectsIntersect(cullBounds, {
+      x: content.x + node.x,
+      y: content.y + node.y,
+      width: node.width,
+      height: node.height
+    });
+  }
+  function edgeMounted(
+    model: string,
+    edge: LayoutEdge,
+    content: { x: number; y: number }
+  ): boolean {
+    if (selectedRelationship(model, edge.id)) return true;
+    const points = edge.points.map((point) => ({
+      x: content.x + point.x,
+      y: content.y + point.y
+    }));
+    return rectsIntersect(cullBounds, routeBounds(points));
+  }
+  function bridgeMounted(bridge: ComposedBridge): boolean {
+    if (selectedBridge(bridge)) return true;
+    return rectsIntersect(cullBounds, routeBounds([...bridge.points, bridge.label]));
+  }
+  async function focusMounted(selector: string) {
+    const apply = () => svg.querySelector<SVGGElement>(selector)?.focus({ preventScroll: true });
+    apply();
+    await tick();
+    apply();
+  }
   onMount(() => {
     const observer = new ResizeObserver(
       ([entry]) => (size = { width: entry.contentRect.width, height: entry.contentRect.height })
@@ -464,7 +518,13 @@
   });
 </script>
 
-<div class="composition-canvas" class:presentation>
+<div
+  class="composition-canvas"
+  class:presentation
+  class:low-zoom-detail={lowZoom}
+  data-low-zoom={lowZoom ? 'true' : 'false'}
+  data-camera-scale={transform.scale}
+>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <svg
     bind:this={svg}
@@ -526,14 +586,14 @@
           onrevealport={(port) => onrevealport?.(port)}
         />
       {/each}
-      {#each composed.bridges as bridge (`${bridge.owner}/${bridge.id}`)}
+      {#each composed.bridges.filter( (bridge) => bridgeMounted(bridge) ) as bridge (`${bridge.owner}/${bridge.id}`)}
         <BridgeEdge {bridge} selected={selectedBridge(bridge)} onselect={selectBridge} />
       {/each}
       {#each composed.projects as entry (entry.model)}
         {#if entry.diagram}
           {@const childIds = childIdsFor(entry.model)}
           <g class="project-content" transform={`translate(${entry.content.x} ${entry.content.y})`}>
-            {#each entry.diagram.edges as edge (edge.id)}
+            {#each entry.diagram.edges.filter( (edge) => edgeMounted(entry.model, edge, entry.content) ) as edge (edge.id)}
               {@const path = edgeCurvePath(roundedEdgeCurve(edge.points))}
               <g
                 data-edge-id={`${entry.model}:${edge.id}`}
@@ -576,13 +636,13 @@
               </g>
             {/each}
             {#each entry.diagram.nodes
-              .filter((node) => node.expanded)
+              .filter((node) => node.expanded && nodeMounted(entry.model, node, entry.content))
               .sort((a, b) => a.depth - b.depth) as node (node.id)}
               <g transform={`translate(${node.x} ${node.y})`}>
                 <rect width={node.width} height={node.height} rx="14" fill={theme.group} />
               </g>
             {/each}
-            {#each entry.diagram.nodes as node (node.id)}
+            {#each entry.diagram.nodes.filter( (node) => nodeMounted(entry.model, node, entry.content) ) as node (node.id)}
               {@const memberships =
                 composed.state.projects.find((candidate) => candidate.model === entry.model)?.view
                   .lens === 'trust'
@@ -820,6 +880,14 @@
   }
   .kind-icon {
     opacity: 0.85;
+  }
+  /* Low zoom hides body copy only. Titles, kind icons and project identity stay. */
+  .low-zoom-detail .node-description,
+  .low-zoom-detail :global(.bridge-label),
+  .low-zoom-detail :global(.project-summary),
+  .low-zoom-detail .stub-message,
+  .low-zoom-detail .stub-guidance {
+    display: none;
   }
   .expand-control:hover rect {
     fill: var(--hover, #dbe7e0);

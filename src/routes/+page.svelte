@@ -160,13 +160,40 @@
   let composition = $state<CompositionSession | null>(null);
   let compositionModels = $state<Record<string, Model>>({});
   let compositionSelection = $state<QualifiedSelection | null>(null);
-  let compositionRequestId = 0;
   let compositionGeneration = 0;
   /** Per-tab identity so this tab's generation counter never stales another tab's. */
   let compositionClient = '';
   function compositionClientId(): string {
     if (!compositionClient) compositionClient = crypto.randomUUID();
     return compositionClient;
+  }
+  /**
+   * Camera pan/zoom must never bump this. The browser benchmark and Playwright read
+   * `window.__fractalRenderCount` and `[data-render-count]`.
+   */
+  let renderCount = $state(0);
+  function noteRenderRequest() {
+    renderCount += 1;
+    if (typeof window !== 'undefined')
+      (window as Window & { __fractalRenderCount?: number }).__fractalRenderCount = renderCount;
+  }
+  /** One in-flight composition render plus at most one pending latest state. */
+  let compositionInFlight = false;
+  let pendingCompositionJob: {
+    state: CompositionState;
+    options: { reload?: boolean; retryStale?: boolean };
+    generation: number;
+  } | null = null;
+  let compositionWaiters: Array<() => void> = [];
+  function resolveCompositionWaiters() {
+    const waiters = compositionWaiters;
+    compositionWaiters = [];
+    for (const resolve of waiters) resolve();
+  }
+  /** Drop queued work so a model switch cannot apply a superseded composition. */
+  function abandonCompositionRequests() {
+    compositionGeneration = nextGeneration(compositionGeneration);
+    pendingCompositionJob = null;
   }
   let compositionLinks = $state<Record<string, LinksResult>>({});
   let revisionNotice = $state<RevisionNotice | null>(null);
@@ -408,6 +435,7 @@
     const token = ++requestId;
     busy = true;
     error = '';
+    noteRenderRequest();
     try {
       const next = await readJson(
         await fetch('/api/render', {
@@ -461,6 +489,7 @@
     const token = ++modelRequestId;
     ++requestId;
     if (composition) {
+      abandonCompositionRequests();
       composition = null;
       compositionSelection = null;
       compositionModels = {};
@@ -590,34 +619,49 @@
       );
     return composed.projects.some((project) => project.model === value.model);
   }
-  async function renderComposition(
+  function renderComposition(
     next: CompositionState,
     options: { reload?: boolean; retryStale?: boolean } = {}
-  ) {
+  ): Promise<void> {
     const generation = nextGeneration(compositionGeneration);
     compositionGeneration = generation;
-    const token = ++compositionRequestId;
     busy = true;
     error = '';
+    const job = { state: next, options, generation };
+    const done = new Promise<void>((resolve) => compositionWaiters.push(resolve));
+    if (compositionInFlight) {
+      pendingCompositionJob = job;
+      return done;
+    }
+    void runComposition(job);
+    return done;
+  }
+  async function runComposition(job: {
+    state: CompositionState;
+    options: { reload?: boolean; retryStale?: boolean };
+    generation: number;
+  }) {
+    compositionInFlight = true;
+    noteRenderRequest();
     try {
       const response = await fetch('/api/composition/render', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           root: modelId,
-          state: next,
-          revisions: options.reload ? {} : (composition?.revisions ?? {}),
-          generation,
+          state: job.state,
+          revisions: job.options.reload ? {} : (composition?.revisions ?? {}),
+          generation: job.generation,
           client: compositionClientId(),
-          ...(options.reload ? { reload: true } : {})
+          ...(job.options.reload ? { reload: true } : {})
         })
       });
       const payload = await response.json();
-      if (token !== compositionRequestId) return;
+      if (isStale(job.generation, compositionGeneration)) return;
       if (payload.status === 'stale') {
         // Discard: keep the last coherent view and never hang on Composing view.
-        if (!composition && !options.retryStale)
-          return await renderComposition(next, { ...options, retryStale: true });
+        if (!composition && !job.options.retryStale)
+          renderComposition(job.state, { ...job.options, retryStale: true });
         return;
       }
       if (
@@ -660,6 +704,7 @@
         };
         return;
       }
+      if (isStale(job.generation, compositionGeneration)) return;
       revisionNotice = null;
       composition = {
         state: payload.state,
@@ -669,14 +714,23 @@
       if (compositionSelection && !selectionSurvives(payload.composed, compositionSelection))
         compositionSelection = null;
       await tick();
+      if (isStale(job.generation, compositionGeneration)) return;
       if (compositionAnchor) {
         placeCompositionAnchor();
         compositionAnchor = null;
       }
     } catch (e) {
-      if (token === compositionRequestId) error = e instanceof Error ? e.message : String(e);
+      if (!isStale(job.generation, compositionGeneration))
+        error = e instanceof Error ? e.message : String(e);
     } finally {
-      if (token === compositionRequestId) busy = false;
+      compositionInFlight = false;
+      const pending = pendingCompositionJob;
+      pendingCompositionJob = null;
+      if (pending) void runComposition(pending);
+      else {
+        if (!isStale(job.generation, compositionGeneration)) busy = false;
+        resolveCompositionWaiters();
+      }
     }
   }
   function reloadComposition() {
@@ -779,11 +833,13 @@
     await renderComposition(state);
   }
   function closeComposition() {
+    abandonCompositionRequests();
     composition = null;
     compositionSelection = null;
     compositionModels = {};
     compositionLinks = {};
     revisionNotice = null;
+    busy = false;
   }
   async function restoreComposition(state: CompositionState) {
     if (!model) return;
@@ -1709,7 +1765,12 @@
           </div>
           <p title={subtitle}>{subtitle}</p>
         </div>
-        <div class="diagram-area" class:loading={slow} aria-busy={busy}>
+        <div
+          class="diagram-area"
+          class:loading={slow}
+          aria-busy={busy}
+          data-render-count={renderCount}
+        >
           {#if model}
             <div class="canvas-layer" class:layer-hidden={composition}>
               {#key model.id}<DiagramCanvas
