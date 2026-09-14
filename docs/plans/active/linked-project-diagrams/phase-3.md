@@ -111,7 +111,7 @@ the real `plugins` composition is three open projects through a temporary catalo
 | coldParseMs (cache-cleared)       | 287.241 ms                          |
 | Composition fingerprint           | `1aad6ec89abe17724d06d0aa7ffe9ecc…` |
 
-The three independent single-project overview fingerprints are unchanged against the phase 0
+The two phase-0 steel-thread overview fingerprints are unchanged against the
 [steel-thread baseline](steel-thread-baseline.json): Sidecar `775718923c94` and td `fe87d9db39b7`
 compare identical (`--fail-on-geometry-change` exit 0), which is the strongest available check
 that composition reads each project without altering its local geometry.
