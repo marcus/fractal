@@ -571,6 +571,21 @@
         orient="auto-start-reverse"
         ><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke={theme.accent} stroke-width="1.5" /></marker
       >
+      <marker
+        id="composition-arrow-proposed"
+        viewBox="0 0 10 10"
+        refX="9"
+        refY="5"
+        markerWidth="7"
+        markerHeight="7"
+        orient="auto-start-reverse"
+        ><path
+          d="M 1 1 L 9 5 L 1 9"
+          fill="none"
+          stroke={theme.proposed}
+          stroke-width="1.5"
+        /></marker
+      >
       <filter id="composition-shadow" x="-10%" y="-10%" width="120%" height="140%"
         ><feDropShadow
           dx="0"

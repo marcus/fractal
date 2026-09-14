@@ -42,13 +42,23 @@
   }}
 >
   <path d={path} fill="none" stroke="transparent" stroke-width="16" />
+  <!-- A proposed bridge draws dashed in the proposed colour, like the composed SVG export and
+    the single-model proposed edges, so the canvas and the export agree. -->
   <path
     d={path}
     fill="none"
-    stroke={selected ? 'var(--accent, #267566)' : 'var(--edge, #84948b)'}
+    stroke={selected
+      ? 'var(--accent, #267566)'
+      : bridge.status === 'proposed'
+        ? 'var(--proposed, #a98243)'
+        : 'var(--edge, #84948b)'}
     stroke-width={selected ? 2.5 : 1.5}
     stroke-dasharray={bridge.status === 'proposed' ? '6 5' : undefined}
-    marker-end={selected ? 'url(#composition-arrow-selected)' : 'url(#composition-arrow)'}
+    marker-end={selected
+      ? 'url(#composition-arrow-selected)'
+      : bridge.status === 'proposed'
+        ? 'url(#composition-arrow-proposed)'
+        : 'url(#composition-arrow)'}
   />
   <g transform={`translate(${bridge.label.x} ${bridge.label.y})`}>
     {#each bridge.labelLines as line, index}<text
