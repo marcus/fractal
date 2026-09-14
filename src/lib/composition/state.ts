@@ -141,3 +141,56 @@ export function setProjectMode(
     )
   });
 }
+
+/**
+ * Switch one participating project to a scene from its snapshot. The scene re-derives the
+ * project's view (scope, expansion, proposal switch, lens); explicit overrides from the
+ * previous view are dropped, never merged.
+ */
+export function setProjectScene(
+  state: CompositionState,
+  model: string,
+  scene: string,
+  snapshot: ProjectSnapshot
+): CompositionState {
+  if (!state.projects.some((project) => project.model === model))
+    throw new Error(`Unknown project: ${model}`);
+  if (snapshot.id !== model) throw new Error(`Snapshot ${snapshot.id} does not describe ${model}`);
+  const chosen = snapshot.model.scenes.find((candidate) => candidate.id === scene);
+  if (!chosen) throw new Error(`Unknown scene: ${scene} in model ${model}`);
+  return parseCompositionState({
+    ...state,
+    projects: state.projects.map((project) =>
+      project.model === model ? { ...project, scene: chosen.id, view: viewOf(chosen) } : project
+    )
+  });
+}
+
+/**
+ * Set or clear one participating project's scope filter. The scope is carried on the view;
+ * clearing it restores the full scene. Existence is checked when the composition next
+ * composes; every transition still validates through the state parser.
+ */
+export function setProjectScope(
+  state: CompositionState,
+  model: string,
+  scope: string | undefined
+): CompositionState {
+  if (!state.projects.some((project) => project.model === model))
+    throw new Error(`Unknown project: ${model}`);
+  return parseCompositionState({
+    ...state,
+    projects: state.projects.map((project) => {
+      if (project.model !== model) return project;
+      const view = { ...project.view };
+      if (scope === undefined) delete view.scope;
+      else view.scope = scope;
+      return { ...project, view };
+    })
+  });
+}
+
+/** Focus one participating project, or clear the focus. */
+export function focusProject(state: CompositionState, model: string | undefined): CompositionState {
+  return parseCompositionState({ ...state, focusedProject: model });
+}

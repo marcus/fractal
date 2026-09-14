@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "third",
+  "title": "Relay plugin",
+  "description": "Fictional linked-project contract fixture.",
+  "provenance": "Invented for Fractal contract tests; no source repository is described.",
+  "boundaries": [
+    {
+      "id": "trust",
+      "title": "Local permissions",
+      "description": "Local membership only; never inherited across project frames.",
+      "kind": "permission",
+      "members": ["cli"],
+      "color": "#739886"
+    }
+  ],
+  "scenes": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "description": "Project overview.",
+      "expanded": [],
+      "proposed": false,
+      "lens": "structure"
+    },
+    {
+      "id": "detail",
+      "title": "Trust and detail",
+      "description": "Expand local contents.",
+      "expanded": ["core"],
+      "proposed": false,
+      "lens": "trust"
+    }
+  ]
+}

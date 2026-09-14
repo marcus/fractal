@@ -5,6 +5,7 @@ import type {
   BridgeRepresentative,
   ComposedDiagram,
   ElementReference,
+  ProjectLinks,
   QualifiedSelection
 } from './types';
 
@@ -25,6 +26,14 @@ export interface InspectedRepresentative {
 /** Resolve a participating project's model so a route leg can name the exact endpoint title. */
 export type ModelLookup = (model: string) => Model | undefined;
 
+/** One authored claim inside a (possibly bundled) bridge, with its exact provenance. */
+export interface UnderlyingClaim {
+  owner: string;
+  connectionId: string;
+  endpoints: { source: ElementReference; target: ElementReference };
+  evidence: string[];
+}
+
 export interface InspectedConnection {
   kind: 'connection';
   owner: string;
@@ -38,6 +47,13 @@ export interface InspectedConnection {
   };
   endpoints: { source: ElementReference; target: ElementReference };
   representatives: { source: InspectedRepresentative; target: InspectedRepresentative };
+  /** Bundle size; 1 when the bridge draws a single claim. */
+  count: number;
+  /**
+   * Every underlying claim with its owner, exact endpoints and evidence, in bridge order.
+   * Unrelated claims are listed side by side, never merged.
+   */
+  underlying: UnderlyingClaim[];
 }
 
 export type InspectedElement = ReturnType<typeof inspectComponent> & {
@@ -61,16 +77,52 @@ function projectTitle(composed: ComposedDiagram, model: string, fallback: string
   return composed.projects.find((project) => project.model === model)?.title ?? fallback;
 }
 
-/** Qualified inspection of one bridge. Exact authored endpoints stay separate from their stand-ins. */
+/**
+ * Qualified inspection of one bridge. Exact authored endpoints stay separate from their
+ * stand-ins. `ref` may name any underlying claim in a bundle, not just the drawn
+ * representative: the shared route, claim fields and drawn stand-ins stay the same while
+ * `endpoints` and the claim evidence describe the requested claim, and `underlying` lists
+ * every claim in the bundle. `linksOf` resolves exact endpoints and evidence per claim;
+ * without it those fall back to the drawn bridge (exact for unbundled bridges).
+ */
 export function inspectConnection(
   composed: ComposedDiagram,
   lookup: ModelLookup,
-  ref: { ownerModel: string; connectionId: string }
+  ref: { ownerModel: string; connectionId: string },
+  linksOf?: (model: string) => ProjectLinks | null
 ): InspectedConnection {
-  const bridge = composed.bridges.find(
-    (candidate) => candidate.owner === ref.ownerModel && candidate.id === ref.connectionId
+  const bridge = composed.bridges.find((candidate) =>
+    candidate.underlying.some(
+      (entry) => entry.owner === ref.ownerModel && entry.connectionId === ref.connectionId
+    )
   );
   if (!bridge) throw new Error(`Unknown connection: ${ref.ownerModel}/${ref.connectionId}`);
+  const detailOf = (owner: string, connectionId: string): UnderlyingClaim => {
+    const authored = linksOf?.(owner)?.connections.find(
+      (candidate) => candidate.id === connectionId
+    );
+    if (authored)
+      return {
+        owner,
+        connectionId,
+        endpoints: {
+          source: { ...authored.source },
+          target: { ...authored.target }
+        },
+        evidence: [...authored.evidence]
+      };
+    return {
+      owner,
+      connectionId,
+      endpoints: {
+        source: { model: bridge.source.model, element: bridge.source.element },
+        target: { model: bridge.target.model, element: bridge.target.element }
+      },
+      evidence: [...bridge.evidence]
+    };
+  };
+  const requested = detailOf(ref.ownerModel, ref.connectionId);
+  const underlying = bridge.underlying.map((entry) => detailOf(entry.owner, entry.connectionId));
   const endpointTitle = (model: string, element: string): string | null =>
     lookup(model)?.elements.find((candidate) => candidate.id === element)?.title ?? null;
   const representative = (endpoint: {
@@ -97,12 +149,18 @@ export function inspectConnection(
     owner: bridge.owner,
     route: {
       source: {
-        project: projectTitle(composed, bridge.source.model, bridge.source.model),
-        component: endpointTitle(bridge.source.model, bridge.source.element)
+        project: projectTitle(composed, requested.endpoints.source.model, bridge.source.model),
+        component: endpointTitle(
+          requested.endpoints.source.model,
+          requested.endpoints.source.element
+        )
       },
       target: {
-        project: projectTitle(composed, bridge.target.model, bridge.target.model),
-        component: endpointTitle(bridge.target.model, bridge.target.element)
+        project: projectTitle(composed, requested.endpoints.target.model, bridge.target.model),
+        component: endpointTitle(
+          requested.endpoints.target.model,
+          requested.endpoints.target.element
+        )
       }
     },
     claim: {
@@ -110,16 +168,18 @@ export function inspectConnection(
       kind: bridge.kind,
       status: bridge.status,
       description: bridge.description,
-      evidence: [...bridge.evidence]
+      evidence: [...requested.evidence]
     },
     endpoints: {
-      source: { model: bridge.source.model, element: bridge.source.element },
-      target: { model: bridge.target.model, element: bridge.target.element }
+      source: { ...requested.endpoints.source },
+      target: { ...requested.endpoints.target }
     },
     representatives: {
       source: representative(bridge.source),
       target: representative(bridge.target)
-    }
+    },
+    count: bridge.count,
+    underlying
   };
 }
 
@@ -130,10 +190,15 @@ export function inspectQualified(
   selection: QualifiedSelection
 ): QualifiedInspection {
   if (selection.kind === 'connection')
-    return inspectConnection(composed, (model) => snapshots.get(model)?.model, {
-      ownerModel: selection.ownerModel,
-      connectionId: selection.connectionId
-    });
+    return inspectConnection(
+      composed,
+      (model) => snapshots.get(model)?.model,
+      {
+        ownerModel: selection.ownerModel,
+        connectionId: selection.connectionId
+      },
+      (model) => snapshots.get(model)?.links ?? null
+    );
   if (selection.kind === 'element') {
     const project = composed.state.projects.find((entry) => entry.model === selection.model);
     const snapshot = snapshots.get(selection.model);

@@ -1,0 +1,20 @@
+// Fictional second plugin; no real repository architecture is asserted.
+specification {
+  element subsystem
+  element component
+  relationship calls
+  tag proposed
+}
+model {
+  core = subsystem 'Relay plugin' {
+    metadata { uid 'core' }
+    cli = component 'Relay CLI' { metadata { uid 'cli' } }
+    fallback = component 'Unannotated helper'
+  }
+  store = component 'Relay records' { metadata { uid 'store' } }
+  beta = component 'Future adapter' {
+    #proposed
+    metadata { uid 'beta' }
+  }
+  core.cli -[calls]-> store 'Reads relay state' { metadata { uid 'call' } }
+}

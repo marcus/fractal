@@ -1,7 +1,7 @@
 import { layout } from '../core/layout';
 import { EDGE_LABEL_SIZE, EDGE_LABEL_WIDTH } from '../core/measure';
 import { wrapText } from '../core/projection';
-import type { Diagram } from '../core/types';
+import type { Diagram, Point } from '../core/types';
 import { parseCompositionState } from './parse';
 import { placeFrames } from './place';
 import { routeBridge } from './route';
@@ -11,10 +11,14 @@ import type {
   BridgeRepresentative,
   ComposedBridge,
   ComposedDiagram,
+  ComposedPort,
   ComposedProject,
   CompositionDiagnostic,
   CompositionState,
   ElementReference,
+  Frame,
+  HiddenClaim,
+  PortSide,
   ProjectConnection,
   ReferenceStub
 } from './types';
@@ -56,43 +60,135 @@ function withinScope(
   return false;
 }
 
-/** The visible stand-in for an authored endpoint under its own project's collapsed/view state. */
+/**
+ * Whether the endpoint (or a proposed ancestor hiding it) is filtered out by its own
+ * project's `view.proposed`. A proposed endpoint whose project filters proposed content hides
+ * the whole claim, and the owning project's switch never overrides that.
+ */
+function endpointProposedHidden(
+  snapshot: ProjectSnapshot,
+  project: ProjectState,
+  elementId: string
+): boolean {
+  const byId = new Map(snapshot.model.elements.map((element) => [element.id, element]));
+  let current = byId.get(elementId);
+  while (current) {
+    if (current.status === 'proposed' && !project.view.proposed) return true;
+    current = current.parent === null ? undefined : byId.get(current.parent);
+  }
+  return false;
+}
+
+/**
+ * The visible stand-in for an authored endpoint under its own project's collapsed/view state.
+ * Collapse resolves to a visible ancestor node; only scope exclusion reaches a perimeter port.
+ * Proposal filtering is decided upstream (`endpointProposedHidden`), so a port never stands in
+ * for a proposed-hidden endpoint.
+ */
 function representative(
   snapshot: ProjectSnapshot,
   project: ProjectState,
-  composed: ComposedProject,
+  composed: { mode: 'open' | 'collapsed'; diagram: Diagram | null },
   elementId: string
 ): BridgeRepresentative {
   if (composed.mode === 'collapsed' || !composed.diagram) return { kind: 'project' };
+  const byId = new Map(snapshot.model.elements.map((element) => [element.id, element]));
+  // Validated upstream; an unknown element stays total by standing in the whole project.
+  if (!byId.has(elementId)) return { kind: 'project' };
   const nodeIds = new Set(composed.diagram.nodes.map((node) => node.id));
   if (nodeIds.has(elementId)) return { kind: 'node', id: elementId };
-  const byId = new Map(snapshot.model.elements.map((element) => [element.id, element]));
   let parent = byId.get(elementId)?.parent ?? null;
   while (parent) {
     if (nodeIds.has(parent)) return { kind: 'node', id: parent };
     parent = byId.get(parent)?.parent ?? null;
   }
   const scope = project.view.scope;
-  const reason =
-    scope !== undefined && !withinScope(byId, elementId, scope) ? 'outside-scope' : 'hidden';
-  return { kind: 'port', reason };
+  if (scope !== undefined && !withinScope(byId, elementId, scope))
+    return { kind: 'port', reason: 'outside-scope' };
+  // An eligible in-scope endpoint always resolves to a visible ancestor under the same view,
+  // so reaching here means the diagram disagrees: stand in the whole project, never a port.
+  return { kind: 'project' };
 }
 
-function routeEndpoint(
-  snapshot: ProjectSnapshot,
-  project: ProjectState,
-  composed: ComposedProject,
-  elementId: string
-): { representative: BridgeRepresentative; route: RouteEndpoint } {
-  const rep = representative(snapshot, project, composed, elementId);
-  if (rep.kind === 'node') {
-    const node = composed.diagram?.nodes.find((candidate) => candidate.id === rep.id);
+/** The frame side facing the other endpoint's project; mirrors the routing axis choice. */
+function portSide(from: Frame, to: Frame): PortSide {
+  const fromCenter = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+  const toCenter = { x: to.x + to.width / 2, y: to.y + to.height / 2 };
+  if (Math.abs(toCenter.x - fromCenter.x) >= Math.abs(toCenter.y - fromCenter.y))
+    return toCenter.x >= fromCenter.x ? 'right' : 'left';
+  return toCenter.y >= fromCenter.y ? 'bottom' : 'top';
+}
+
+const SIDE_ORDER: PortSide[] = ['left', 'right', 'top', 'bottom'];
+
+/**
+ * Evenly spaced slot along one side, in composed coordinates. Side ports start below the
+ * title band so bridge segments never cross it; top/bottom ports span the full width.
+ */
+function portPoint(
+  frame: Frame,
+  titleHeight: number,
+  side: PortSide,
+  index: number,
+  total: number
+): Point {
+  if (side === 'left' || side === 'right') {
+    const top = frame.y + titleHeight;
     return {
-      representative: rep,
-      route: { frame: composed.frame, content: composed.content, node }
+      x: side === 'left' ? frame.x : frame.x + frame.width,
+      y: top + ((index + 1) * (frame.height - titleHeight)) / (total + 1)
     };
   }
-  return { representative: rep, route: { frame: composed.frame, content: composed.content } };
+  return {
+    x: frame.x + ((index + 1) * frame.width) / (total + 1),
+    y: side === 'top' ? frame.y : frame.y + frame.height
+  };
+}
+
+/** Bridge and port labels show the title, with `×N` when N claims share one drawn bridge. */
+function countedLabel(title: string, count: number): string {
+  return count > 1 ? `${title} ×${count}` : title;
+}
+
+function endpointTitle(snapshot: ProjectSnapshot, elementId: string): string {
+  return snapshot.model.elements.find((element) => element.id === elementId)?.title ?? elementId;
+}
+
+interface RawEndpoint {
+  model: string;
+  element: string;
+  representative: BridgeRepresentative;
+}
+
+interface RawBridge {
+  owner: string;
+  connection: ProjectConnection;
+  source: RawEndpoint;
+  target: RawEndpoint;
+}
+
+/**
+ * Bundling identity: the visible representative pair plus the shared claim fields. Node and
+ * project stand-ins are compared by drawn card (model plus node); each perimeter port is a
+ * distinct drawn stand-in with its own reveal action, so ports also compare the endpoint
+ * element and only claims through the same port bundle. Direction matters: reversed claims
+ * never share a key.
+ */
+function bundleKey(bridge: RawBridge): string {
+  const part = (endpoint: RawEndpoint): unknown[] =>
+    endpoint.representative.kind === 'port'
+      ? ['port', endpoint.model, endpoint.element]
+      : endpoint.representative.kind === 'node'
+        ? ['node', endpoint.model, endpoint.representative.id]
+        : ['project', endpoint.model];
+  return JSON.stringify([
+    part(bridge.source),
+    part(bridge.target),
+    bridge.connection.kind,
+    bridge.connection.status,
+    bridge.connection.title,
+    bridge.connection.description
+  ]);
 }
 
 function validateLinks(
@@ -286,15 +382,10 @@ export async function compose(
         engine: normalized.layout
       }))
   );
-  const projects: ComposedProject[] = placed.projects.map((project) => ({
-    ...project,
-    revision: resolved.get(project.model)!.revision,
-    scene: effectiveScenes.get(project.model)
-  }));
-  const composedByModel = new Map(projects.map((project) => [project.model, project]));
-
-  const bridges: ComposedBridge[] = [];
+  const framesByModel = new Map(placed.projects.map((project) => [project.model, project]));
   const stubs: ReferenceStub[] = [];
+  const hidden: HiddenClaim[] = [];
+  const raws: RawBridge[] = [];
   for (const project of projectStates) {
     const snapshot = resolved.get(project.model);
     if (!snapshot?.links) continue;
@@ -303,45 +394,63 @@ export async function compose(
       if (validation.badConnections.has(connection.id)) continue;
       if (!resolved.has(connection.source.model) || !resolved.has(connection.target.model))
         continue;
-      if (connection.status === 'proposed' && !project.view.proposed) continue;
+      // A proposed claim draws only when its owner shows proposed content; otherwise the
+      // claim is hidden (never a port) so inspection and CLI can explain it.
+      if (connection.status === 'proposed' && !project.view.proposed) {
+        hidden.push({
+          owner: project.model,
+          connectionId: connection.id,
+          reason: 'proposed-owner'
+        });
+        continue;
+      }
+      // Each endpoint must be eligible under its own project's view. A proposed endpoint
+      // whose project filters proposed content hides the claim; the owner's switch never
+      // overrides that.
       const sourceState = projectStates.find((entry) => entry.model === connection.source.model)!;
       const targetState = projectStates.find((entry) => entry.model === connection.target.model)!;
-      const source = routeEndpoint(
-        resolved.get(connection.source.model)!,
-        sourceState,
-        composedByModel.get(connection.source.model)!,
-        connection.source.element
-      );
-      const target = routeEndpoint(
-        resolved.get(connection.target.model)!,
-        targetState,
-        composedByModel.get(connection.target.model)!,
-        connection.target.element
-      );
-      const hidden = (rep: BridgeRepresentative): boolean =>
-        rep.kind === 'port' && rep.reason === 'hidden';
-      if (hidden(source.representative) || hidden(target.representative)) continue;
-      const labelLines = wrapText(connection.title, EDGE_LABEL_WIDTH, EDGE_LABEL_SIZE);
-      const route = routeBridge(source.route, target.route, labelLines);
-      bridges.push({
-        ...connection,
-        evidence: [...connection.evidence],
+      if (
+        endpointProposedHidden(
+          resolved.get(connection.source.model)!,
+          sourceState,
+          connection.source.element
+        ) ||
+        endpointProposedHidden(
+          resolved.get(connection.target.model)!,
+          targetState,
+          connection.target.element
+        )
+      ) {
+        hidden.push({
+          owner: project.model,
+          connectionId: connection.id,
+          reason: 'proposed-endpoint'
+        });
+        continue;
+      }
+      raws.push({
         owner: project.model,
+        connection,
         source: {
           model: connection.source.model,
           element: connection.source.element,
-          representative: source.representative,
-          point: route.sourcePoint
+          representative: representative(
+            resolved.get(connection.source.model)!,
+            sourceState,
+            framesByModel.get(connection.source.model)!,
+            connection.source.element
+          )
         },
         target: {
           model: connection.target.model,
           element: connection.target.element,
-          representative: target.representative,
-          point: route.targetPoint
-        },
-        points: route.points,
-        label: route.label,
-        labelLines
+          representative: representative(
+            resolved.get(connection.target.model)!,
+            targetState,
+            framesByModel.get(connection.target.model)!,
+            connection.target.element
+          )
+        }
       });
     }
 
@@ -379,12 +488,165 @@ export async function compose(
     }
   }
 
+  // Bundle claims that draw the same visible stand-ins with identical claim fields.
+  const grouped = new Map<string, RawBridge[]>();
+  for (const raw of raws) {
+    const key = bundleKey(raw);
+    const members = grouped.get(key);
+    if (members) members.push(raw);
+    else grouped.set(key, [raw]);
+  }
+  const bundles = [...grouped.values()].map((members) => {
+    members.sort((a, b) => compare(a.owner, b.owner) || compare(a.connection.id, b.connection.id));
+    return {
+      first: members[0],
+      count: members.length,
+      underlying: members.map((member) => ({
+        owner: member.owner,
+        connectionId: member.connection.id
+      }))
+    };
+  });
+  bundles.sort(
+    (a, b) =>
+      compare(a.first.owner, b.first.owner) || compare(a.first.connection.id, b.first.connection.id)
+  );
+
+  // One port per outside-scope endpoint element per facing side; claims through the same port
+  // share its slot and its count.
+  interface PortUse {
+    model: string;
+    element: string;
+    side: PortSide;
+    count: number;
+  }
+  const uses = new Map<string, PortUse>();
+  for (const bundle of bundles) {
+    const ends = [
+      { self: bundle.first.source, other: bundle.first.target },
+      { self: bundle.first.target, other: bundle.first.source }
+    ];
+    for (const { self, other } of ends) {
+      if (self.representative.kind !== 'port') continue;
+      const side = portSide(
+        framesByModel.get(self.model)!.frame,
+        framesByModel.get(other.model)!.frame
+      );
+      const key = `${self.model}\n${side}\n${self.element}`;
+      const existing = uses.get(key);
+      if (existing) existing.count += bundle.count;
+      else uses.set(key, { model: self.model, element: self.element, side, count: bundle.count });
+    }
+  }
+  const useGroups = new Map<string, PortUse[]>();
+  for (const use of uses.values()) {
+    const key = `${use.model}\n${use.side}`;
+    const group = useGroups.get(key);
+    if (group) group.push(use);
+    else useGroups.set(key, [use]);
+  }
+  const portPoints = new Map<string, Point>();
+  const portsByModel = new Map<string, ComposedPort[]>();
+  for (const group of useGroups.values()) {
+    group.sort((a, b) => compare(a.element, b.element));
+    const placed = framesByModel.get(group[0].model)!;
+    group.forEach((use, index) => {
+      const point = portPoint(placed.frame, placed.titleHeight, use.side, index, group.length);
+      portPoints.set(`${use.model}\n${use.side}\n${use.element}`, point);
+      const title = endpointTitle(resolved.get(use.model)!, use.element);
+      const ports = portsByModel.get(use.model);
+      const port: ComposedPort = {
+        model: use.model,
+        side: use.side,
+        point,
+        labelLines: wrapText(countedLabel(title, use.count), EDGE_LABEL_WIDTH, EDGE_LABEL_SIZE),
+        count: use.count,
+        reveal: { model: use.model, element: use.element }
+      };
+      if (ports) ports.push(port);
+      else portsByModel.set(use.model, [port]);
+    });
+  }
+  for (const ports of portsByModel.values())
+    ports.sort(
+      (a, b) =>
+        SIDE_ORDER.indexOf(a.side) - SIDE_ORDER.indexOf(b.side) ||
+        compare(a.reveal.element, b.reveal.element)
+    );
+
+  const bridges: ComposedBridge[] = [];
+  for (const bundle of bundles) {
+    const { first, count, underlying } = bundle;
+    const labelLines = wrapText(
+      countedLabel(first.connection.title, count),
+      EDGE_LABEL_WIDTH,
+      EDGE_LABEL_SIZE
+    );
+    // The side is a pure function of the two frames, so recomputing it here matches the
+    // slot assigned above for the same (model, side, element).
+    const toRoute = (endpoint: RawEndpoint, other: RawEndpoint): RouteEndpoint => {
+      const placed = framesByModel.get(endpoint.model)!;
+      const representative = endpoint.representative;
+      if (representative.kind === 'node')
+        return {
+          frame: placed.frame,
+          content: placed.content,
+          node: placed.diagram?.nodes.find((node) => node.id === representative.id)
+        };
+      if (representative.kind === 'port') {
+        const side = portSide(placed.frame, framesByModel.get(other.model)!.frame);
+        const point = portPoints.get(`${endpoint.model}\n${side}\n${endpoint.element}`)!;
+        return { frame: placed.frame, content: placed.content, port: point };
+      }
+      return { frame: placed.frame, content: placed.content };
+    };
+    const route = routeBridge(
+      toRoute(first.source, first.target),
+      toRoute(first.target, first.source),
+      labelLines
+    );
+    bridges.push({
+      id: first.connection.id,
+      title: first.connection.title,
+      kind: first.connection.kind,
+      status: first.connection.status,
+      description: first.connection.description,
+      evidence: [...first.connection.evidence],
+      owner: first.owner,
+      source: {
+        model: first.source.model,
+        element: first.source.element,
+        representative: first.source.representative,
+        point: route.sourcePoint
+      },
+      target: {
+        model: first.target.model,
+        element: first.target.element,
+        representative: first.target.representative,
+        point: route.targetPoint
+      },
+      points: route.points,
+      label: route.label,
+      labelLines,
+      count,
+      underlying
+    });
+  }
+
+  const projects: ComposedProject[] = placed.projects.map((project) => ({
+    ...project,
+    revision: resolved.get(project.model)!.revision,
+    scene: effectiveScenes.get(project.model),
+    ports: portsByModel.get(project.model) ?? []
+  }));
+
   bridges.sort((a, b) => compare(a.owner, b.owner) || compare(a.id, b.id));
   stubs.sort(
     (a, b) =>
       compare(a.owner, b.owner) ||
       compare(a.linkId ?? a.connectionId ?? '', b.linkId ?? b.connectionId ?? '')
   );
+  hidden.sort((a, b) => compare(a.owner, b.owner) || compare(a.connectionId, b.connectionId));
   diagnostics.sort(
     (a, b) => compare(a.ownerModel, b.ownerModel) || compare(a.path ?? '', b.path ?? '')
   );
@@ -394,6 +656,7 @@ export async function compose(
     projects,
     bridges,
     stubs,
+    hidden,
     diagnostics,
     width: placed.width,
     height: placed.height

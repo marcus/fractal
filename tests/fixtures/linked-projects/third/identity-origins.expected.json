@@ -1,0 +1,12 @@
+{
+  "elements": {
+    "core": "explicit",
+    "cli": "explicit",
+    "core.fallback": "fallback",
+    "store": "explicit",
+    "beta": "explicit"
+  },
+  "relationships": {
+    "call": "explicit"
+  }
+}

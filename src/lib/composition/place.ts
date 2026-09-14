@@ -29,7 +29,7 @@ export interface FrameEntry {
   engine: LayoutEngineId;
 }
 
-export type PlacedProject = Omit<ComposedProject, 'revision' | 'scene'>;
+export type PlacedProject = Omit<ComposedProject, 'revision' | 'scene' | 'ports'>;
 
 interface FrameSize {
   frame: Frame;

@@ -5,13 +5,16 @@ import type { Frame } from './types';
 /**
  * Bridge routing between one source and one target representative. `node` carries a local
  * diagram node; its composed rectangle comes from `content`, so routing never guesses a frame
- * transform. Without a node the representative is the project frame (a collapsed project or a
- * perimeter port). Points are ordered source → target; renderers draw the arrow at the last point.
+ * transform. Without a node the representative is the project frame (a collapsed project).
+ * `port` is a perimeter point in composed coordinates for an outside-scope endpoint; the
+ * bridge ends there instead of the frame-edge midpoint. Points are ordered source → target;
+ * renderers draw the arrow at the last point.
  */
 export interface RouteEndpoint {
   frame: Frame;
   content: Frame;
   node?: LayoutNode;
+  port?: Point;
 }
 
 export interface BridgeRoute {
@@ -53,6 +56,8 @@ function escapeX(from: Frame, to: Frame, right: boolean): number {
  * stay out of every title band and node card), and enters the target on its facing side. Frames
  * side by side cross at a corridor x; stacked frames escape beside both frames and cross at a y.
  * The label is the crossing point itself; renderers centre the label on that point.
+ * A port anchor keeps the same orthogonal shape: ports sit on the facing side, so the first
+ * (or last) segment still leaves straight into the corridor or escape line.
  */
 export function routeBridge(
   source: RouteEndpoint,
@@ -76,8 +81,8 @@ export function routeBridge(
   if (horizontal) {
     const right = targetFrameCenter.x >= sourceFrameCenter.x;
     const x = corridorX(source.frame, target.frame, right);
-    sourcePoint = { x: right ? from.x + from.width : from.x, y: fromCenter.y };
-    targetPoint = { x: right ? to.x : to.x + to.width, y: toCenter.y };
+    sourcePoint = source.port ?? { x: right ? from.x + from.width : from.x, y: fromCenter.y };
+    targetPoint = target.port ?? { x: right ? to.x : to.x + to.width, y: toCenter.y };
     points =
       sourcePoint.y === targetPoint.y
         ? [sourcePoint, { x, y: sourcePoint.y }, targetPoint]
@@ -86,8 +91,8 @@ export function routeBridge(
   } else {
     const down = targetFrameCenter.y >= sourceFrameCenter.y;
     const x = escapeX(source.frame, target.frame, targetFrameCenter.x >= sourceFrameCenter.x);
-    sourcePoint = { x: fromCenter.x, y: down ? from.y + from.height : from.y };
-    targetPoint = { x: toCenter.x, y: down ? to.y : to.y + to.height };
+    sourcePoint = source.port ?? { x: fromCenter.x, y: down ? from.y + from.height : from.y };
+    targetPoint = target.port ?? { x: toCenter.x, y: down ? to.y : to.y + to.height };
     points = [sourcePoint, { x, y: sourcePoint.y }, { x, y: targetPoint.y }, targetPoint];
     const near = down ? source.frame.y + source.frame.height : source.frame.y;
     const far = down ? target.frame.y : target.frame.y + target.frame.height;

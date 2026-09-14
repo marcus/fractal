@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "links": [
+    {
+      "id": "host",
+      "target": {
+        "model": "host",
+        "scene": "overview"
+      },
+      "title": "Host architecture"
+    },
+    {
+      "id": "plugin",
+      "target": {
+        "model": "plugin",
+        "scene": "overview"
+      },
+      "title": "Beacon architecture"
+    }
+  ],
+  "connections": [
+    {
+      "id": "call",
+      "source": {
+        "model": "third",
+        "element": "cli"
+      },
+      "target": {
+        "model": "host",
+        "element": "cli"
+      },
+      "title": "Relays host commands",
+      "kind": "relays",
+      "status": "current",
+      "description": "Fictional third-owned integration claim.",
+      "evidence": ["src/plugins/relay.ts"]
+    },
+    {
+      "id": "future",
+      "source": {
+        "model": "third",
+        "element": "beta"
+      },
+      "target": {
+        "model": "plugin",
+        "element": "cli"
+      },
+      "title": "Will invoke plugin CLI",
+      "kind": "uses",
+      "status": "proposed",
+      "description": "Fictional proposed claim from the third plugin.",
+      "evidence": []
+    }
+  ],
+  "compositions": []
+}

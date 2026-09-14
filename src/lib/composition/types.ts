@@ -108,12 +108,37 @@ export interface ComposedProject {
   /** Where the local diagram's (0,0) lands; null-size when collapsed. */
   content: Frame;
   diagram: Diagram | null;
+  /** Perimeter ports for scope-excluded endpoints, grouped by side; empty when none. */
+  ports: ComposedPort[];
 }
-/** A visible stand-in for an authored endpoint: a node, the whole project, or a perimeter port. */
+/**
+ * A visible stand-in for an authored endpoint: a node, the whole project, or a perimeter port.
+ * Ports only mean `outside-scope`: proposal exclusion hides the claim (see `HiddenClaim`)
+ * instead of drawing a stand-in, so a port is never confused with a component.
+ */
 export type BridgeRepresentative =
-  | { kind: 'node'; id: string }
-  | { kind: 'project' }
-  | { kind: 'port'; reason: 'outside-scope' | 'hidden' };
+  { kind: 'node'; id: string } | { kind: 'project' } | { kind: 'port'; reason: 'outside-scope' };
+
+/** Which side of a project frame a perimeter port sits on: the side facing the other endpoint. */
+export type PortSide = 'left' | 'right' | 'top' | 'bottom';
+
+/**
+ * A labeled stand-in on a project perimeter for an endpoint excluded by that project's
+ * `view.scope`. One port serves one endpoint element on one side; `count` totals the
+ * underlying claims routed through it (more than one when bundled bridges share the port).
+ */
+export interface ComposedPort {
+  /** Owning project model. */
+  model: string;
+  side: PortSide;
+  /** Perimeter point in composed coordinates; bridges end here. */
+  point: Point;
+  /** Measured label lines (endpoint title, with `×N` when more than one claim shares the port). */
+  labelLines: string[];
+  count: number;
+  /** The element to focus/expand to bring the endpoint into scope. */
+  reveal: { model: string; element: string };
+}
 export interface BridgeEndpoint {
   model: string;
   element: string;
@@ -128,6 +153,22 @@ export interface ComposedBridge extends Omit<ProjectConnection, 'source' | 'targ
   points: Point[];
   label: Point;
   labelLines: string[];
+  /**
+   * How many authored claims this bridge draws (1 when unbundled). Bundled bridges share one
+   * visible representative pair, kind, status, title and description; the label shows `×N`.
+   */
+  count: number;
+  /** Qualified owners of every underlying claim, sorted by owner then connection ID. */
+  underlying: { owner: string; connectionId: string }[];
+}
+/**
+ * A claim withheld from the canvas by proposal visibility. Only scope exclusion yields
+ * perimeter ports; proposal exclusion hides the claim so inspection and CLI can explain it.
+ */
+export interface HiddenClaim {
+  owner: string;
+  connectionId: string;
+  reason: 'proposed-owner' | 'proposed-endpoint';
 }
 export interface ReferenceStub {
   owner: string;
@@ -143,6 +184,8 @@ export interface ComposedDiagram {
   projects: ComposedProject[];
   bridges: ComposedBridge[];
   stubs: ReferenceStub[];
+  /** Proposal-withheld claims, sorted by owner then connection ID. */
+  hidden: HiddenClaim[];
   diagnostics: CompositionDiagnostic[];
   width: number;
   height: number;
