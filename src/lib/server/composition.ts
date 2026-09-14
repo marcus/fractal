@@ -31,6 +31,7 @@ import { createCache, serverCachePool, type CacheSnapshot } from './cache';
 import {
   catalogReloader,
   catalogResolver,
+  clearModelCache,
   loadModel,
   modelCacheStats,
   resolveProject,
@@ -38,7 +39,7 @@ import {
   type CatalogOptions
 } from './models';
 import { compositionWorkQueue, resetCompositionQueue, type JobsSnapshot } from './queue';
-import { renderCacheStats } from './render';
+import { clearRenderCache, renderCacheStats } from './render';
 
 /**
  * The application boundary for linked composition: the CLI and HTTP routes both call these small
@@ -211,7 +212,7 @@ const LIMIT_FIELDS = [
 ] as const;
 
 /** Parsed service configuration per environment object, so the process environment parses once. */
-const envLimitsCache = new WeakMap<NodeJS.ProcessEnv, CompositionLimits>();
+let envLimitsCache = new WeakMap<NodeJS.ProcessEnv, CompositionLimits>();
 
 function parseEnvLimits(env: NodeJS.ProcessEnv): CompositionLimits {
   const raw = env.FRACTAL_COMPOSITION_LIMITS;
@@ -257,6 +258,15 @@ export function effectiveLimits(
   const parsed = parseEnvLimits(env);
   envLimitsCache.set(env, parsed);
   return parsed;
+}
+
+/**
+ * Keep the process-wide retained-bytes pool aligned with the service-configured
+ * `cacheBytes`. Per-request limit overrides govern admission only: one pool serves every
+ * request, so it cannot follow them.
+ */
+function syncServerCachePool(): void {
+  serverCachePool.setMaxBytes(effectiveLimits({}).cacheBytes);
 }
 
 function compare(a: string, b: string): number {
@@ -750,6 +760,7 @@ export async function composeFromSelector(
   // these exact limits, so a stricter configuration can never be served a cached over-limit
   // result. A refusal throws before storing, so the previous cached view is retained whole.
   const limits = effectiveLimits(options);
+  syncServerCachePool();
   const key = compositionCacheKey(state, revisions, limits);
   const cached = composedCache.get(key);
   if (cached) return withGeneration(structuredClone(cached));
@@ -824,7 +835,15 @@ export async function submitCompositionRender(
     rejected.stale += 1;
     return outcome;
   }
-  return { status: 'ready', result: outcome.result, coalesced: outcome.coalesced };
+  // The queued job may have run under another caller's generation (coalesced requests
+  // share one promise): echo this caller's generation, never the shared job's. The cached
+  // result carries no generation — generation is never part of the cache key — so the
+  // spread below cannot leak one generation into another caller's view.
+  const result =
+    options.generation === undefined
+      ? outcome.result
+      : { ...outcome.result, generation: options.generation };
+  return { status: 'ready', result, coalesced: outcome.coalesced };
 }
 
 export interface CompositionStats {
@@ -847,6 +866,7 @@ export interface CompositionStats {
  * configured limits. The bench agent reads this shape.
  */
 export function getCompositionStats(): CompositionStats {
+  syncServerCachePool();
   return {
     version: 1,
     limits: effectiveLimits({}),
@@ -861,13 +881,17 @@ export function getCompositionStats(): CompositionStats {
 }
 
 /**
- * Reset the composed cache, the rejected-work counters and the queue generations. Tests
- * also clear the parsed-model and layout caches directly. Only reset when the queue is
- * idle: queued waiters are not resumed.
+ * Reset every composition bound: parsed models, layouts, composed results, rejected-work
+ * counters, service-limit parsing and queue generations. The one call tests need before
+ * asserting cache or counter state. Only reset when the queue is idle: queued waiters
+ * are not resumed.
  */
 export function resetCompositionState(): void {
   clearCompositionCache();
+  clearModelCache();
+  clearRenderCache();
   resetCompositionQueue();
+  envLimitsCache = new WeakMap();
   rejected.stale = 0;
   rejected.overLimit = 0;
 }

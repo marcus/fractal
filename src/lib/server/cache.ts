@@ -74,6 +74,11 @@ export interface CachePool {
   readonly bytes: number;
   /** Register a member cache; lower priorities are evicted first when over budget. */
   register<T>(priority: number, cache: Cache<T>): void;
+  /**
+   * Replace the bound (a finite number >= 0) and enforce it at once. The composition
+   * boundary uses this to track the service-configured `cacheBytes` limit.
+   */
+  setMaxBytes(maxBytes: number): void;
   /** Evict lowest-priority least-recently-used entries until within budget. */
   enforce(): void;
   /** Invalidate tagged entries in every member cache; returns the entries removed. */
@@ -93,17 +98,24 @@ interface PoolMember {
  */
 export function createCachePool(maxBytes: number): CachePool {
   const members: PoolMember[] = [];
+  let bound = maxBytes;
   const pool: CachePool = {
-    maxBytes,
+    get maxBytes() {
+      return bound;
+    },
     register<T>(priority: number, cache: Cache<T>): void {
       members.push({ priority, cache });
+    },
+    setMaxBytes(next: number): void {
+      bound = next;
+      pool.enforce();
     },
     get bytes() {
       return members.reduce((total, member) => total + member.cache.bytes, 0);
     },
     enforce() {
       for (;;) {
-        if (pool.bytes <= maxBytes) return;
+        if (pool.bytes <= bound) return;
         const candidates = members
           .filter((member) => member.cache.size > 0)
           .sort((a, b) => a.priority - b.priority || b.cache.bytes - a.cache.bytes);
@@ -285,8 +297,9 @@ export function createCache<T>(limit: number, options: CacheOptions<T> = {}): Ca
 
 /**
  * The server-wide retained-bytes bound for parsed models, local layouts and composed results.
- * Composed results evict first, then layouts, then parsed models. The bound matches the
- * `cacheBytes` admission limit so a composition that fits admission cannot itself overflow
- * the retained caches.
+ * Composed results evict first, then layouts, then parsed models. The bound starts at the
+ * default `cacheBytes` admission limit, and the composition boundary keeps it aligned with
+ * the service-configured `cacheBytes` (a process-wide pool cannot follow per-request
+ * overrides, which govern admission only).
  */
 export const serverCachePool: CachePool = createCachePool(128 * 1024 * 1024);

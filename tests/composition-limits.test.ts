@@ -7,7 +7,7 @@ import test from 'node:test';
 import { generateFixtures, writeFixtures } from '../scripts/bench-fixtures';
 import { DEFAULT_COMPOSITION_LIMITS } from '../src/lib/composition/limits';
 import type { ViewState } from '../src/lib/core/types';
-import { createCache, createCachePool } from '../src/lib/server/cache';
+import { createCache, createCachePool, serverCachePool } from '../src/lib/server/cache';
 import {
   BudgetExceededError,
   composeFromSelector,
@@ -18,14 +18,13 @@ import {
   submitCompositionRender
 } from '../src/lib/server/composition';
 import {
-  clearModelCache,
   invalidateProject,
   listModels,
   loadDirectory,
   modelCacheStats
 } from '../src/lib/server/models';
 import { createWorkQueue, QueueFullError } from '../src/lib/server/queue';
-import { clearRenderCache, renderCacheStats, renderDiagram } from '../src/lib/server/render';
+import { renderCacheStats, renderDiagram } from '../src/lib/server/render';
 
 const FIXTURES = 'tests/fixtures/linked-projects';
 const STATE: ViewState = { expanded: [], proposed: false, lens: 'structure' };
@@ -53,8 +52,6 @@ async function fixture() {
 }
 
 function cold() {
-  clearModelCache();
-  clearRenderCache();
   resetCompositionState();
 }
 
@@ -173,6 +170,40 @@ test('the shared pool evicts composed results before parsed models', async () =>
   assert.equal(pool.invalidateTags(['plugin']), 2);
   assert.equal(models.size, 0);
   assert.equal(layouts.size, 0);
+});
+
+test('the retained-bytes pool follows the configured cacheBytes', async () => {
+  const previous = process.env.FRACTAL_COMPOSITION_LIMITS;
+  try {
+    resetCompositionState();
+    process.env.FRACTAL_COMPOSITION_LIMITS = '{"cacheBytes": 1048576}';
+    const configured = getCompositionStats();
+    assert.equal(configured.limits.cacheBytes, 1048576);
+    assert.equal(serverCachePool.maxBytes, 1048576);
+
+    // A per-request override governs admission only; the process-wide pool stays put.
+    const { root, options } = await fixture();
+    try {
+      await composeFromSelector(
+        'host',
+        { composition: 'plugins' },
+        { ...options, limits: { ...DEFAULT_COMPOSITION_LIMITS, cacheBytes: 256 * 1024 * 1024 } }
+      );
+      assert.equal(serverCachePool.maxBytes, 1048576);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+
+    delete process.env.FRACTAL_COMPOSITION_LIMITS;
+    resetCompositionState();
+    getCompositionStats();
+    assert.equal(serverCachePool.maxBytes, 128 * 1024 * 1024);
+  } finally {
+    if (previous === undefined) delete process.env.FRACTAL_COMPOSITION_LIMITS;
+    else process.env.FRACTAL_COMPOSITION_LIMITS = previous;
+    resetCompositionState();
+    getCompositionStats();
+  }
 });
 
 test('editing one target invalidates its layouts while unrelated projects survive', async () => {
@@ -379,6 +410,53 @@ test('a request superseded while queued goes stale', async () => {
   assert.deepEqual(ran, ['slow', 'newer'], 'the superseded request never runs');
 });
 
+test('a newer request coalesced onto a superseded job still runs', async () => {
+  const queue = createWorkQueue({ concurrency: 1 });
+  const ran: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  const oldest = queue.submit(
+    'root',
+    'other',
+    async () => {
+      ran.push('gen1');
+      await gate;
+      return 'gen1';
+    },
+    { generation: 1 }
+  );
+  const superseded = queue.submit(
+    'root',
+    'same',
+    async () => {
+      ran.push('gen2');
+      return 'gen2';
+    },
+    { generation: 2 }
+  );
+  // Same key as the queued gen2 job: coalesces instead of queueing separately.
+  const newest = queue.submit(
+    'root',
+    'same',
+    async () => {
+      ran.push('gen3');
+      return 'gen3';
+    },
+    { generation: 3 }
+  );
+  await flush();
+  release();
+  assert.equal((await oldest).status, 'ready');
+  assert.deepEqual(await superseded, { status: 'stale', generation: 2, current: 3 });
+  const fresh = await newest;
+  assert.equal(fresh.status, 'ready');
+  if (fresh.status !== 'ready') throw new Error('expected the newest request to run');
+  assert.equal(fresh.result, 'gen3');
+  assert.deepEqual(ran, ['gen1', 'gen3'], 'the newest request runs instead of inheriting stale');
+});
+
 test('a full queue refuses with server_busy', async () => {
   const queue = createWorkQueue({ concurrency: 1, maxWaiting: 1 });
   let release!: () => void;
@@ -418,6 +496,30 @@ test('submitCompositionRender counts stale generations as rejected work', async 
     );
     assert.deepEqual(superseded, { status: 'stale', generation: 3, current: 5 });
     assert.equal(getCompositionStats().rejected.stale, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('concurrent renders echo each caller generation', async () => {
+  const { root, options } = await fixture();
+  cold();
+  try {
+    const [five, six] = await Promise.all([
+      submitCompositionRender('host', { composition: 'plugins' }, { ...options, generation: 5 }),
+      submitCompositionRender('host', { composition: 'plugins' }, { ...options, generation: 6 })
+    ]);
+    assert.equal(five.status, 'ready');
+    assert.equal(six.status, 'ready');
+    if (five.status !== 'ready' || six.status !== 'ready')
+      throw new Error('expected ready renders');
+    assert.equal(five.result.generation, 5);
+    assert.equal(six.result.generation, 6, 'a coalesced caller gets its own generation');
+    assert.deepEqual(
+      { ...five.result, generation: undefined },
+      { ...six.result, generation: undefined },
+      'both callers share the same content'
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

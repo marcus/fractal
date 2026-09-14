@@ -90,15 +90,22 @@ export function createWorkQueue(options: { concurrency: number; maxWaiting?: num
       if (generation !== undefined && (current === undefined || generation > current))
         latest.set(scope, generation);
 
-      const flying = inFlight.get(flightKey);
-      if (flying !== undefined) {
-        coalesced += 1;
+      // A shared outcome can go stale while we wait on it (a newer generation for this
+      // scope arrived after its owner queued). When that happens and our own generation is
+      // still current, fall through and run as fresh work instead of inheriting the stale
+      // answer. The loop terminates: every retry needs a strictly newer generation to have
+      // arrived, which eventually supersedes us too.
+      for (;;) {
+        const flying = inFlight.get(flightKey);
+        if (flying === undefined) break;
         const shared = (await flying) as T | typeof STALE;
-        if (shared === STALE) {
-          const now = latest.get(scope) ?? generation ?? 0;
-          return { status: 'stale', generation: generation ?? now, current: now };
+        if (shared !== STALE) {
+          coalesced += 1;
+          return { status: 'ready', result: shared, coalesced: true };
         }
-        return { status: 'ready', result: shared, coalesced: true };
+        const now = latest.get(scope);
+        if (generation !== undefined && now !== undefined && generation < now)
+          return { status: 'stale', generation, current: now };
       }
 
       // A request that starts at once never waited, so no newer generation can have

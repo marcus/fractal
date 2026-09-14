@@ -316,6 +316,6 @@ runs to completion and the caller discards superseded responses by generation.
 ```
 
 (`limits` carries the full seven configured bounds.) The composition benchmark includes
-this snapshot in its JSON report. Tests reset composed results, rejected counters and
-queue generations with `resetCompositionState`, and clear the parsed-model and layout
-caches directly.
+this snapshot in its JSON report. Tests reset every bound — parsed models, layouts,
+composed results, rejected counters, service-limit parsing and queue generations — with
+`resetCompositionState`.
