@@ -111,11 +111,23 @@ function compactState(state: CompositionState): Compact {
   };
 }
 
-/** Encode validated composition state as a versioned URL-safe value. */
+/**
+ * Encode validated composition state as a versioned URL-safe value. The same 8 KiB
+ * encoded cap the decoder enforces applies here, so every emitted value round-trips:
+ * oversized state fails fast with `budget_exceeded` instead of producing a value no
+ * reader (including this one) could decode.
+ */
 export function encodeCompositionState(state: CompositionState): string {
   const normalized = parseCompositionState(state);
   const json = JSON.stringify(compactState(normalized));
-  return VERSION_PREFIX + encodeBytes(new TextEncoder().encode(json));
+  const encoded = VERSION_PREFIX + encodeBytes(new TextEncoder().encode(json));
+  if (encoded.length > MAX_ENCODED_COMPOSITION_STATE_CHARS)
+    throw new CompositionContractError(
+      'composition',
+      `exceeds ${MAX_ENCODED_COMPOSITION_STATE_CHARS} encoded characters`,
+      'budget_exceeded'
+    );
+  return encoded;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

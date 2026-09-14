@@ -59,14 +59,15 @@ test('an unopened link is searchable as link metadata without loading its target
   const results = searchComposition(snapshots, stateOf(['host']), 'beacon');
   const link = results.find((result) => result.kind === 'link');
   assert.ok(link, 'expected a link metadata result');
-  assert.equal(link.model, 'plugin');
+  assert.equal(link.model, 'host');
   assert.equal(link.owner, 'host');
   assert.equal(link.linkId, 'plugin');
   assert.equal(link.title, 'Beacon architecture');
   assert.deepEqual(link.target, { model: 'plugin', scene: 'overview' });
   assert.deepEqual(link.selection, { kind: 'element', model: 'host', element: 'cli' });
   assert.deepEqual(link.reveal, { model: 'host', expanded: [] });
-  assert.ok(!results.some((result) => result.model === 'plugin' && result.kind !== 'link'));
+  assert.ok(!results.some((result) => result.kind !== 'link' && result.model !== 'host'));
+  assert.ok(!results.some((result) => result.model === 'plugin'));
 });
 
 test('a root-level link without a source element selects its owning project', async () => {
@@ -155,6 +156,6 @@ test('only participating snapshots are searched', async () => {
   ]);
   const results = searchComposition(snapshots, stateOf(['host']), 'reads plugin state');
   assert.ok(results.length > 0);
-  assert.ok(results.every((result) => result.model === 'host' || result.kind === 'link'));
-  assert.ok(!results.some((result) => result.model === 'plugin' && result.kind !== 'link'));
+  assert.ok(results.every((result) => result.model === 'host'));
+  assert.ok(!results.some((result) => result.model === 'plugin'));
 });

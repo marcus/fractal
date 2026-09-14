@@ -24,6 +24,7 @@ import type { CompositionState, QualifiedSelection } from './types';
 export type CompositionSearchKind = 'element' | 'relationship' | 'boundary' | 'scene' | 'link';
 
 export interface CompositionSearchResult {
+  /** The project where the hit lives; for `link` results this is the owning project. */
   model: string;
   kind: CompositionSearchKind;
   id: string;
@@ -133,7 +134,7 @@ export function searchComposition(
       if (snapshots.has(link.target.model)) return;
       if (!matchesFields([link.title, link.id, link.target.model], query)) return;
       results.push({
-        model: link.target.model,
+        model: project.model,
         kind: 'link',
         id: link.id,
         title: link.title,

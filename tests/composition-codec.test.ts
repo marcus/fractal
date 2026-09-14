@@ -82,6 +82,48 @@ test('oversized values fail as budget_exceeded before decoding', () => {
   );
 });
 
+test('encode enforces the same cap the decoder applies, so every emitted value round-trips', () => {
+  const stateWithPadding = (chars: number): CompositionState => ({
+    version: 1,
+    root: 'host',
+    projects: [
+      {
+        model: 'host',
+        mode: 'open',
+        view: { expanded: ['x'.repeat(chars)], proposed: false, lens: 'structure' }
+      }
+    ],
+    theme: 'grove',
+    layout: 'elk-layered'
+  });
+  const encodedLength = (chars: number): number | undefined => {
+    try {
+      return encodeCompositionState(stateWithPadding(chars)).length;
+    } catch {
+      return undefined;
+    }
+  };
+  let passing = 0;
+  while (encodedLength(passing + 500) !== undefined) passing += 500;
+  let failing = passing + 500;
+  while (failing - passing > 1) {
+    const mid = Math.floor((passing + failing) / 2);
+    if (encodedLength(mid) === undefined) failing = mid;
+    else passing = mid;
+  }
+  assert.throws(
+    () => encodeCompositionState(stateWithPadding(failing)),
+    (error: unknown) =>
+      error instanceof CompositionContractError &&
+      error.path === 'composition' &&
+      error.code === 'budget_exceeded'
+  );
+  const under = encodeCompositionState(stateWithPadding(passing));
+  assert.ok(under.length <= MAX_ENCODED_COMPOSITION_STATE_CHARS);
+  assert.ok(under.length > MAX_ENCODED_COMPOSITION_STATE_CHARS - 4);
+  assert.deepEqual(decodeCompositionState(under), stateWithPadding(passing));
+});
+
 test('wrong versions fail as unsupported_version', async () => {
   const state = await valid();
   const encoded = encodeCompositionState(state);
