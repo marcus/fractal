@@ -17,8 +17,10 @@ export interface LoadedBenchModel {
 
 /**
  * One measurable unit of work: a model source, a resolved view state, and the engine to place
- * it with. `load` is re-run every iteration, because re-reading and re-parsing the model is
- * what a cold request costs and is the stage worth watching.
+ * it with. `load` is re-run every iteration. Cache behavior belongs to that callback:
+ * the CLI's loadDirectory reuses its parsed-model cache after warm-up, so its load
+ * stage measures a warm stamp lookup, not a fresh parse. A cold-parse experiment
+ * must explicitly clear that cache before each measured load.
  */
 export interface BenchSubject {
   load: () => Promise<LoadedBenchModel>;

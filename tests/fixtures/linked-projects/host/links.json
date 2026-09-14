@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "links": [
+    {
+      "id": "plugin",
+      "from": "cli",
+      "target": {
+        "model": "plugin",
+        "scene": "overview"
+      },
+      "title": "Beacon architecture"
+    },
+    {
+      "id": "unavailable",
+      "target": {
+        "model": "missing-plugin"
+      },
+      "title": "Unregistered plugin"
+    }
+  ],
+  "connections": [
+    {
+      "id": "call",
+      "source": {
+        "model": "host",
+        "element": "cli"
+      },
+      "target": {
+        "model": "plugin",
+        "element": "cli"
+      },
+      "title": "Invokes plugin CLI",
+      "kind": "uses",
+      "status": "current",
+      "description": "Fictional host-owned integration claim.",
+      "evidence": ["src/plugins/beacon.ts"]
+    }
+  ],
+  "compositions": [
+    {
+      "id": "plugins",
+      "title": "Host and plugins",
+      "rootScene": "overview",
+      "projects": [
+        {
+          "model": "plugin",
+          "scene": "overview",
+          "mode": "open"
+        }
+      ]
+    }
+  ]
+}

@@ -101,7 +101,8 @@ as the fingerprinted default, adds a layout benchmark CLI, and opens a layout-en
 plan for revealing repository-owned architecture diagrams together, with explicit cross-project
 connections and independent project layouts. Sidecar → td and Recall is the steel thread. It covers
 identity, resolution, boundaries, performance budgets, surface parity and portable exports;
-implementation has not started.
+phase 0 contracts, fixtures, baseline evidence and visual proposal are complete. Production
+composition starts in phase 1; see the [phase 0 handoff](linked-project-diagrams/phase-0.md).
 
 ## Saved workspace idea
 

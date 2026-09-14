@@ -111,6 +111,7 @@ interface ToggleResult {
   frames: FrameStats;
   longTasks: { startMs: number; durationMs: number }[];
   longTaskTotalMs: number;
+  dom?: { nodes: number; edges: number; elements: number };
 }
 interface RawWatch {
   latencyMs: number | null;
@@ -147,7 +148,16 @@ async function measureClick(page: Page, selector: string, label: string): Promis
   await control.waitFor({ state: 'attached', timeout: 15000 });
   const watching = page.evaluate('window.__bench.watch(400, 15000)') as Promise<RawWatch>;
   await control.click();
-  return summarize(label, await watching);
+  return { ...summarize(label, await watching), dom: await diagramDom(page) };
+}
+
+/** Mounted SVG content, independent of the semantic model's full size. */
+async function diagramDom(page: Page) {
+  return page.evaluate(() => ({
+    nodes: document.querySelectorAll('[data-node-id]').length,
+    edges: document.querySelectorAll('[data-edge-id]').length,
+    elements: document.querySelectorAll('svg *').length
+  }));
 }
 
 async function longTasksSoFar(page: Page): Promise<number> {
@@ -347,6 +357,7 @@ async function main(): Promise<void> {
     // is live, so "no long tasks during a toggle" is a measurement rather than a silent failure.
     const studio = {
       pageOpenMs,
+      domAtOpen: await diagramDom(page),
       requests,
       longTasksDuringOpen: await longTasksSoFar(page),
       ...(await measureToggles(page, true))
@@ -359,6 +370,7 @@ async function main(): Promise<void> {
     // The portable viewer has no Show all control: it is a reader, not the studio.
     const portable = {
       bytes: portableStat.size,
+      domAtOpen: await diagramDom(reader),
       ...(values['keep-portable'] ? { path: portablePath } : {}),
       longTasksDuringOpen: await longTasksSoFar(reader),
       ...(await measureToggles(reader, false))
@@ -370,6 +382,12 @@ async function main(): Promise<void> {
           version: 1,
           timestamp: new Date().toISOString(),
           model,
+          browser: {
+            name: 'Chromium',
+            version: browser.version(),
+            viewport: { width: 1512, height: 982 },
+            reducedMotion: 'reduce'
+          },
           url,
           startedServer: server !== undefined,
           headline: {

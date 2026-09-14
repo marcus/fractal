@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "links": [
+    {
+      "id": "host",
+      "target": {
+        "model": "host",
+        "scene": "overview"
+      },
+      "title": "Host architecture"
+    }
+  ],
+  "connections": [
+    {
+      "id": "call",
+      "source": {
+        "model": "plugin",
+        "element": "cli"
+      },
+      "target": {
+        "model": "host",
+        "element": "cli"
+      },
+      "title": "Reports plugin status",
+      "kind": "reports",
+      "status": "current",
+      "description": "Distinct reverse claim owned by the plugin.",
+      "evidence": []
+    }
+  ],
+  "compositions": []
+}

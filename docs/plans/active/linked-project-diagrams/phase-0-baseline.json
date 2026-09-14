@@ -1,0 +1,1313 @@
+{
+  "version": 1,
+  "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+  "timestamp": "2026-09-14T03:18:39.815Z",
+  "iterations": 10,
+  "engines": ["elk-layered"],
+  "views": "both",
+  "rows": [
+    {
+      "model": "delivery",
+      "view": "overview",
+      "engine": "elk-layered",
+      "source": "examples/delivery",
+      "nodes": 5,
+      "edges": 8,
+      "width": 1508.89,
+      "height": 334,
+      "iterations": 10,
+      "stages": {
+        "load": {
+          "p50": 0.068,
+          "p95": 0.129,
+          "samples": 10
+        },
+        "project": {
+          "p50": 0.029,
+          "p95": 0.043,
+          "samples": 10
+        },
+        "measure": {
+          "p50": 0.115,
+          "p95": 0.176,
+          "samples": 10
+        },
+        "layout": {
+          "p50": 6.168,
+          "p95": 8.964,
+          "samples": 10
+        },
+        "svg": {
+          "p50": 0.119,
+          "p95": 0.176,
+          "samples": 10
+        },
+        "sequence": {
+          "p50": 0.225,
+          "p95": 0.303,
+          "samples": 10
+        }
+      },
+      "fingerprint": "31927e3a38973957336a736915a08c94e77b9fc69a2208230fe17f15bb88991c",
+      "quality": {
+        "crossings": 0,
+        "bends": 18,
+        "edgeLength": 2080.02,
+        "area": 503969.26,
+        "aspectRatio": 4.5176
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:18:39.815Z"
+    },
+    {
+      "model": "delivery",
+      "view": "execution",
+      "engine": "elk-layered",
+      "source": "examples/delivery",
+      "nodes": 8,
+      "edges": 6,
+      "width": 1627.09,
+      "height": 554,
+      "iterations": 10,
+      "stages": {
+        "load": {
+          "p50": 0.089,
+          "p95": 1.061,
+          "samples": 10
+        },
+        "project": {
+          "p50": 0.038,
+          "p95": 0.055,
+          "samples": 10
+        },
+        "measure": {
+          "p50": 0.126,
+          "p95": 0.172,
+          "samples": 10
+        },
+        "layout": {
+          "p50": 7.71,
+          "p95": 9.089,
+          "samples": 10
+        },
+        "svg": {
+          "p50": 0.107,
+          "p95": 0.132,
+          "samples": 10
+        },
+        "sequence": {
+          "p50": 0.224,
+          "p95": 0.244,
+          "samples": 10
+        }
+      },
+      "fingerprint": "2bdb1694796b258350ae6ea9c72dd1953bf2556c60b739216f053e0b02c71f05",
+      "quality": {
+        "crossings": 0,
+        "bends": 8,
+        "edgeLength": 2450.52,
+        "area": 901407.86,
+        "aspectRatio": 2.937
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:18:39.815Z"
+    },
+    {
+      "model": "delivery",
+      "view": "trust",
+      "engine": "elk-layered",
+      "source": "examples/delivery",
+      "nodes": 8,
+      "edges": 6,
+      "width": 1627.09,
+      "height": 554,
+      "iterations": 10,
+      "stages": {
+        "load": {
+          "p50": 0.075,
+          "p95": 0.096,
+          "samples": 10
+        },
+        "project": {
+          "p50": 0.032,
+          "p95": 0.046,
+          "samples": 10
+        },
+        "measure": {
+          "p50": 0.128,
+          "p95": 0.137,
+          "samples": 10
+        },
+        "layout": {
+          "p50": 6.537,
+          "p95": 7.158,
+          "samples": 10
+        },
+        "svg": {
+          "p50": 0.151,
+          "p95": 0.159,
+          "samples": 10
+        },
+        "sequence": {
+          "p50": 0.217,
+          "p95": 0.235,
+          "samples": 10
+        }
+      },
+      "fingerprint": "2bdb1694796b258350ae6ea9c72dd1953bf2556c60b739216f053e0b02c71f05",
+      "quality": {
+        "crossings": 0,
+        "bends": 8,
+        "edgeLength": 2450.52,
+        "area": 901407.86,
+        "aspectRatio": 2.937
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:18:39.815Z"
+    },
+    {
+      "model": "delivery",
+      "view": "proposal",
+      "engine": "elk-layered",
+      "source": "examples/delivery",
+      "nodes": 11,
+      "edges": 10,
+      "width": 1653.49,
+      "height": 583.5,
+      "iterations": 10,
+      "stages": {
+        "load": {
+          "p50": 0.08,
+          "p95": 0.439,
+          "samples": 10
+        },
+        "project": {
+          "p50": 0.033,
+          "p95": 0.042,
+          "samples": 10
+        },
+        "measure": {
+          "p50": 0.169,
+          "p95": 0.177,
+          "samples": 10
+        },
+        "layout": {
+          "p50": 7.195,
+          "p95": 7.598,
+          "samples": 10
+        },
+        "svg": {
+          "p50": 0.136,
+          "p95": 0.161,
+          "samples": 10
+        },
+        "sequence": {
+          "p50": 0.214,
+          "p95": 0.236,
+          "samples": 10
+        }
+      },
+      "fingerprint": "e0eb199268b86140ea16aaca67893f36bc7b374f3616b400a1591eb6a7116f80",
+      "quality": {
+        "crossings": 0,
+        "bends": 22,
+        "edgeLength": 3327.09,
+        "area": 964811.41,
+        "aspectRatio": 2.8337
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:18:39.815Z"
+    },
+    {
+      "model": "delivery",
+      "view": "show-all",
+      "engine": "elk-layered",
+      "source": "examples/delivery",
+      "nodes": 20,
+      "edges": 14,
+      "width": 3071.98,
+      "height": 892,
+      "iterations": 10,
+      "stages": {
+        "load": {
+          "p50": 0.08,
+          "p95": 0.095,
+          "samples": 10
+        },
+        "project": {
+          "p50": 0.036,
+          "p95": 0.057,
+          "samples": 10
+        },
+        "measure": {
+          "p50": 0.27,
+          "p95": 0.302,
+          "samples": 10
+        },
+        "layout": {
+          "p50": 11.321,
+          "p95": 12.849,
+          "samples": 10
+        },
+        "svg": {
+          "p50": 0.179,
+          "p95": 0.211,
+          "samples": 10
+        },
+        "sequence": {
+          "p50": 0.214,
+          "p95": 0.227,
+          "samples": 10
+        }
+      },
+      "fingerprint": "4b76e84439400d7275ff34692db6df1b2918ab8675b290f785d2aeb61f3ada58",
+      "quality": {
+        "crossings": 0,
+        "bends": 24,
+        "edgeLength": 8038.62,
+        "area": 2740206.16,
+        "aspectRatio": 3.4439
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:18:39.815Z"
+    },
+    {
+      "model": "synthetic-60",
+      "view": "overview",
+      "engine": "elk-layered",
+      "source": "synthetic",
+      "nodes": 20,
+      "edges": 59,
+      "width": 1915.63,
+      "height": 1500,
+      "iterations": 10,
+      "stages": {
+        "load": {
+          "p50": 0.112,
+          "p95": 0.133,
+          "samples": 10
+        },
+        "project": {
+          "p50": 0.101,
+          "p95": 0.115,
+          "samples": 10
+        },
+        "measure": {
+          "p50": 0.33,
+          "p95": 0.355,
+          "samples": 10
+        },
+        "layout": {
+          "p50": 34.565,
+          "p95": 39.502,
+          "samples": 10
+        },
+        "svg": {
+          "p50": 0.245,
+          "p95": 0.266,
+          "samples": 10
+        }
+      },
+      "fingerprint": "d12ed2ad07591502dcd2669389ed0ef3a70d7d13b73606027bdb25478002184f",
+      "quality": {
+        "crossings": 178,
+        "bends": 234,
+        "edgeLength": 72766.27,
+        "area": 2873445,
+        "aspectRatio": 1.2771
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:18:39.815Z"
+    },
+    {
+      "model": "synthetic-60",
+      "view": "show-all",
+      "engine": "elk-layered",
+      "source": "synthetic",
+      "nodes": 60,
+      "edges": 60,
+      "width": 2515.63,
+      "height": 2719.5,
+      "iterations": 10,
+      "stages": {
+        "load": {
+          "p50": 0.107,
+          "p95": 0.123,
+          "samples": 10
+        },
+        "project": {
+          "p50": 0.104,
+          "p95": 0.12,
+          "samples": 10
+        },
+        "measure": {
+          "p50": 0.639,
+          "p95": 0.956,
+          "samples": 10
+        },
+        "layout": {
+          "p50": 53.754,
+          "p95": 75.42,
+          "samples": 10
+        },
+        "svg": {
+          "p50": 0.353,
+          "p95": 0.441,
+          "samples": 10
+        }
+      },
+      "fingerprint": "6bc5c6f870d8a9b8d3b9a1c9400d732f801dcfa4a03843de50f235b7a67214a5",
+      "quality": {
+        "crossings": 179,
+        "bends": 222,
+        "edgeLength": 130443.4,
+        "area": 6841255.79,
+        "aspectRatio": 0.925
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:18:39.815Z"
+    },
+    {
+      "model": "synthetic-240",
+      "view": "overview",
+      "engine": "elk-layered",
+      "source": "synthetic",
+      "nodes": 42,
+      "edges": 116,
+      "width": 1491.94,
+      "height": 3712,
+      "iterations": 10,
+      "stages": {
+        "load": {
+          "p50": 0.324,
+          "p95": 0.547,
+          "samples": 10
+        },
+        "project": {
+          "p50": 0.261,
+          "p95": 0.291,
+          "samples": 10
+        },
+        "measure": {
+          "p50": 0.701,
+          "p95": 0.716,
+          "samples": 10
+        },
+        "layout": {
+          "p50": 43.577,
+          "p95": 44.507,
+          "samples": 10
+        },
+        "svg": {
+          "p50": 0.472,
+          "p95": 0.533,
+          "samples": 10
+        }
+      },
+      "fingerprint": "ae1f1a217be839eb5d46a85cfa55f011a076dd2914be3cfe00909b7d68807157",
+      "quality": {
+        "crossings": 1849,
+        "bends": 460,
+        "edgeLength": 176379.28,
+        "area": 5538081.28,
+        "aspectRatio": 0.4019
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:18:39.815Z"
+    },
+    {
+      "model": "synthetic-240",
+      "view": "show-all",
+      "engine": "elk-layered",
+      "source": "synthetic",
+      "nodes": 240,
+      "edges": 240,
+      "width": 3257.38,
+      "height": 17561,
+      "iterations": 10,
+      "stages": {
+        "load": {
+          "p50": 0.287,
+          "p95": 0.345,
+          "samples": 10
+        },
+        "project": {
+          "p50": 0.305,
+          "p95": 0.331,
+          "samples": 10
+        },
+        "measure": {
+          "p50": 3.81,
+          "p95": 4.113,
+          "samples": 10
+        },
+        "layout": {
+          "p50": 176.165,
+          "p95": 188.225,
+          "samples": 10
+        },
+        "svg": {
+          "p50": 1.212,
+          "p95": 1.696,
+          "samples": 10
+        }
+      },
+      "fingerprint": "6b4545e566962d4fcb62f165ab2b4c0387852347574d3549bef18bf76a74a981",
+      "quality": {
+        "crossings": 11418,
+        "bends": 1006,
+        "edgeLength": 1879485.2,
+        "area": 57202850.18,
+        "aspectRatio": 0.1855
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:18:39.815Z"
+    }
+  ],
+  "evidenceVersion": 1,
+  "referenceEnvironment": {
+    "platform": "darwin",
+    "release": "25.6.0",
+    "architecture": "arm64",
+    "processor": "Apple M4 Pro",
+    "logicalCpus": 14,
+    "memoryGiB": 64,
+    "node": "v26.5.1",
+    "browser": {
+      "name": "Chromium",
+      "version": "153.0.8010.12",
+      "viewport": {
+        "width": 1512,
+        "height": 982
+      },
+      "reducedMotion": "reduce"
+    },
+    "build": "npm run build on baseline commit; only additive benchmark metadata changed before capture"
+  },
+  "sources": {
+    "package-lock.json": "465e8e49273d17f96e9047307bf4d4a1f2f76e8fa9120cf3c7bcd9b9fcb66a7b",
+    "examples/delivery/model.c4": "5f519c552dba8ca05759b518a48a485e830526a2d750b4894da89cc091b7363c",
+    "examples/delivery/fractal.json": "f46d234520cbe0202a35bdf99cc1d2b84aa4f69ec007f409e1d61164d75b3a86",
+    "examples/delivery/sequences.json": "99e88c45c42aaeb6bc482f36411475182805c7ce336c2fda89d3d9c47edab53c",
+    "src/lib/bench/synthetic.ts": "9df6dfa9f8b4a675320fbb1e3c7f7122fb4e72cd3c1dfa8f1b35de1eed45c2b9"
+  },
+  "cacheNotes": {
+    "cli": "Uncached local layout after one warm-up; real-model load stage uses warm parsed-model cache. Synthetic load constructs model in memory.",
+    "browser": "Each run starts fresh server and browser; /api/models readiness primes parsed models before page open. Root geometry is first render; collapse reuses overview geometry. Portable starts fresh reader and worker.",
+    "coldLoad": "clearModelCache before each pair; first process load separate; ten further cache-cleared loads each followed by warm load. OS file cache is not cleared."
+  },
+  "loads": {
+    "firstLoadMs": 168.9425,
+    "cold": {
+      "p50": 85.02666699999997,
+      "p95": 124.83199999999994,
+      "samples": 10
+    },
+    "warm": {
+      "p50": 0.10508299999992232,
+      "p95": 1.5372080000000778,
+      "samples": 10
+    },
+    "samples": [
+      {
+        "cold": 124.83199999999994,
+        "warm": 0.09262499999999818,
+        "cache": {
+          "hits": 1,
+          "misses": 1,
+          "size": 1
+        }
+      },
+      {
+        "cold": 96.82458400000007,
+        "warm": 1.5372080000000778,
+        "cache": {
+          "hits": 1,
+          "misses": 1,
+          "size": 1
+        }
+      },
+      {
+        "cold": 89.56145900000001,
+        "warm": 1.414541999999983,
+        "cache": {
+          "hits": 1,
+          "misses": 1,
+          "size": 1
+        }
+      },
+      {
+        "cold": 89.27670899999998,
+        "warm": 1.3406249999999318,
+        "cache": {
+          "hits": 1,
+          "misses": 1,
+          "size": 1
+        }
+      },
+      {
+        "cold": 85.02666699999997,
+        "warm": 1.5356249999999818,
+        "cache": {
+          "hits": 1,
+          "misses": 1,
+          "size": 1
+        }
+      },
+      {
+        "cold": 84.78674999999998,
+        "warm": 0.06779200000005403,
+        "cache": {
+          "hits": 1,
+          "misses": 1,
+          "size": 1
+        }
+      },
+      {
+        "cold": 87.22770800000012,
+        "warm": 0.07958299999995688,
+        "cache": {
+          "hits": 1,
+          "misses": 1,
+          "size": 1
+        }
+      },
+      {
+        "cold": 81.13491699999986,
+        "warm": 0.07349999999996726,
+        "cache": {
+          "hits": 1,
+          "misses": 1,
+          "size": 1
+        }
+      },
+      {
+        "cold": 82.817542,
+        "warm": 0.10508299999992232,
+        "cache": {
+          "hits": 1,
+          "misses": 1,
+          "size": 1
+        }
+      },
+      {
+        "cold": 78.72987499999999,
+        "warm": 1.0222080000000915,
+        "cache": {
+          "hits": 1,
+          "misses": 1,
+          "size": 1
+        }
+      }
+    ],
+    "models": [
+      {
+        "id": "delivery",
+        "elements": 23,
+        "relationships": 16
+      },
+      {
+        "id": "synthetic-60",
+        "elements": 60,
+        "relationships": 60
+      },
+      {
+        "id": "synthetic-240",
+        "elements": 240,
+        "relationships": 240
+      }
+    ]
+  },
+  "browserRuns": [
+    {
+      "version": 1,
+      "timestamp": "2026-09-14T03:20:07.465Z",
+      "model": "delivery",
+      "browser": {
+        "name": "Chromium",
+        "version": "153.0.8010.12",
+        "viewport": {
+          "width": 1512,
+          "height": 982
+        },
+        "reducedMotion": "reduce"
+      },
+      "startedServer": true,
+      "headline": {
+        "studioExpandMs": 54.8,
+        "studioCollapseMs": 48.3,
+        "studioShowAllMs": 61.8,
+        "portableExpandMs": 64,
+        "portableCollapseMs": 45.2
+      },
+      "studio": {
+        "pageOpenMs": 277,
+        "domAtOpen": {
+          "nodes": 5,
+          "edges": 8,
+          "elements": 188
+        },
+        "requests": [
+          {
+            "name": "/api/models/delivery",
+            "startMs": 77.4,
+            "durationMs": 2.8
+          },
+          {
+            "name": "/api/models",
+            "startMs": 77.6,
+            "durationMs": 2.6
+          },
+          {
+            "name": "/api/render",
+            "startMs": 84.5,
+            "durationMs": 89.4
+          }
+        ],
+        "longTasksDuringOpen": 0,
+        "expand": {
+          "target": "Expand Order intake",
+          "latencyMs": 54.8,
+          "frames": {
+            "p50": 16.7,
+            "p99": 43.4,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 7,
+            "edges": 8,
+            "elements": 207
+          }
+        },
+        "collapse": {
+          "target": "Collapse Order intake",
+          "latencyMs": 48.3,
+          "frames": {
+            "p50": 16.7,
+            "p99": 17.8,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 5,
+            "edges": 8,
+            "elements": 188
+          }
+        },
+        "showAll": {
+          "target": "Show all",
+          "latencyMs": 61.8,
+          "frames": {
+            "p50": 16.6,
+            "p99": 17.6,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 20,
+            "edges": 14,
+            "elements": 385
+          }
+        }
+      },
+      "portable": {
+        "bytes": 2027995,
+        "domAtOpen": {
+          "nodes": 5,
+          "edges": 8,
+          "elements": 137
+        },
+        "longTasksDuringOpen": 0,
+        "expand": {
+          "target": "Expand Order intake",
+          "latencyMs": 64,
+          "frames": {
+            "p50": 16.7,
+            "p99": 40.9,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 7,
+            "edges": 8,
+            "elements": 156
+          }
+        },
+        "collapse": {
+          "target": "Collapse Order intake",
+          "latencyMs": 45.2,
+          "frames": {
+            "p50": 16.7,
+            "p99": 16.9,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 5,
+            "edges": 8,
+            "elements": 137
+          }
+        }
+      },
+      "transport": "isolated random-port loopback server"
+    },
+    {
+      "version": 1,
+      "timestamp": "2026-09-14T03:20:15.161Z",
+      "model": "delivery",
+      "browser": {
+        "name": "Chromium",
+        "version": "153.0.8010.12",
+        "viewport": {
+          "width": 1512,
+          "height": 982
+        },
+        "reducedMotion": "reduce"
+      },
+      "startedServer": true,
+      "headline": {
+        "studioExpandMs": 62.9,
+        "studioCollapseMs": 48,
+        "studioShowAllMs": 48.7,
+        "portableExpandMs": 64.2,
+        "portableCollapseMs": 44.3
+      },
+      "studio": {
+        "pageOpenMs": 251,
+        "domAtOpen": {
+          "nodes": 5,
+          "edges": 8,
+          "elements": 188
+        },
+        "requests": [
+          {
+            "name": "/api/models/delivery",
+            "startMs": 42.3,
+            "durationMs": 2.7
+          },
+          {
+            "name": "/api/models",
+            "startMs": 42.4,
+            "durationMs": 2.6
+          },
+          {
+            "name": "/api/render",
+            "startMs": 47.5,
+            "durationMs": 91.1
+          }
+        ],
+        "longTasksDuringOpen": 0,
+        "expand": {
+          "target": "Expand Order intake",
+          "latencyMs": 62.9,
+          "frames": {
+            "p50": 16.7,
+            "p99": 45.3,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 7,
+            "edges": 8,
+            "elements": 207
+          }
+        },
+        "collapse": {
+          "target": "Collapse Order intake",
+          "latencyMs": 48,
+          "frames": {
+            "p50": 16.7,
+            "p99": 17.9,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 5,
+            "edges": 8,
+            "elements": 188
+          }
+        },
+        "showAll": {
+          "target": "Show all",
+          "latencyMs": 48.7,
+          "frames": {
+            "p50": 16.7,
+            "p99": 17.7,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 20,
+            "edges": 14,
+            "elements": 385
+          }
+        }
+      },
+      "portable": {
+        "bytes": 2027995,
+        "domAtOpen": {
+          "nodes": 5,
+          "edges": 8,
+          "elements": 137
+        },
+        "longTasksDuringOpen": 0,
+        "expand": {
+          "target": "Expand Order intake",
+          "latencyMs": 64.2,
+          "frames": {
+            "p50": 16.7,
+            "p99": 36.3,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 7,
+            "edges": 8,
+            "elements": 156
+          }
+        },
+        "collapse": {
+          "target": "Collapse Order intake",
+          "latencyMs": 44.3,
+          "frames": {
+            "p50": 16.7,
+            "p99": 17.6,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 5,
+            "edges": 8,
+            "elements": 137
+          }
+        }
+      },
+      "transport": "isolated random-port loopback server"
+    },
+    {
+      "version": 1,
+      "timestamp": "2026-09-14T03:20:33.350Z",
+      "model": "delivery",
+      "browser": {
+        "name": "Chromium",
+        "version": "153.0.8010.12",
+        "viewport": {
+          "width": 1512,
+          "height": 982
+        },
+        "reducedMotion": "reduce"
+      },
+      "startedServer": true,
+      "headline": {
+        "studioExpandMs": 63,
+        "studioCollapseMs": 45.7,
+        "studioShowAllMs": 47.4,
+        "portableExpandMs": 64.1,
+        "portableCollapseMs": 47.2
+      },
+      "studio": {
+        "pageOpenMs": 257,
+        "domAtOpen": {
+          "nodes": 5,
+          "edges": 8,
+          "elements": 188
+        },
+        "requests": [
+          {
+            "name": "/api/models/delivery",
+            "startMs": 39.9,
+            "durationMs": 2.6
+          },
+          {
+            "name": "/api/models",
+            "startMs": 40,
+            "durationMs": 2.6
+          },
+          {
+            "name": "/api/render",
+            "startMs": 44.9,
+            "durationMs": 87.5
+          }
+        ],
+        "longTasksDuringOpen": 0,
+        "expand": {
+          "target": "Expand Order intake",
+          "latencyMs": 63,
+          "frames": {
+            "p50": 16.7,
+            "p99": 40.7,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 7,
+            "edges": 8,
+            "elements": 207
+          }
+        },
+        "collapse": {
+          "target": "Collapse Order intake",
+          "latencyMs": 45.7,
+          "frames": {
+            "p50": 16.6,
+            "p99": 17.4,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 5,
+            "edges": 8,
+            "elements": 188
+          }
+        },
+        "showAll": {
+          "target": "Show all",
+          "latencyMs": 47.4,
+          "frames": {
+            "p50": 16.7,
+            "p99": 16.9,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 20,
+            "edges": 14,
+            "elements": 385
+          }
+        }
+      },
+      "portable": {
+        "bytes": 2027995,
+        "domAtOpen": {
+          "nodes": 5,
+          "edges": 8,
+          "elements": 137
+        },
+        "longTasksDuringOpen": 0,
+        "expand": {
+          "target": "Expand Order intake",
+          "latencyMs": 64.1,
+          "frames": {
+            "p50": 16.7,
+            "p99": 43.7,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 7,
+            "edges": 8,
+            "elements": 156
+          }
+        },
+        "collapse": {
+          "target": "Collapse Order intake",
+          "latencyMs": 47.2,
+          "frames": {
+            "p50": 16.7,
+            "p99": 17.1,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 5,
+            "edges": 8,
+            "elements": 137
+          }
+        }
+      },
+      "transport": "isolated random-port loopback server"
+    },
+    {
+      "version": 1,
+      "timestamp": "2026-09-14T03:20:41.704Z",
+      "model": "delivery",
+      "browser": {
+        "name": "Chromium",
+        "version": "153.0.8010.12",
+        "viewport": {
+          "width": 1512,
+          "height": 982
+        },
+        "reducedMotion": "reduce"
+      },
+      "startedServer": true,
+      "headline": {
+        "studioExpandMs": 63.3,
+        "studioCollapseMs": 46.6,
+        "studioShowAllMs": 47.4,
+        "portableExpandMs": 64.1,
+        "portableCollapseMs": 45.9
+      },
+      "studio": {
+        "pageOpenMs": 259,
+        "domAtOpen": {
+          "nodes": 5,
+          "edges": 8,
+          "elements": 188
+        },
+        "requests": [
+          {
+            "name": "/api/models",
+            "startMs": 42.7,
+            "durationMs": 2.3
+          },
+          {
+            "name": "/api/models/delivery",
+            "startMs": 42.7,
+            "durationMs": 2.2
+          },
+          {
+            "name": "/api/render",
+            "startMs": 47.9,
+            "durationMs": 87.9
+          }
+        ],
+        "longTasksDuringOpen": 0,
+        "expand": {
+          "target": "Expand Order intake",
+          "latencyMs": 63.3,
+          "frames": {
+            "p50": 16.7,
+            "p99": 41.2,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 7,
+            "edges": 8,
+            "elements": 207
+          }
+        },
+        "collapse": {
+          "target": "Collapse Order intake",
+          "latencyMs": 46.6,
+          "frames": {
+            "p50": 16.7,
+            "p99": 17.9,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 5,
+            "edges": 8,
+            "elements": 188
+          }
+        },
+        "showAll": {
+          "target": "Show all",
+          "latencyMs": 47.4,
+          "frames": {
+            "p50": 16.7,
+            "p99": 17.5,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 20,
+            "edges": 14,
+            "elements": 385
+          }
+        }
+      },
+      "portable": {
+        "bytes": 2027995,
+        "domAtOpen": {
+          "nodes": 5,
+          "edges": 8,
+          "elements": 137
+        },
+        "longTasksDuringOpen": 0,
+        "expand": {
+          "target": "Expand Order intake",
+          "latencyMs": 64.1,
+          "frames": {
+            "p50": 16.7,
+            "p99": 38,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 7,
+            "edges": 8,
+            "elements": 156
+          }
+        },
+        "collapse": {
+          "target": "Collapse Order intake",
+          "latencyMs": 45.9,
+          "frames": {
+            "p50": 16.6,
+            "p99": 17.6,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 5,
+            "edges": 8,
+            "elements": 137
+          }
+        }
+      },
+      "transport": "isolated random-port loopback server"
+    },
+    {
+      "version": 1,
+      "timestamp": "2026-09-14T03:20:53.562Z",
+      "model": "delivery",
+      "browser": {
+        "name": "Chromium",
+        "version": "153.0.8010.12",
+        "viewport": {
+          "width": 1512,
+          "height": 982
+        },
+        "reducedMotion": "reduce"
+      },
+      "startedServer": true,
+      "headline": {
+        "studioExpandMs": 63.4,
+        "studioCollapseMs": 47.6,
+        "studioShowAllMs": 47.2,
+        "portableExpandMs": 64,
+        "portableCollapseMs": 48.1
+      },
+      "studio": {
+        "pageOpenMs": 161,
+        "domAtOpen": {
+          "nodes": 5,
+          "edges": 8,
+          "elements": 188
+        },
+        "requests": [
+          {
+            "name": "/api/models/delivery",
+            "startMs": 46.9,
+            "durationMs": 2.6
+          },
+          {
+            "name": "/api/models",
+            "startMs": 47,
+            "durationMs": 2.7
+          },
+          {
+            "name": "/api/render",
+            "startMs": 52,
+            "durationMs": 86.3
+          }
+        ],
+        "longTasksDuringOpen": 0,
+        "expand": {
+          "target": "Expand Order intake",
+          "latencyMs": 63.4,
+          "frames": {
+            "p50": 16.6,
+            "p99": 38.8,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 7,
+            "edges": 8,
+            "elements": 207
+          }
+        },
+        "collapse": {
+          "target": "Collapse Order intake",
+          "latencyMs": 47.6,
+          "frames": {
+            "p50": 16.7,
+            "p99": 17.4,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 5,
+            "edges": 8,
+            "elements": 188
+          }
+        },
+        "showAll": {
+          "target": "Show all",
+          "latencyMs": 47.2,
+          "frames": {
+            "p50": 16.7,
+            "p99": 18.6,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 20,
+            "edges": 14,
+            "elements": 385
+          }
+        }
+      },
+      "portable": {
+        "bytes": 2027995,
+        "domAtOpen": {
+          "nodes": 5,
+          "edges": 8,
+          "elements": 137
+        },
+        "longTasksDuringOpen": 0,
+        "expand": {
+          "target": "Expand Order intake",
+          "latencyMs": 64,
+          "frames": {
+            "p50": 16.6,
+            "p99": 46.7,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 7,
+            "edges": 8,
+            "elements": 156
+          }
+        },
+        "collapse": {
+          "target": "Collapse Order intake",
+          "latencyMs": 48.1,
+          "frames": {
+            "p50": 16.7,
+            "p99": 17.3,
+            "count": 25
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 5,
+            "edges": 8,
+            "elements": 137
+          }
+        }
+      },
+      "transport": "isolated random-port loopback server"
+    }
+  ]
+}

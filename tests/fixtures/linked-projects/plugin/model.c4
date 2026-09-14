@@ -1,0 +1,15 @@
+// Fictional plugin; intentionally collides with host UIDs and LikeC4 source IDs.
+specification {
+  element subsystem
+  element component
+  relationship calls
+}
+model {
+  core = subsystem 'Beacon plugin' {
+    metadata { uid 'core' }
+    cli = component 'Plugin CLI' { metadata { uid 'cli' } }
+    fallback = component 'Unannotated helper'
+  }
+  store = component 'Plugin records' { metadata { uid 'store' } }
+  core.cli -[calls]-> store 'Reads plugin state' { metadata { uid 'call' } }
+}

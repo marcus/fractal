@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "root": "host",
+  "composition": "plugins",
+  "projects": [
+    {
+      "model": "host",
+      "scene": "detail",
+      "mode": "open",
+      "view": {
+        "expanded": ["core"],
+        "proposed": false,
+        "lens": "trust"
+      }
+    },
+    {
+      "model": "plugin",
+      "scene": "overview",
+      "mode": "collapsed",
+      "view": {
+        "expanded": [],
+        "proposed": false,
+        "lens": "structure"
+      }
+    }
+  ],
+  "theme": "grove",
+  "layout": "elk-layered",
+  "selection": {
+    "kind": "connection",
+    "ownerModel": "host",
+    "connectionId": "call"
+  },
+  "focusedProject": "host"
+}

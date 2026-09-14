@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+  "timestamp": "2026-09-14T03:25:35.864Z",
+  "iterations": 5,
+  "engines": ["elk-layered"],
+  "views": "overview only; selected from scene benchmark",
+  "models": [
+    {
+      "id": "sidecar",
+      "elements": 49,
+      "relationships": 48,
+      "revision": "a41b0afe0f682c5aa18b969f4b6826f938d9873f5cc4f9c26728bf97c4c09add"
+    },
+    {
+      "id": "td",
+      "elements": 77,
+      "relationships": 131,
+      "revision": "a388b29d08c614fef172c8edf143d673aacfd0bbff6b6f03b943ae045ec32d3e"
+    }
+  ],
+  "rows": [
+    {
+      "model": "sidecar",
+      "view": "overview",
+      "engine": "elk-layered",
+      "source": "sidecar/docs/diagrams/fractal (repository-relative label)",
+      "nodes": 11,
+      "edges": 25,
+      "width": 3354.54,
+      "height": 887.5,
+      "iterations": 5,
+      "stages": {
+        "load": {
+          "p50": 0.109,
+          "p95": 0.577,
+          "samples": 5
+        },
+        "project": {
+          "p50": 0.073,
+          "p95": 0.088,
+          "samples": 5
+        },
+        "measure": {
+          "p50": 0.358,
+          "p95": 0.434,
+          "samples": 5
+        },
+        "layout": {
+          "p50": 18.934,
+          "p95": 24.369,
+          "samples": 5
+        },
+        "svg": {
+          "p50": 0.249,
+          "p95": 0.266,
+          "samples": 5
+        },
+        "sequence": {
+          "p50": 0.373,
+          "p95": 0.468,
+          "samples": 5
+        }
+      },
+      "fingerprint": "775718923c9461af0ccc59360e34280951fba060cec904dd711f85b2524b6f70",
+      "quality": {
+        "crossings": 13,
+        "bends": 66,
+        "edgeLength": 22457.06,
+        "area": 2977154.25,
+        "aspectRatio": 3.7798
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:25:35.864Z"
+    },
+    {
+      "model": "td",
+      "view": "overview",
+      "engine": "elk-layered",
+      "source": "td/docs/diagrams/fractal (repository-relative label)",
+      "nodes": 9,
+      "edges": 50,
+      "width": 3312.81,
+      "height": 1830,
+      "iterations": 5,
+      "stages": {
+        "load": {
+          "p50": 0.101,
+          "p95": 0.117,
+          "samples": 5
+        },
+        "project": {
+          "p50": 0.113,
+          "p95": 0.13,
+          "samples": 5
+        },
+        "measure": {
+          "p50": 0.456,
+          "p95": 0.489,
+          "samples": 5
+        },
+        "layout": {
+          "p50": 39.304,
+          "p95": 39.931,
+          "samples": 5
+        },
+        "svg": {
+          "p50": 0.36,
+          "p95": 0.39,
+          "samples": 5
+        },
+        "sequence": {
+          "p50": 0.912,
+          "p95": 0.942,
+          "samples": 5
+        }
+      },
+      "fingerprint": "fe87d9db39b7082f9e6cfad848a3538dfaa5d5bf4bbde9ae77cbc8060082ee65",
+      "quality": {
+        "crossings": 156,
+        "bends": 268,
+        "edgeLength": 97072.43,
+        "area": 6062442.3,
+        "aspectRatio": 1.8103
+      },
+      "commit": "d59cd3bb1db6c62484d6c6be20b96f9c399c547b",
+      "timestamp": "2026-09-14T03:25:35.864Z"
+    }
+  ]
+}

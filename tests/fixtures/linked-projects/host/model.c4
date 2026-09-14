@@ -1,0 +1,15 @@
+// Fictional integration host; no real repository architecture is asserted.
+specification {
+  element subsystem
+  element component
+  relationship calls
+}
+model {
+  core = subsystem 'Harbor host' {
+    metadata { uid 'core' }
+    cli = component 'Plugin adapter' { metadata { uid 'cli' } }
+    fallback = component 'Unannotated helper'
+  }
+  store = component 'Host records' { metadata { uid 'store' } }
+  core.cli -[calls]-> store 'Reads host state' { metadata { uid 'call' } }
+}

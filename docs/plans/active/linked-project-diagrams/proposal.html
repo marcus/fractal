@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="en" data-theme="grove">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Linked project diagrams · Fractal design proposal</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --canvas: #fafbf8;
+        --card: #fff;
+        --group: #f4f6f3;
+        --text: #243b34;
+        --muted: #67746e;
+        --edge: #84948b;
+        --border: #d9e0da;
+        --accent: #267566;
+        --hover: #edf1ea;
+        --trust: #a98243;
+        --dots: #cfd6d4;
+      }
+      [data-theme='graphite'] {
+        --canvas: #f8f8f6;
+        --card: #fff;
+        --group: #eeeeeb;
+        --text: #292927;
+        --muted: #6d6d68;
+        --edge: #85857f;
+        --border: #d5d5d0;
+        --accent: #4f5d63;
+        --hover: #e9e9e6;
+        --trust: #956c35;
+        --dots: #cececa;
+      }
+      [data-theme='midnight'] {
+        color-scheme: dark;
+        --canvas: #151b19;
+        --card: #1d2522;
+        --group: #18201d;
+        --text: #edf3ef;
+        --muted: #a5b1ab;
+        --edge: #82928b;
+        --border: #3a4641;
+        --accent: #79c2a2;
+        --hover: #25302b;
+        --trust: #ddb466;
+        --dots: #34403b;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.5 Inter,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        color: var(--text);
+        background: var(--canvas);
+      }
+      button,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+        background: transparent;
+        border: 0;
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      button:hover,
+      select:hover {
+        background: var(--hover);
+      }
+      button:focus-visible,
+      select:focus-visible,
+      summary:focus-visible,
+      a:focus-visible,
+      [tabindex]:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 4px;
+      }
+      a {
+        color: var(--accent);
+      }
+      header {
+        min-height: 92px;
+        padding: 20px 26px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+      h1 {
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        margin: 0;
+      }
+      .subtitle,
+      .muted {
+        color: var(--muted);
+      }
+      .subtitle {
+        margin: 3px 0 0;
+        font-size: 13px;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .switch {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        cursor: pointer;
+        min-height: 40px;
+      }
+      input {
+        accent-color: var(--accent);
+        width: 17px;
+        height: 17px;
+      }
+      select {
+        border: 0;
+        background: transparent;
+        padding: 10px;
+        border-radius: 6px;
+      }
+      main {
+        min-height: calc(100vh - 92px);
+        position: relative;
+        background-image: radial-gradient(var(--dots) 0.7px, transparent 0.7px);
+        background-size: 20px 20px;
+      }
+      .canvas {
+        width: calc(100% - 340px);
+        min-height: 710px;
+        overflow: auto;
+      }
+      .world {
+        width: 1000px;
+        height: 690px;
+        position: relative;
+        margin: 0 auto;
+      }
+      .canvas-note {
+        position: absolute;
+        left: 30px;
+        top: 18px;
+        right: 30px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .canvas-note strong {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .project {
+        position: absolute;
+        border: 1.5px solid var(--border);
+        border-radius: 14px;
+        background: var(--group);
+      }
+      .project-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 66px;
+        padding: 14px 18px;
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+      }
+      .project-name {
+        font-weight: 600;
+        font-size: 16px;
+      }
+      .project-subtitle {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 1px;
+      }
+      .project-header button {
+        width: 36px;
+        height: 36px;
+        padding: 3px;
+        font-size: 20px;
+      }
+      #sidecar {
+        left: 30px;
+        top: 110px;
+        width: 360px;
+        height: 440px;
+      }
+      #td {
+        left: 600px;
+        top: 110px;
+        width: 340px;
+        height: 340px;
+      }
+      #td.collapsed {
+        height: 108px;
+      }
+      .node {
+        position: absolute;
+        width: 280px;
+        min-height: 88px;
+        padding: 20px;
+        text-align: left;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card);
+      }
+      .node strong {
+        display: block;
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 5px;
+      }
+      .node span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .local-node {
+        left: 40px;
+        top: 83px;
+      }
+      #td-plugin {
+        left: 40px;
+        top: 203px;
+      }
+      #recall-plugin {
+        left: 40px;
+        top: 322px;
+        border-style: dashed;
+        border-color: var(--trust);
+      }
+      #monitor {
+        left: 30px;
+        top: 88px;
+      }
+      .td-detail {
+        position: absolute;
+        left: 50px;
+        top: 220px;
+        right: 45px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .td-detail strong {
+        display: block;
+        color: var(--text);
+        font-weight: 500;
+      }
+      .collapsed-detail {
+        position: absolute;
+        top: 67px;
+        left: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .trust-membership {
+        position: absolute;
+        left: 24px;
+        top: 184px;
+        width: 312px;
+        height: 124px;
+        border: 1.5px dashed var(--trust);
+        border-radius: 11px;
+        pointer-events: none;
+      }
+      .trust-label {
+        position: absolute;
+        top: -12px;
+        left: 12px;
+        background: var(--group);
+        color: var(--trust);
+        padding: 0 5px;
+        font-size: 12px;
+      }
+      .bridges {
+        position: absolute;
+        inset: 0;
+        width: 1000px;
+        height: 690px;
+        overflow: visible;
+        pointer-events: none;
+      }
+      .bridge-line {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 2;
+      }
+      .stub-line {
+        fill: none;
+        stroke: var(--edge);
+        stroke-width: 1.5;
+        stroke-dasharray: 5 5;
+      }
+      .local-line {
+        fill: none;
+        stroke: var(--edge);
+        stroke-width: 1.3;
+      }
+      .bridge-button {
+        position: absolute;
+        left: 405px;
+        top: 258px;
+        width: 176px;
+        background: var(--canvas);
+        padding: 5px 6px;
+        font-size: 13px;
+        color: var(--accent);
+      }
+      .bridge-button[aria-pressed='true'] {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      .bridge-button small {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      #recall {
+        position: absolute;
+        left: 600px;
+        top: 510px;
+        width: 340px;
+        padding: 17px 20px;
+        text-align: left;
+        border: 1px dashed var(--edge);
+        border-radius: 10px;
+        background: var(--canvas);
+      }
+      #recall strong {
+        display: block;
+        font-size: 15px;
+        margin-bottom: 3px;
+      }
+      #recall span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .legend {
+        position: absolute;
+        left: 30px;
+        top: 610px;
+        color: var(--muted);
+        max-width: 530px;
+        font-size: 12px;
+      }
+      .legend span {
+        display: inline-block;
+        margin-right: 18px;
+      }
+      .sample {
+        width: 21px;
+        height: 11px;
+        display: inline-block;
+        vertical-align: middle;
+        margin-right: 6px;
+        border: 1.5px solid var(--border);
+        border-radius: 3px;
+      }
+      .sample.trust {
+        border: 1.5px dashed var(--trust);
+      }
+      .legend p {
+        margin: 8px 0;
+      }
+      aside {
+        position: absolute;
+        right: 20px;
+        top: 25px;
+        width: 300px;
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--card);
+        box-shadow: 0 6px 24px #00000008;
+      }
+      aside h2 {
+        font-size: 17px;
+        line-height: 1.4;
+        font-weight: 600;
+        margin: 0 0 10px;
+      }
+      aside p {
+        margin: 10px 0 18px;
+      }
+      .route {
+        color: var(--accent);
+        font-size: 13px;
+        line-height: 1.8;
+      }
+      .route span {
+        display: block;
+      }
+      details {
+        margin-top: 18px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 500;
+        padding: 4px 0;
+      }
+      dl {
+        margin: 10px 0 0;
+      }
+      dt {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 10px;
+      }
+      dd {
+        margin: 3px 0;
+        overflow-wrap: anywhere;
+        font-size: 13px;
+      }
+      code {
+        font:
+          12px/1.6 ui-monospace,
+          SFMono-Regular,
+          Consolas,
+          monospace;
+      }
+      .callout {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .wordmark {
+        position: absolute;
+        bottom: 17px;
+        right: 27px;
+        font-size: 20px;
+        font-weight: 500;
+        letter-spacing: -0.04em;
+        color: var(--accent);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (max-width: 1339px) {
+        .canvas {
+          width: 100%;
+        }
+        aside {
+          position: relative;
+          top: auto;
+          right: auto;
+          margin: 0 24px 54px;
+          width: calc(100% - 48px);
+          max-width: 640px;
+        }
+        main {
+          padding-bottom: 10px;
+        }
+      }
+      @media (max-width: 760px) {
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+          padding: 18px 20px 10px;
+          gap: 9px;
+        }
+        h1 {
+          font-size: 17px;
+        }
+        .subtitle {
+          max-width: 440px;
+        }
+        .actions {
+          gap: 8px;
+        }
+        .canvas {
+          min-height: 690px;
+        }
+        .world {
+          margin: 0;
+        }
+        .canvas-note {
+          max-width: 320px;
+        }
+        aside {
+          margin-left: 20px;
+          width: calc(100% - 40px);
+        }
+      }
+      @media (max-width: 760px) {
+        .canvas {
+          min-height: 800px;
+        }
+        .world {
+          height: 800px;
+        }
+        .legend {
+          max-width: 320px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Sidecar <span class="muted">/</span> Linked diagrams</h1>
+        <p class="subtitle">
+          Phase 0 design proposal · illustrative subset, not the complete project models
+        </p>
+      </div>
+      <div class="actions" aria-label="Canvas controls">
+        <label class="switch"><input id="trust" type="checkbox" checked />Trust</label>
+        <button id="toggle-td" aria-expanded="true">Collapse td</button>
+        <label
+          ><span class="muted">Theme</span>
+          <select id="theme" aria-label="Theme">
+            <option value="grove">Grove</option>
+            <option value="graphite">Graphite</option>
+            <option value="midnight">Midnight</option>
+          </select></label
+        >
+      </div>
+    </header>
+    <main>
+      <section
+        class="canvas"
+        aria-label="Linked architecture canvas; scroll horizontally on a narrow screen"
+        tabindex="0"
+      >
+        <div class="world">
+          <div class="canvas-note">
+            <strong>One canvas. Each project keeps its own model.</strong><br />Project frames show
+            ownership. Trust shows authored membership.
+          </div>
+          <section class="project" id="sidecar" aria-label="Sidecar project">
+            <div class="project-header">
+              <div>
+                <div class="project-name">Sidecar</div>
+                <div class="project-subtitle">Project · illustrative overview</div>
+              </div>
+            </div>
+            <button class="node local-node" id="host">
+              <strong>Plugin host</strong><span>Coordinates workspace plugins.</span>
+            </button>
+            <button class="node" id="td-plugin">
+              <strong>td plugin</strong><span>Embeds td’s monitor in the workspace.</span>
+            </button>
+            <button class="node" id="recall-plugin">
+              <strong>Recall integration</strong
+              ><span>Proposed model addition · diagram absent.</span>
+            </button>
+            <div class="trust-membership" id="membership">
+              <span class="trust-label">In-process membership · illustrative</span>
+            </div>
+          </section>
+          <section class="project" id="td" aria-label="td project">
+            <div class="project-header">
+              <div>
+                <div class="project-name">td</div>
+                <div class="project-subtitle">Project · monitor detail</div>
+              </div>
+              <button id="frame-toggle" aria-label="Collapse td project" aria-expanded="true">
+                ⌃
+              </button>
+            </div>
+            <div id="td-content">
+              <button class="node" id="monitor">
+                <strong>Monitor</strong><span>Task monitoring exposed for embedding.</span>
+              </button>
+              <div class="td-detail">
+                <strong>Independently authored model</strong>Opening the project reveals its own
+                hierarchy and scenes in place.
+              </div>
+            </div>
+            <div class="collapsed-detail" id="td-summary" hidden>
+              Collapsed · 1 incoming connection
+            </div>
+          </section>
+          <svg class="bridges" aria-hidden="true" viewBox="0 0 1000 690">
+            <defs>
+              <marker
+                id="proposal-arrow"
+                markerWidth="8"
+                markerHeight="8"
+                refX="7"
+                refY="4"
+                orient="auto"
+              >
+                <path d="M1 1 L7 4 L1 7" fill="none" stroke="var(--accent)" stroke-width="1.2" />
+              </marker>
+            </defs>
+
+            <path
+              id="bridge"
+              class="bridge-line"
+              d="M350 357 H490 Q500 357 500 347 V252 Q500 242 510 242 H630"
+              marker-end="url(#proposal-arrow)"
+            />
+            <path class="stub-line" d="M350 476 H475 Q485 476 485 486 V550 Q485 560 495 560 H600" />
+          </svg>
+          <button class="bridge-button" id="inspect-bridge" aria-pressed="true">
+            Embeds td monitor<small>Sidecar → td · 1 claim</small>
+          </button>
+          <button id="recall">
+            <strong>Recall · diagram unavailable</strong
+            ><span>No authored model is available in this steel thread.</span
+            ><span>Inspect the missing reference →</span>
+          </button>
+          <div class="legend">
+            <span><i class="sample"></i>Project ownership</span
+            ><span><i class="sample trust"></i>Trust membership</span>
+            <p>
+              Neither outline implies enforced access. The dashed Recall reference preserves the
+              missing-diagram state.
+            </p>
+            <p>
+              On narrow screens, scroll the canvas horizontally. Use Tab to reach any project or
+              connection.
+            </p>
+          </div>
+        </div>
+      </section>
+      <aside id="inspection" aria-label="Selected item"></aside>
+      <span class="wordmark">fractal</span>
+      <div
+        id="status"
+        role="status"
+        style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%)"
+      ></div>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let collapsed = false;
+      let selection = 'bridge';
+      const bridgeContent = () =>
+        `<h2>Embeds td monitor</h2><div class="route"><span>Sidecar / td plugin</span><span>↓</span><span>td / Monitor${collapsed ? ' · project collapsed' : ''}</span></div><p>The Sidecar adapter creates an embedded td monitor in the same process.</p>${collapsed ? '<p class="callout">The line ends at td’s project summary. Its exact endpoint remains Monitor.</p><button id="reveal-monitor">Reveal Monitor →</button>' : ''}<details><summary>Technical details</summary><dl><dt>Connection owner</dt><dd><code>sidecar</code></dd><dt>Proposed connection ID</dt><dd><code>td-integration</code></dd><dt>Exact source</dt><dd><code>{"model":"sidecar",<br />"element":"plugins.td"}</code></dd><dt>Exact target</dt><dd><code>{"model":"td",<br />"element":"monitor"}</code></dd><dt>Kind / status</dt><dd>embeds / current</dd></dl></details><details><summary>Sources &amp; context</summary><p class="callout">Verified current integration; links.json authoring and rendering are proposed functionality.</p><dl><dt>Sidecar source</dt><dd><code>internal/plugins/tdmonitor/plugin.go</code></dd><dt>Call</dt><dd><code>monitor.NewEmbeddedWithOptions</code></dd></dl><p class="callout">Real repository models remain in their owning repositories. This drawing is a deliberately small design example.</p></details>`;
+      const recallContent = `<h2>Recall diagram unavailable</h2><p>The integration remains understandable even when its linked diagram cannot be opened.</p><p class="callout">Recall supports the Sidecar plugin protocol. Its inspected repository has no Fractal model yet; Sidecar’s existing model also needs a Recall integration element.</p><details open><summary>Recovery</summary><p>Author Recall’s model in its own repository, register it in the local catalog, and add the explicit Sidecar link.</p></details><details><summary>Technical details</summary><dl><dt>Target model</dt><dd><code>recall</code></dd><dt>Diagnostic</dt><dd><code>model_unavailable</code></dd><dt>Endpoint</dt><dd>Not authored. No component identity is invented.</dd></dl></details><p class="callout">The dashed reference here is an unavailable diagram link, not an asserted cross-project dependency.</p>`;
+      function inspect(kind) {
+        selection = kind;
+        $('inspect-bridge').setAttribute('aria-pressed', String(kind === 'bridge'));
+        $('inspection').innerHTML =
+          kind === 'bridge'
+            ? bridgeContent()
+            : kind === 'recall'
+              ? recallContent
+              : `<h2>${kind === 'host' ? 'Plugin host' : 'Monitor'}</h2><p>${kind === 'host' ? 'An illustrative context node for the Sidecar workspace. This proposal does not replace Sidecar’s complete authored architecture.' : 'A component owned by td, reached from the Sidecar plugin through an explicitly qualified connection.'}</p><button id="back-bridge">Inspect cross-project connection →</button>`;
+        $('reveal-monitor')?.addEventListener('click', () => {
+          toggleTd(false);
+          $('monitor').focus();
+        });
+        $('back-bridge')?.addEventListener('click', () => inspect('bridge'));
+        $('status').textContent =
+          kind === 'recall'
+            ? 'Recall unavailable reference selected.'
+            : kind === 'bridge'
+              ? 'Embeds td monitor connection selected.'
+              : `${kind} selected.`;
+      }
+      function toggleTd(next = !collapsed) {
+        collapsed = next;
+        $('td').classList.toggle('collapsed', collapsed);
+        $('td-content').hidden = collapsed;
+        $('td-summary').hidden = !collapsed;
+        $('toggle-td').textContent = collapsed ? 'Open td' : 'Collapse td';
+        $('toggle-td').setAttribute('aria-expanded', String(!collapsed));
+        $('frame-toggle').setAttribute('aria-expanded', String(!collapsed));
+        $('frame-toggle').setAttribute(
+          'aria-label',
+          collapsed ? 'Open td project' : 'Collapse td project'
+        );
+        $('frame-toggle').textContent = collapsed ? '⌄' : '⌃';
+        $('bridge').setAttribute(
+          'd',
+          collapsed
+            ? 'M350 357 H490 Q500 357 500 347 V174 Q500 164 510 164 H600'
+            : 'M350 357 H490 Q500 357 500 347 V252 Q500 242 510 242 H630'
+        );
+        if (selection === 'bridge') inspect('bridge');
+        $('status').textContent = collapsed
+          ? 'td collapsed. Exact Monitor endpoint preserved in inspection.'
+          : 'td opened. Project title and canvas scale preserved.';
+      }
+      $('toggle-td').addEventListener('click', () => toggleTd());
+      $('frame-toggle').addEventListener('click', () => toggleTd());
+      $('trust').addEventListener('change', (event) => {
+        $('membership').hidden = !event.target.checked;
+        $('status').textContent =
+          `Trust ${event.target.checked ? 'shown' : 'hidden'}. Project ownership frames remain visible.`;
+      });
+      $('theme').addEventListener('change', (event) => {
+        document.documentElement.dataset.theme = event.target.value;
+      });
+      $('inspect-bridge').addEventListener('click', () => inspect('bridge'));
+      $('td-plugin').addEventListener('click', () => inspect('bridge'));
+      $('recall').addEventListener('click', () => inspect('recall'));
+      $('recall-plugin').addEventListener('click', () => inspect('recall'));
+      $('host').addEventListener('click', () => inspect('host'));
+      $('monitor').addEventListener('click', () => inspect('monitor'));
+      inspect('bridge');
+    </script>
+  </body>
+</html>

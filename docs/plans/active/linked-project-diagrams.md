@@ -1,8 +1,9 @@
 # Linked project diagrams on one canvas
 
-Status: proposed implementation plan, 2026-09-13. Planning task: `td-1c460e`.
+Status: phase 0 complete, 2026-09-13. Planning task: `td-1c460e`; phase 0: `td-b67c0a`.
 The [product plan](fractal.md) controls product scope; this document controls linked architecture
-composition. Implementation is future work. [DESIGN.md](../../../DESIGN.md) controls visual language;
+composition. Phase 0 establishes contracts and evidence; production composition starts in phase 1.
+[DESIGN.md](../../../DESIGN.md) controls visual language;
 [layout performance and engines](layout-performance-and-engines.md) controls local geometry and
 its existing benchmarks. This plan adds composition measurements and does not replace that seam.
 
@@ -39,7 +40,9 @@ fictional plugin to prove there is no Sidecar-specific renderer or plugin regist
   request ownership. `DiagramCanvas.svelte` currently renders all projected SVG nodes and edges.
 - Sidecar's `docs/diagrams/fractal/model.c4` contains stable `plugins.td`; its
   `internal/plugins/assembly/assembly.go` registers `tdmonitor.Descriptor()`. td's model contains
-  `cli` and `cli.root`. Verify the actual tdmonitor call path before authoring a precise bridge.
+  `monitor` and `monitor.model`. Phase 0 verified that tdmonitor calls
+  `monitor.NewEmbeddedWithOptions` and delegates Update/View in process; the precise bridge is
+  `sidecar/plugins.td` → `td/monitor`, “Embeds td monitor,” rather than a CLI invocation.
 - Recall implements `recall sidecar-plugin` in `internal/cli/sidecarplugin.go`, with the
   `sidecar.plugin/v1` protocol. No `docs/diagrams/fractal/` exists in the inspected Recall checkout,
   and Sidecar's inspected model has no Recall element. These are model-authoring prerequisites,
@@ -76,7 +79,7 @@ must be executed in those repos under their instructions, not by Fractal core wo
 
 ## Authoring and identity contract
 
-Proposed `links.json` shape (new syntax; not accepted by current Fractal):
+`links.json` contract (parsed by the phase 0 library; not yet consumed by the model loader or studio):
 
 ```json
 {
@@ -93,11 +96,11 @@ Proposed `links.json` shape (new syntax; not accepted by current Fractal):
     {
       "id": "td-integration",
       "source": { "model": "sidecar", "element": "plugins.td" },
-      "target": { "model": "td", "element": "cli" },
-      "title": "Uses td",
-      "kind": "uses",
+      "target": { "model": "td", "element": "monitor" },
+      "title": "Embeds td monitor",
+      "kind": "embeds",
       "status": "current",
-      "description": "Illustrative endpoint mapping; verify the integration before authoring.",
+      "description": "Constructs the embedded td monitor and delegates its update and view lifecycle in process.",
       "evidence": ["internal/plugins/tdmonitor/plugin.go"]
     }
   ],
@@ -153,11 +156,13 @@ composition when an incompatible consumer rendered only the root.
 Add a separate `CompositionState` rather than changing the meaning of existing `ViewState`:
 
 - version, root model, optional authored composition ID;
-- ordered project entries with model ID, `open | collapsed`, and ordinary per-project view state;
-- qualified selection; shared theme and flow direction; optional focused project;
+- nonempty, unique project entries, root first, with model ID, `open | collapsed`, and resolved
+  per-project visibility/scope state;
+- qualified selection; shared theme and layout-engine ID; optional focused project;
 - no filesystem paths, DOM state or loader handles.
 
-Apply shared theme/direction to each local layout for a coherent first release. Per-project scene
+Apply shared theme/layout to each local layout for a coherent first release. Direction remains
+a property of the existing layout-engine ID; reject per-project theme/layout overrides. Per-project scene
 selection supplies scope/expansion/proposal/lens defaults; explicit saved view overrides those
 fields. Keep proposal visibility per project and require both endpoints and the claim to be eligible
 before drawing a bridge. A proposed connection is eligible only when its owning project's
@@ -347,7 +352,12 @@ inspectable files; authoring validation and resolution never live solely in comp
 Each slice includes focused checks and a working surface journey. Track implementation in td when
 execution begins; do not mark implementation complete because this plan is complete.
 
-### 0. Freeze contracts and establish evidence
+### 0. Freeze contracts and establish evidence — complete
+
+Evidence and phase 1 handoff: [phase 0 record](linked-project-diagrams/phase-0.md).
+The library contracts, fictional fixtures, baseline fingerprints, verified integration endpoints and
+interactive proposal are delivered. This completes phase 0 only; the production resolver, loader,
+canvas and exports remain in their respective slices below.
 
 Record baseline numbers and fingerprints. Create fictional host + plugin fixtures with intentional
 UID collisions; verify current local Sidecar/td integration paths. Produce a small visual proposal
@@ -424,4 +434,4 @@ Planning review completed by independent agent `/root/review_plan` on 2026-09-13
 explicit identity provenance, eager catalog parsing, proposed-claim ownership, unopened/export
 semantics and SVG identity collisions are incorporated; final review found no planning blockers.
 Markdown links, JSON examples and formatting checked. No application or sibling-model changes in
-this task.
+the planning task.
