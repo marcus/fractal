@@ -57,14 +57,41 @@ type ExportInput = CompositionExportInput & SingleModelExportInput;
  * allocated; an over-limit composition is 422. Invalid input is 400, a changed
  * participating revision or a source changing under the read is 409.
  */
+/** Explicit composition state: a decoded object or a versioned `v1.` permalink value. */
+function isCompositionStateInput(value: unknown): boolean {
+  return (
+    typeof value === 'string' ||
+    (typeof value === 'object' && value !== null && !Array.isArray(value))
+  );
+}
+
 export const POST: RequestHandler = async ({ request }) => {
+  const text = await request.text();
   let input: ExportInput;
   try {
-    input = (await request.json()) as ExportInput;
-  } catch {
-    return json({ error: 'Request body must be JSON.' }, { status: 400 });
+    input = JSON.parse(text) as ExportInput;
+  } catch (error) {
+    // Composition requests name their selector, so a body that names one keeps the
+    // explicit parse diagnostic; every other body keeps the historical single-model
+    // `{ error: String(parseError) }` shape byte-identical.
+    if (/"composition(?:State)?"\s*:/.test(text))
+      return json({ error: 'Request body must be JSON.' }, { status: 400 });
+    return json({ error: String(error) }, { status: 400 });
   }
-  if (input.composition !== undefined || input.compositionState !== undefined) {
+  // A non-object body never names a selector; it falls through to the single-model
+  // path and fails there exactly as before.
+  const body = typeof input === 'object' && input !== null ? input : null;
+  if (body !== null && (body.composition !== undefined || body.compositionState !== undefined)) {
+    const input = body;
+    if (input.composition !== undefined && typeof input.composition !== 'string')
+      return json({ error: 'composition must be a string' }, { status: 400 });
+    if (input.compositionState !== undefined && !isCompositionStateInput(input.compositionState))
+      return json(
+        { error: 'compositionState must be a decoded state object or a v1. value' },
+        { status: 400 }
+      );
+    if (input.allowUnresolved !== undefined && typeof input.allowUnresolved !== 'boolean')
+      return json({ error: 'allowUnresolved must be a boolean' }, { status: 400 });
     if (input.format !== undefined && input.format !== 'svg' && input.format !== 'png')
       return json({ error: 'Composition export format must be svg or png' }, { status: 400 });
     if (typeof input.model !== 'string' || !input.model)

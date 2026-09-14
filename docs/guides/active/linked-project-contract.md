@@ -354,9 +354,12 @@ allowUnresolved?, revisions? }` (`composition` is an authored ID, `compositionSt
 a decoded state object or `v1.` value, mutually exclusive; `state` keeps its
 single-model ViewState meaning). The artwork is the response body and the manifest —
 the same shape the CLI prints — travels base64url-encoded in the
-`x-fractal-export-manifest` response header. Invalid input is 400, a changed
-participating revision or a source changing under the read is 409, and an unresolved
-or over-limit composition is 422.
+`x-fractal-export-manifest` response header. Invalid input is 400 — including a
+non-string `composition`, a `compositionState` that is neither a decoded object nor a
+`v1.` value, and a non-boolean `allowUnresolved`, which never fall back to a root-only
+export — a changed participating revision or a source changing under the read is 409,
+and an unresolved or over-limit composition is 422. A non-JSON body keeps the
+historical single-model error shape unless it names a composition selector.
 
 Resolution and layout jobs run through one bounded work queue per server: at most two
 concurrent jobs, identical in-flight requests coalesced, a bounded wait (refused with
