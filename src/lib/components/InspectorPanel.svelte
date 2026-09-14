@@ -4,29 +4,49 @@
   import InspectorDisclosure from './InspectorDisclosure.svelte';
   import { ChevronRight, ArrowUpRight, Maximize } from '@marcusv/roc/svelte/outline';
   import { inspectComponent } from '$lib/core/inspect';
+  import { inspectConnection } from '$lib/composition/inspect';
   import type { Model, Diagram, ViewState } from '$lib/core/types';
+  import type {
+    ComposedDiagram,
+    CompositionState,
+    DiagramLink,
+    ProjectLinks,
+    QualifiedSelection
+  } from '$lib/composition/types';
+  interface AuthoredLinks {
+    links: ProjectLinks | null;
+    resolution: { model: string; status: string; message?: string }[];
+  }
   let {
     model,
     diagram,
     selected,
     selectedType,
     view,
+    composition = null,
+    compositionSelection = null,
+    links = null,
     toggle,
     focus,
     inspectElement,
     fullSystem,
+    onopenlink,
     onclose,
     onsettled
   }: {
     model: Model;
     diagram: Diagram | null;
     selected: string;
-    selectedType: 'element' | 'relationship' | 'outside';
+    selectedType: 'element' | 'relationship' | 'outside' | 'connection';
     view: ViewState;
+    composition?: { state: CompositionState; composed: ComposedDiagram } | null;
+    compositionSelection?: QualifiedSelection | null;
+    links?: AuthoredLinks | null;
     toggle: (id: string) => void;
     focus: (id: string) => void;
     inspectElement: (id: string) => void;
     fullSystem: () => void;
+    onopenlink?: (link: DiagramLink) => void;
     onclose: () => void;
     onsettled: () => void;
   } = $props();
@@ -42,8 +62,31 @@
   const children = $derived(details?.children ?? []);
   const selectedBoundaries = $derived(details?.boundaries ?? []);
   const name = (id: string) => model.elements.find((e) => e.id === id)?.title ?? id;
+  const connection = $derived(
+    composition && compositionSelection?.kind === 'connection'
+      ? inspectConnection(composition.composed, {
+          ownerModel: compositionSelection.ownerModel,
+          connectionId: compositionSelection.connectionId
+        })
+      : null
+  );
+  const linkedDiagrams = $derived(
+    (links?.links?.links ?? []).filter((link) => link.from === selected || link.from === undefined)
+  );
+  function linkAvailability(link: DiagramLink): string {
+    const status = links?.resolution.find((entry) => entry.model === link.target.model)?.status;
+    if (status === 'unavailable') return 'Unavailable';
+    if (status === 'invalid') return 'Invalid';
+    if (composition?.state.projects.some((project) => project.model === link.target.model))
+      return 'Open';
+    return 'Not opened';
+  }
+  function linkRecovery(link: DiagramLink): string | undefined {
+    return links?.resolution.find((entry) => entry.model === link.target.model)?.message;
+  }
   const shadeLabel = $derived(
-    selectedElement?.title ??
+    connection?.claim.title ??
+      selectedElement?.title ??
       (selectedType === 'outside'
         ? 'Connected beyond this view'
         : (selectedEdge?.title ?? 'Connection'))
@@ -54,13 +97,69 @@
   {#key `${model.id}:${selectedType}:${selected}`}
     <InspectorContent
       kind={selectedElement?.kind ?? (selectedType === 'outside' ? 'context' : 'relationship')}
-      title={selectedElement?.title ??
+      title={connection?.claim.title ??
+        selectedElement?.title ??
         (selectedType === 'outside'
           ? 'Connected beyond this view'
           : (selectedEdge?.title ?? 'Connection'))}
-      proposed={(selectedElement ?? selectedEdge)?.status === 'proposed'}
+      proposed={(selectedElement ?? selectedEdge)?.status === 'proposed' ||
+        connection?.claim.status === 'proposed'}
     >
-      {#if selectedElement}
+      {#if connection}
+        <p class="route connection-route">
+          {connection.route.source.project}{#if connection.route.source.component}{' / '}{connection
+              .route.source.component}{/if}
+          {' → '}
+          {connection.route.target.project}{#if connection.route.target.component}{' / '}{connection
+              .route.target.component}{/if}
+        </p>
+        <p class="description">
+          {connection.claim.description || 'An authored cross-project connection.'}
+        </p>
+        <p class="meta">
+          {connection.claim.kind} ·
+          <span class="status-chip" class:proposed={connection.claim.status === 'proposed'}
+            >{connection.claim.status === 'proposed' ? 'Proposed' : 'Current'}</span
+          >
+        </p>
+        <section aria-label="Exact endpoints">
+          <h3>Endpoints</h3>
+          <dl>
+            <dt>Source</dt>
+            <dd>
+              <code
+                >{connection.endpoints.source.model} / {connection.endpoints.source.element}</code
+              >
+            </dd>
+            <dt>Target</dt>
+            <dd>
+              <code
+                >{connection.endpoints.target.model} / {connection.endpoints.target.element}</code
+              >
+            </dd>
+          </dl>
+        </section>
+        <div class="secondary">
+          <InspectorDisclosure label="Claim & evidence">
+            <dl>
+              <dt>Owner</dt>
+              <dd><code>{connection.owner}</code></dd>
+              <dt>Title</dt>
+              <dd>{connection.claim.title}</dd>
+              <dt>Kind</dt>
+              <dd>{connection.claim.kind}</dd>
+              {#if compositionSelection?.kind === 'connection'}<dt>Stable ID</dt>
+                <dd><code>{compositionSelection.connectionId}</code></dd>{/if}
+            </dl>
+            {#if connection.claim.evidence.length}
+              <h3>Source references</h3>
+              {#each connection.claim.evidence as evidence}<code class="evidence">{evidence}</code
+                >{/each}
+              <p class="detail-copy">Authored references, not automatic verification.</p>
+            {/if}
+          </InspectorDisclosure>
+        </div>
+      {:else if selectedElement}
         {#if selectedElement.technology}<p class="meta">{selectedElement.technology}</p>{/if}
         {#if selectedElement.description}<p class="description">
             {selectedElement.description}
@@ -142,6 +241,36 @@
             {:else}<p class="meta">No connections in this view.</p>{/each}
           </div>
         </section>
+        {#if linkedDiagrams.length}
+          <section aria-label="Linked diagrams">
+            <h3>Linked diagrams <span>{linkedDiagrams.length}</span></h3>
+            <div class="item-list">
+              {#each linkedDiagrams as link (link.id)}
+                <div
+                  class="linked-item"
+                  data-link-id={link.id}
+                  data-target={link.target.model}
+                  data-status={linkAvailability(link).toLowerCase().replace(' ', '-')}
+                >
+                  <div class="linked-summary">
+                    <strong class="item-title">{link.title}</strong>
+                    <span class="linked-status">{linkAvailability(link)}</span>
+                  </div>
+                  <p class="meta">
+                    {link.target.model}{#if link.target.scene}
+                      · {link.target.scene}{/if}
+                  </p>
+                  {#if linkRecovery(link)}<p class="detail-copy">{linkRecovery(link)}</p>{/if}
+                  {#if onopenlink}<button
+                      class="button linked-open"
+                      data-open-link={link.id}
+                      onclick={() => onopenlink(link)}>Open linked diagram</button
+                    >{/if}
+                </div>
+              {/each}
+            </div>
+          </section>
+        {/if}
       {:else if selectedType === 'outside'}
         <p class="meta">{diagram?.outside?.length ?? 0} connections beyond this view</p>
         <p class="description">
@@ -223,45 +352,47 @@
           </div>
         </section>
       {/if}
-      <div class="secondary">
-        <InspectorDisclosure label="Technical details">
-          <dl>
-            {#if selectedElement}
-              <dt>Stable ID</dt>
-              <dd><code>{selectedElement.id}</code></dd>
-              <dt>Kind</dt>
-              <dd>{selectedElement.kind}</dd>
-              {#if selectedElement.parent}<dt>Parent ID</dt>
-                <dd><code>{selectedElement.parent}</code></dd>{/if}
-              {#if selectedBoundaries.length}<dt>Boundary IDs</dt>
-                <dd>
-                  <code>{selectedBoundaries.map((boundary) => boundary.id).join(', ')}</code>
-                </dd>{/if}
-            {:else if selectedEdge}
-              <dt>Stable ID</dt>
-              <dd><code>{selectedEdge.id}</code></dd>
-              <dt>Endpoints</dt>
-              <dd><code>{selectedEdge.source} → {selectedEdge.target}</code></dd>
-              <dt>Original IDs</dt>
-              <dd><code>{selectedEdge.underlying.join(', ')}</code></dd>
-            {:else}
-              <dt>Original IDs</dt>
-              <dd><code>{diagram?.outside?.map((relation) => relation.id).join(', ')}</code></dd>
-            {/if}
-          </dl>
-        </InspectorDisclosure>
-        {#if model.provenance || selectedElement?.evidence.length}
-          <InspectorDisclosure label="Sources & context">
-            {#if selectedElement?.evidence.length}
-              <h3>Source references</h3>
-              {#each selectedElement.evidence as evidence}<code class="evidence">{evidence}</code
-                >{/each}
-              <p class="detail-copy">Authored references, not automatic verification.</p>
-            {/if}
-            {#if model.provenance}<p class="context">{model.provenance}</p>{/if}
+      {#if !connection}
+        <div class="secondary">
+          <InspectorDisclosure label="Technical details">
+            <dl>
+              {#if selectedElement}
+                <dt>Stable ID</dt>
+                <dd><code>{selectedElement.id}</code></dd>
+                <dt>Kind</dt>
+                <dd>{selectedElement.kind}</dd>
+                {#if selectedElement.parent}<dt>Parent ID</dt>
+                  <dd><code>{selectedElement.parent}</code></dd>{/if}
+                {#if selectedBoundaries.length}<dt>Boundary IDs</dt>
+                  <dd>
+                    <code>{selectedBoundaries.map((boundary) => boundary.id).join(', ')}</code>
+                  </dd>{/if}
+              {:else if selectedEdge}
+                <dt>Stable ID</dt>
+                <dd><code>{selectedEdge.id}</code></dd>
+                <dt>Endpoints</dt>
+                <dd><code>{selectedEdge.source} → {selectedEdge.target}</code></dd>
+                <dt>Original IDs</dt>
+                <dd><code>{selectedEdge.underlying.join(', ')}</code></dd>
+              {:else}
+                <dt>Original IDs</dt>
+                <dd><code>{diagram?.outside?.map((relation) => relation.id).join(', ')}</code></dd>
+              {/if}
+            </dl>
           </InspectorDisclosure>
-        {/if}
-      </div>
+          {#if model.provenance || selectedElement?.evidence.length}
+            <InspectorDisclosure label="Sources & context">
+              {#if selectedElement?.evidence.length}
+                <h3>Source references</h3>
+                {#each selectedElement.evidence as evidence}<code class="evidence">{evidence}</code
+                  >{/each}
+                <p class="detail-copy">Authored references, not automatic verification.</p>
+              {/if}
+              {#if model.provenance}<p class="context">{model.provenance}</p>{/if}
+            </InspectorDisclosure>
+          {/if}
+        </div>
+      {/if}
     </InspectorContent>
   {/key}
 </InspectorShell>
@@ -320,5 +451,35 @@
   }
   .inspect-link :global(svg) {
     flex-shrink: 0;
+  }
+  .connection-route {
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--ui-text, #283d34);
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .linked-item {
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid var(--ui-border, #d9dfdb);
+    border-radius: 10px;
+  }
+  .linked-summary {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .linked-status {
+    flex: 0 0 auto;
+    font-size: 10px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    color: var(--ui-muted, #73806e);
+  }
+  .linked-open {
+    justify-self: start;
   }
 </style>

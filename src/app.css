@@ -524,6 +524,18 @@ h1 {
 .diagram-area.loading {
   opacity: 0.7;
 }
+/*
+ * The ordinary diagram and a linked composition share one camera region. Keeping the single-model
+ * canvas mounted (hidden, not destroyed) while a composition is shown is what lets closing return
+ * to the exact scale and position the reader left.
+ */
+.canvas-layer {
+  position: absolute;
+  inset: 0;
+}
+.canvas-layer.layer-hidden {
+  display: none;
+}
 .loading-badge {
   position: absolute;
   top: 17px;

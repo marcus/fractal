@@ -2,6 +2,8 @@
   import { onMount, tick, untrack } from 'svelte';
   import { replaceState } from '$app/navigation';
   import DiagramCanvas from '$lib/components/DiagramCanvas.svelte';
+  import CompositionCanvas from '$lib/components/CompositionCanvas.svelte';
+  import type { ProjectLinks } from '$lib/composition/types';
   import ModelNavigation from '$lib/components/ModelNavigation.svelte';
   import JumpDialog from '$lib/components/JumpDialog.svelte';
   import ShortcutSheet from '$lib/components/ShortcutSheet.svelte';
@@ -42,7 +44,33 @@
     sidebarCollapsedPreference
   } from '$lib/ui/preferences';
   import type { Model, Diagram, ViewState } from '$lib/core/types';
+  import { parseCompositionState } from '$lib/composition/parse';
+  import { rootState, openProject, closeProject, setProjectMode } from '$lib/composition/state';
+  import type {
+    ComposedDiagram,
+    CompositionState,
+    DiagramLink,
+    QualifiedSelection
+  } from '$lib/composition/types';
   import type { PageProps } from './$types';
+
+  interface LinkResolution {
+    model: string;
+    status: 'resolved' | 'unavailable' | 'invalid';
+    message?: string;
+  }
+  interface LinksResult {
+    model: string;
+    revision: string;
+    links: ProjectLinks | null;
+    resolution: LinkResolution[];
+  }
+  interface CompositionSession {
+    state: CompositionState;
+    composed: ComposedDiagram;
+    revisions: Record<string, string>;
+  }
+  type ProjectAction = 'collapse' | 'reopen' | 'close' | 'standalone';
 
   let catalog = $state<{ id: string; title: string; description: string }[]>([]);
   let catalogError = $state('');
@@ -73,7 +101,7 @@
   /** The inspector's subject: a node, an edge, or the connections beyond this view. */
   const OUTSIDE = '__outside__';
   let selected = $state<string | null>(null);
-  let selectedType = $state<'element' | 'relationship' | 'outside'>('element');
+  let selectedType = $state<'element' | 'relationship' | 'outside' | 'connection'>('element');
   let busy = $state(true);
   /**
    * Waiting long enough to be worth saying so. `busy` still governs what a reader may do; this
@@ -105,8 +133,88 @@
     exitLayer: () => void;
     clearPeek: () => boolean;
     requestPeek: (id: string, box: DOMRect) => void;
+    screenOfOrigin: () => { x: number; y: number; scale: number };
   }>();
+  /** Linked composition: the composed result, its participating models, and the qualified selection. */
+  let composition = $state<CompositionSession | null>(null);
+  let compositionModels = $state<Record<string, Model>>({});
+  let compositionSelection = $state<QualifiedSelection | null>(null);
+  let compositionRequestId = 0;
+  /** Where the root's local origin sat on screen, so opening a frame leaves it there. */
+  let compositionAnchor: { x: number; y: number; scale: number } | null = null;
+
+  let composedCanvas = $state<{
+    placeContent: (value: {
+      offset: { x: number; y: number };
+      screen: { x: number; y: number };
+      scale: number;
+    }) => void;
+    revealProject: (model: string) => void;
+    revealElement: (model: string, id: string) => void;
+    dismissMenu: () => boolean;
+  }>();
+  let authoredLinks = $state<LinksResult | null>(null);
+  let authoredLinksModel = $state('');
+  const inComposition = $derived(composition !== null);
+  const selectedCompositionModel = $derived(
+    compositionSelection === null
+      ? null
+      : compositionSelection.kind === 'connection'
+        ? compositionSelection.ownerModel
+        : compositionSelection.model
+  );
+  const inspectorModel = $derived(
+    inComposition && selectedCompositionModel && compositionModels[selectedCompositionModel]
+      ? compositionModels[selectedCompositionModel]
+      : model
+  );
+  const inspectorDiagram = $derived.by(() => {
+    if (!inComposition || compositionSelection?.kind !== 'element' || !selectedCompositionModel)
+      return diagram;
+    return (
+      composition?.composed.projects.find((entry) => entry.model === selectedCompositionModel)
+        ?.diagram ?? null
+    );
+  });
+  const inspectorView = $derived.by(() => {
+    if (!inComposition || !selectedCompositionModel || !composition) return view;
+    const entry = composition.state.projects.find(
+      (project) => project.model === selectedCompositionModel
+    );
+    if (!entry) return view;
+    return {
+      ...entry.view,
+      theme: composition.state.theme,
+      layout: composition.state.layout
+    } satisfies ViewState;
+  });
+  const inspectorSelected = $derived.by(() => {
+    if (inComposition && compositionSelection) {
+      if (compositionSelection.kind === 'element') return compositionSelection.element;
+      if (compositionSelection.kind === 'relationship') return compositionSelection.relationship;
+      if (compositionSelection.kind === 'connection') return compositionSelection.connectionId;
+      return '';
+    }
+    return selected ?? '';
+  });
+  const inspectorSelectedType = $derived(
+    inComposition && compositionSelection?.kind === 'connection'
+      ? ('connection' as const)
+      : inComposition && compositionSelection
+        ? ('element' as const)
+        : selectedType
+  );
+  const inspectorActive = $derived(
+    inComposition ? compositionSelection !== null : selected !== null
+  );
   async function selectInOutline(id: string) {
+    if (composition && selectedCompositionModel) {
+      compositionSelection = { kind: 'element', model: selectedCompositionModel, element: id };
+      menuOpen = false;
+      await tick();
+      composedCanvas?.revealElement(selectedCompositionModel, id);
+      return;
+    }
     select(id, 'element');
     menuOpen = false;
     await tick();
@@ -144,7 +252,13 @@
     const timer = setTimeout(() => (slow = true), SLOW_REQUEST_MS);
     return () => clearTimeout(timer);
   });
-  const theme = $derived(getTheme(isThemeId(view.theme) ? view.theme : undefined));
+  const theme = $derived(
+    getTheme(
+      isThemeId(composition?.state.theme ?? view.theme)
+        ? (composition?.state.theme ?? view.theme)
+        : undefined
+    )
+  );
   $effect(() => rememberTheme(theme.id));
   const themeStyle = $derived(
     Object.entries(theme)
@@ -156,10 +270,13 @@
         : `;--ui-text:${theme.text};--ui-muted:${theme.muted};--ui-subtle:${theme.subtle};--ui-card:${theme.card};--ui-surface:${theme.surface};--ui-hover:${theme.hover};--ui-border:${theme.border};--ui-accent:${theme.accent};--ui-accentText:${theme.accentText};--ui-proposed:${theme.proposed}`)
   );
   function chooseTheme(id: string) {
-    if (isThemeId(id)) {
-      view = { ...view, theme: id };
-      renderView();
+    if (!isThemeId(id)) return;
+    if (composition) {
+      void renderComposition(parseCompositionState({ ...composition.state, theme: id }));
+      return;
     }
+    view = { ...view, theme: id };
+    renderView();
   }
   const activeScene = $derived(model?.scenes.find((s) => s.id === sceneId));
   const breadcrumbScene = $derived(model?.scenes.find((s) => s.id === sceneAnchor));
@@ -270,6 +387,13 @@
   ) {
     const token = ++modelRequestId;
     ++requestId;
+    if (composition) {
+      composition = null;
+      compositionSelection = null;
+      compositionModels = {};
+      authoredLinks = null;
+      authoredLinksModel = '';
+    }
     busy = true;
     error = '';
     selected = null;
@@ -314,6 +438,208 @@
         busy = false;
       }
     }
+  }
+  /** Authored links for the current root, loaded once per model when the inspector needs them. */
+  async function ensureLinks() {
+    if (!model || (authoredLinksModel === modelId && authoredLinks)) return;
+    try {
+      const result: LinksResult = await readJson(
+        await fetch(`/api/composition/links?model=${encodeURIComponent(modelId)}`)
+      );
+      authoredLinks = result;
+      authoredLinksModel = modelId;
+    } catch {
+      authoredLinks = null;
+      authoredLinksModel = modelId;
+    }
+  }
+  $effect(() => {
+    if (!composition && selectedType === 'element' && selected && model)
+      untrack(() => void ensureLinks());
+  });
+  function placeCompositionAnchor() {
+    if (!compositionAnchor || !composition || !composedCanvas) return;
+    const root =
+      composition.composed.projects.find((project) => project.model === modelId) ??
+      composition.composed.projects[0];
+    composedCanvas.placeContent({
+      offset: { x: root.content.x, y: root.content.y },
+      screen: { x: compositionAnchor.x, y: compositionAnchor.y },
+      scale: compositionAnchor.scale
+    });
+  }
+  function selectionSurvives(composed: ComposedDiagram, value: QualifiedSelection): boolean {
+    if (value.kind === 'connection')
+      return composed.bridges.some(
+        (bridge) => bridge.owner === value.ownerModel && bridge.id === value.connectionId
+      );
+    return composed.projects.some((project) => project.model === value.model);
+  }
+  async function renderComposition(next: CompositionState) {
+    const token = ++compositionRequestId;
+    busy = true;
+    error = '';
+    try {
+      const result = await readJson(
+        await fetch('/api/composition/render', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            root: modelId,
+            state: next,
+            revisions: composition?.revisions ?? {}
+          })
+        })
+      );
+      if (token !== compositionRequestId) return;
+      composition = { state: result.state, composed: result.composed, revisions: result.revisions };
+      if (compositionSelection && !selectionSurvives(result.composed, compositionSelection))
+        compositionSelection = null;
+      await tick();
+      if (compositionAnchor) {
+        placeCompositionAnchor();
+        compositionAnchor = null;
+      }
+    } catch (e) {
+      if (token === compositionRequestId) error = e instanceof Error ? e.message : String(e);
+    } finally {
+      if (token === compositionRequestId) busy = false;
+    }
+  }
+  /**
+   * Reveal the linked project beside the root at the reader's current scale. Nothing foreign is
+   * fetched until this runs; a repeated activation pans to the frame that already exists.
+   */
+  async function openLink(link: DiagramLink) {
+    if (!model) return;
+    await ensureLinks();
+    if (composition?.state.projects.some((project) => project.model === link.target.model)) {
+      compositionSelection = null;
+      await tick();
+      composedCanvas?.revealProject(link.target.model);
+      return;
+    }
+    if (!authoredLinks) return;
+    compositionAnchor = canvas?.screenOfOrigin() ?? null;
+    const rootSnapshot = {
+      id: modelId,
+      model,
+      links: authoredLinks.links,
+      origins: { elements: {}, relationships: {} },
+      revision: authoredLinks.revision
+    };
+    // Start from the scene defaults, then keep exactly what the reader is looking at: the root's
+    // local diagram must not change just because it gained a frame.
+    let state = parseCompositionState({
+      ...rootState(rootSnapshot, {
+        scene: sceneId ?? undefined,
+        theme: view.theme,
+        layout: view.layout
+      }),
+      projects: [
+        {
+          model: modelId,
+          ...(sceneId === null ? {} : { scene: sceneId }),
+          mode: 'open' as const,
+          view: {
+            expanded: [...view.expanded],
+            proposed: view.proposed,
+            lens: view.lens,
+            ...(view.scope === undefined ? {} : { scope: view.scope })
+          }
+        }
+      ]
+    });
+    const nextModels: Record<string, Model> = { ...compositionModels, [modelId]: model };
+    const resolution = authoredLinks.resolution.find((entry) => entry.model === link.target.model);
+    if (resolution?.status === 'resolved') {
+      try {
+        const loaded = await readJson(
+          await fetch(`/api/models/${encodeURIComponent(link.target.model)}`)
+        );
+        state = openProject(
+          state,
+          {
+            id: link.target.model,
+            model: loaded.model,
+            links: null,
+            origins: { elements: {}, relationships: {} },
+            revision: loaded.revision
+          },
+          link.target.scene
+        );
+        nextModels[link.target.model] = loaded.model;
+      } catch {
+        // An unresolved or malformed target stays a project entry, so compose can report it.
+      }
+    }
+    if (!state.projects.some((project) => project.model === link.target.model))
+      state = parseCompositionState({
+        ...state,
+        projects: [
+          ...state.projects,
+          {
+            model: link.target.model,
+            mode: 'open',
+            view: { expanded: [], proposed: false, lens: 'structure' }
+          }
+        ]
+      });
+    compositionModels = nextModels;
+    compositionSelection = null;
+    await renderComposition(state);
+  }
+  function closeComposition() {
+    composition = null;
+    compositionSelection = null;
+    compositionModels = {};
+  }
+  function selectComposition(next: QualifiedSelection) {
+    compositionSelection = next;
+  }
+  function toggleCompositionElement(projectModel: string, id: string) {
+    if (!composition) return;
+    const entry = composition.state.projects.find((project) => project.model === projectModel);
+    if (!entry) return;
+    const expanded = entry.view.expanded.includes(id)
+      ? entry.view.expanded.filter((candidate) => candidate !== id)
+      : [...entry.view.expanded, id];
+    void renderComposition(
+      parseCompositionState({
+        ...composition.state,
+        projects: composition.state.projects.map((project) =>
+          project.model === projectModel
+            ? { ...project, view: { ...project.view, expanded } }
+            : project
+        )
+      })
+    );
+  }
+  function projectAction(target: string, action: ProjectAction) {
+    if (!composition) return;
+    if (action === 'standalone') {
+      window.location.href = `/?model=${encodeURIComponent(target)}`;
+      return;
+    }
+    try {
+      if (action === 'close') {
+        const state = closeProject(composition.state, target);
+        if (state.projects.length === 1) closeComposition();
+        else void renderComposition(state);
+        return;
+      }
+      void renderComposition(
+        setProjectMode(composition.state, target, action === 'collapse' ? 'collapsed' : 'open')
+      );
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+  function linksForSelection(): DiagramLink[] {
+    if (!authoredLinks || selectedType !== 'element' || !selected) return [];
+    return (authoredLinks.links?.links ?? []).filter(
+      (link) => link.from === selected || link.from === undefined
+    );
   }
   onMount(() => {
     mac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -386,6 +712,11 @@
   function chooseScene(id: string) {
     const scene = model?.scenes.find((s) => s.id === id);
     if (!scene) return;
+    if (composition) {
+      composition = null;
+      compositionSelection = null;
+      compositionModels = {};
+    }
     sceneId = scene.id;
     sceneAnchor = scene.id;
     view = {
@@ -414,6 +745,10 @@
     renderView();
   }
   function toggle(id: string) {
+    if (composition && selectedCompositionModel) {
+      toggleCompositionElement(selectedCompositionModel, id);
+      return;
+    }
     view = {
       ...view,
       expanded: view.expanded.includes(id)
@@ -438,7 +773,7 @@
   let mac = $state(false);
   const flowDown = $derived(view.layout === 'elk-layered-down');
   function toggleFlow() {
-    if (!diagram || busy) return;
+    if (composition || !diagram || busy) return;
     view = { ...view, layout: flowDown ? undefined : 'elk-layered-down' };
     sceneId = null;
     renderView();
@@ -448,6 +783,12 @@
     selectedType = type;
   }
   async function inspectElement(id: string) {
+    if (composition && selectedCompositionModel) {
+      compositionSelection = { kind: 'element', model: selectedCompositionModel, element: id };
+      await tick();
+      composedCanvas?.revealElement(selectedCompositionModel, id);
+      return;
+    }
     const element = model?.elements.find((e) => e.id === id);
     if (!element) return;
     const expanded = new Set(view.expanded);
@@ -476,6 +817,11 @@
     return p ? within(p, scope) : false;
   }
   function focus(id: string) {
+    if (composition && selectedCompositionModel) {
+      compositionSelection = { kind: 'element', model: selectedCompositionModel, element: id };
+      void tick().then(() => composedCanvas?.revealElement(selectedCompositionModel!, id));
+      return;
+    }
     view = {
       ...view,
       scope: id,
@@ -486,6 +832,7 @@
     renderView();
   }
   function fullSystem() {
+    if (composition) return;
     view = { ...view, scope: undefined };
     sceneId = null;
     selected = null;
@@ -582,6 +929,17 @@
       case 'toggle-flow':
         toggleFlow();
         break;
+      case 'open-linked': {
+        if (composition) break;
+        const link = linksForSelection()[0];
+        if (link) void openLink(link);
+        else
+          void ensureLinks().then(() => {
+            const first = linksForSelection()[0];
+            if (first) void openLink(first);
+          });
+        break;
+      }
       case 'toggle-presentation':
         if (diagram) togglePresentation();
         break;
@@ -631,11 +989,13 @@
         if (!edge) canvas?.exitLayer();
         break;
       case 'escape':
+        if (composedCanvas?.dismissMenu()) break;
         if (modal) {
           if (!exporting) modal = null;
         } else if (diagramKey?.close()) break;
         else if (canvas?.clearPeek()) break;
         else if (presentation) togglePresentation();
+        else if (composition) compositionSelection = null;
         else canvas?.exitLayer();
         break;
     }
@@ -859,6 +1219,14 @@
             disabled={!diagram}
             onclick={togglePresentation}><Play size={15} /></button
           >
+          {#if composition}
+            <button
+              class="icon-button"
+              title="Close linked view"
+              aria-label="Close linked view"
+              onclick={closeComposition}><X size={17} /></button
+            >
+          {/if}
           <button
             class="project-switcher"
             aria-label={`Switch project: ${model?.title ?? 'Projects'}`}
@@ -909,19 +1277,36 @@
           <p title={subtitle}>{subtitle}</p>
         </div>
         <div class="diagram-area" class:loading={slow} aria-busy={busy}>
-          {#if model}{#key model.id}<DiagramCanvas
-                bind:this={canvas}
-                onexitlayer={goOut}
-                oncommandkey={keydown}
-                {diagram}
-                {model}
-                {selected}
-                onselect={select}
-                ontoggle={toggle}
-                {presentation}
-                {measureInsets}
-              />{/key}{/if}
-          {#if model}<DiagramKey
+          {#if model}
+            <div class="canvas-layer" class:layer-hidden={composition}>
+              {#key model.id}<DiagramCanvas
+                  bind:this={canvas}
+                  onexitlayer={goOut}
+                  oncommandkey={keydown}
+                  {diagram}
+                  {model}
+                  {selected}
+                  onselect={select}
+                  ontoggle={toggle}
+                  {presentation}
+                  {measureInsets}
+                />{/key}
+            </div>
+          {/if}
+          {#if composition}
+            <CompositionCanvas
+              bind:this={composedCanvas}
+              composed={composition.composed}
+              models={compositionModels}
+              selection={compositionSelection}
+              onselect={selectComposition}
+              ontoggle={toggleCompositionElement}
+              onprojectaction={projectAction}
+              {measureInsets}
+              {presentation}
+            />
+          {/if}
+          {#if model && !composition}<DiagramKey
               bind:this={diagramKey}
               {model}
               {diagram}
@@ -955,19 +1340,27 @@
           >
         </div>{/if}
     </main>
-    {#if selected && model && !presentation}
+    {#if inspectorActive && inspectorModel && !presentation}
       <InspectorPanel
-        {model}
-        {diagram}
-        {selected}
-        {selectedType}
-        {view}
+        model={inspectorModel}
+        diagram={inspectorDiagram}
+        selected={inspectorSelected}
+        selectedType={inspectorSelectedType}
+        view={inspectorView}
+        {composition}
+        {compositionSelection}
+        links={inspectorModel?.id === modelId ? authoredLinks : null}
         {toggle}
         {focus}
         {inspectElement}
         {fullSystem}
-        onclose={() => (selected = null)}
+        onopenlink={openLink}
+        onclose={() => {
+          if (composition) compositionSelection = null;
+          else selected = null;
+        }}
         onsettled={() => {
+          if (composition) return;
           if (selected && !busy && selectedType !== 'outside') canvas?.reveal(selected, true);
         }}
       />

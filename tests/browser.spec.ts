@@ -1,5 +1,47 @@
 import { test, expect, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.on('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      probe.close(() => resolve(port));
+    });
+  });
+}
+async function waitForServer(url: string, timeout = 30000) {
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    try {
+      if ((await fetch(url)).ok) return;
+    } catch {
+      // The dev server is still compiling; try again.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  throw new Error(`Server did not start at ${url}`);
+}
+/** The screen position and scale of a node's title, independent of how it is drawn. */
+async function titleAt(page: Page, selector: string) {
+  return page
+    .locator(`${selector} .node-title`)
+    .first()
+    .evaluate((element) => {
+      const text = element as SVGTextElement;
+      const matrix = text.getScreenCTM()!;
+      const point = new DOMPoint(text.x.baseVal[0].value, text.y.baseVal[0].value).matrixTransform(
+        matrix
+      );
+      return { x: point.x, y: point.y, scale: matrix.a };
+    });
+}
 
 async function ready(page: Page) {
   await expect(page.locator('[data-node-id]').first()).toBeVisible();
@@ -1866,4 +1908,117 @@ test.describe('touch', () => {
     expect(dragged.x - pinched.x).toBeCloseTo(30, 0);
     await expect(page.locator('.inspector')).toHaveCount(0);
   });
+});
+
+test('a linked project opens beside its host with two frames and one bridge', async ({ page }) => {
+  test.setTimeout(90000);
+  const root = await mkdtemp(join(tmpdir(), 'fractal-linked-'));
+  await cp(join('tests', 'fixtures', 'linked-projects', 'host'), join(root, 'host'), {
+    recursive: true
+  });
+  await cp(join('tests', 'fixtures', 'linked-projects', 'plugin'), join(root, 'plugin'), {
+    recursive: true
+  });
+  // This journey proves the host-owned bridge. The reverse plugin-owned claim is covered by the
+  // composition unit tests, so drop it here to keep the canvas to the one claim under test.
+  await rm(join(root, 'plugin', 'links.json'), { force: true });
+  const port = await freePort();
+  const server = spawn(
+    'npx',
+    ['vite', 'dev', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        FRACTAL_CATALOG: '',
+        FRACTAL_MODELS_DIR: root,
+        HOST: '127.0.0.1',
+        PORT: String(port)
+      },
+      stdio: ['ignore', 'ignore', 'ignore']
+    }
+  );
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    await waitForServer(`${base}/api/models`);
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${base}/?model=host&scene=overview`);
+    await ready(page);
+
+    // Select the host's plugin adapter through the inspector's child link.
+    await page.locator('[data-node-id="core"]').click();
+    await page.getByRole('button', { name: 'Plugin adapter', exact: true }).click();
+    await ready(page);
+    await expect(page.getByRole('region', { name: 'Linked diagrams' })).toBeVisible();
+    await expect(page.locator('[data-link-id="plugin"]')).toContainText('Beacon architecture');
+    await expect(page.locator('[data-link-id="plugin"]')).toContainText('Not opened');
+    await expect(page.locator('[data-link-id="unavailable"]')).toContainText('Unavailable');
+    const before = await titleAt(page, '[data-node-id="core"]');
+
+    await page.locator('[data-open-link="plugin"]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-project-frame]')).toHaveCount(2);
+    await expect(page.locator('[data-connection-owner][data-connection-id]')).toHaveCount(1);
+    await expect(page.locator('[data-node-id="host:core"]')).toBeVisible();
+    await expect(page.locator('[data-node-id="plugin:core"]')).toBeVisible();
+    const opened = await titleAt(page, '[data-node-id="host:core"]');
+    expect(Math.abs(opened.x - before.x)).toBeLessThan(1.5);
+    expect(Math.abs(opened.y - before.y)).toBeLessThan(1.5);
+    expect(opened.scale).toBeCloseTo(before.scale, 3);
+    await page.screenshot({ path: 'artifacts/linked-project-phase1/composition-open.png' });
+
+    // Repeated activation of the same link pans to the existing frame instead of opening again.
+    await page.locator('[data-node-id="host:cli"]').click();
+    await page.locator('[data-open-link="plugin"]').click();
+    await expect(page.locator('[data-project-frame]')).toHaveCount(2);
+
+    // Expand a node inside the plugin frame; the host frame must not move.
+    const beforeExpand = await titleAt(page, '[data-node-id="host:core"]');
+    await page.getByRole('button', { name: 'Expand Beacon plugin', exact: true }).click();
+    await expect(page.locator('[data-node-id="plugin:cli"]')).toBeVisible();
+    const expanded = await titleAt(page, '[data-node-id="host:core"]');
+    expect(Math.abs(expanded.x - beforeExpand.x)).toBeLessThan(1.5);
+    expect(Math.abs(expanded.y - beforeExpand.y)).toBeLessThan(1.5);
+
+    // Select the bridge and read its readable route and exact endpoints.
+    await page.locator('[data-connection-owner="host"][data-connection-id="call"]').click();
+    await expect(page.locator('.inspector h2')).toHaveText('Invokes plugin CLI');
+    await expect(page.locator('.inspector')).toContainText('Harbor host / Plugin adapter');
+    await expect(page.locator('.inspector')).toContainText('Beacon plugin / Plugin CLI');
+    await expect(page.locator('.inspector')).toContainText('host / cli');
+    await expect(page.locator('.inspector')).toContainText('plugin / cli');
+    await page.screenshot({ path: 'artifacts/linked-project-phase1/bridge-selected.png' });
+
+    // Collapse and reopen the plugin from its title-band menu.
+    await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
+    await page.getByRole('menuitem', { name: 'Collapse' }).click();
+    await expect(page.locator('[data-project-frame="plugin"]')).toHaveAttribute(
+      'data-project-mode',
+      'collapsed'
+    );
+    await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
+    await page.getByRole('menuitem', { name: 'Reopen' }).click();
+    await expect(page.locator('[data-project-frame="plugin"]')).toHaveAttribute(
+      'data-project-mode',
+      'open'
+    );
+
+    // Closing the plugin returns to ordinary root view at the same place.
+    await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
+    await page.getByRole('menuitem', { name: 'Close' }).click();
+    await expect(page.locator('[data-project-frame]')).toHaveCount(0);
+    await expect(page.locator('[data-node-id="core"]')).toBeVisible();
+    await expect
+      .poll(async () => (await titleAt(page, '[data-node-id="core"]')).x)
+      .toBeCloseTo(before.x, 0);
+    await expect
+      .poll(async () => (await titleAt(page, '[data-node-id="core"]')).y)
+      .toBeCloseTo(before.y, 0);
+    expect((await titleAt(page, '[data-node-id="core"]')).scale).toBeCloseTo(before.scale, 3);
+    expect(errors).toEqual([]);
+  } finally {
+    server.kill('SIGTERM');
+    await rm(root, { recursive: true, force: true });
+  }
 });

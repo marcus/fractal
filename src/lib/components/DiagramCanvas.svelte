@@ -283,6 +283,14 @@
     fitInsets = measureInsets();
     camera = { x: 0, y: 0, zoom: 1 };
   }
+  /**
+   * The screen position and effective scale of the drawing's local origin. A composition places
+   * its root content at an offset, so mapping that offset onto this point keeps every root node
+   * where the reader left it.
+   */
+  export function screenOfOrigin() {
+    return { x: tx, y: ty, scale: factor };
+  }
   export function activate() {
     if (activeId) onselect(activeId, 'element');
   }

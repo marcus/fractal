@@ -8,6 +8,7 @@ export type CommandId =
   | 'info'
   | 'toggle-sidebar'
   | 'toggle-flow'
+  | 'open-linked'
   | 'toggle-presentation'
   | 'export'
   | 'copy-link'
@@ -79,6 +80,13 @@ export const SHORTCUTS = [
     group: 'View',
     keys: ['f'],
     contexts: ['studio', 'presentation']
+  },
+  {
+    id: 'open-linked',
+    label: 'Open linked diagram',
+    group: 'Global',
+    keys: ['mod+shift+l'],
+    contexts: ['studio']
   },
   {
     id: 'toggle-presentation',
@@ -223,7 +231,8 @@ export function shortcutsForSurface(
           'previous-scene',
           'next-scene',
           'activate',
-          'info'
+          'info',
+          'open-linked'
         ].includes(command.id)
     ).map((command) => ({
       ...command,
@@ -239,12 +248,13 @@ export function shortcutsForSurface(
     outward: 'Clear canvas focus'
   };
   // Flow direction belongs to architecture placement; the sequence surface has no engine to swap.
-  return SHORTCUTS.filter((command) => command.id !== 'info' && command.id !== 'toggle-flow').map(
-    (command) => ({
-      ...command,
-      label: labels[command.id] ?? command.label
-    })
-  );
+  return SHORTCUTS.filter(
+    (command) =>
+      command.id !== 'info' && command.id !== 'toggle-flow' && command.id !== 'open-linked'
+  ).map((command) => ({
+    ...command,
+    label: labels[command.id] ?? command.label
+  }));
 }
 
 export interface ShortcutEvent {
