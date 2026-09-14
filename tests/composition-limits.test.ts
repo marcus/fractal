@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { generateFixtures, writeFixtures } from '../scripts/bench-fixtures';
-import { DEFAULT_COMPOSITION_LIMITS } from '../src/lib/composition/limits';
+import { DEFAULT_COMPOSITION_LIMITS, type CompositionLimits } from '../src/lib/composition/limits';
 import type { ViewState } from '../src/lib/core/types';
 import { createCache, createCachePool, serverCachePool } from '../src/lib/server/cache';
 import {
@@ -21,8 +21,10 @@ import {
   invalidateProject,
   listModels,
   loadDirectory,
-  modelCacheStats
+  modelCacheStats,
+  snapshotOf
 } from '../src/lib/server/models';
+import { exportLinkedDocument } from '../src/lib/adapters/html';
 import { createWorkQueue, QueueFullError } from '../src/lib/server/queue';
 import { renderCacheStats, renderDiagram } from '../src/lib/server/render';
 
@@ -668,6 +670,121 @@ test('composition-stats and an over-limit CLI composition report honestly', asyn
     const body = JSON.parse(refused.stderr);
     assert.equal(body.code, 'budget_exceeded');
     assert.equal(body.diagnostics[0].budget.resource, 'projects');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+const linkedAssets = { js: '/* reader */', css: '/* css */' };
+
+async function linkedSnapshots(root: string) {
+  const models = join(root, 'models');
+  const host = await loadDirectory(join(models, 'host'));
+  const plugin = await loadDirectory(join(models, 'plugin'));
+  return { host, plugin };
+}
+
+function linkedExportOptions(
+  host: Awaited<ReturnType<typeof loadDirectory>>,
+  plugin: Awaited<ReturnType<typeof loadDirectory>>,
+  limits?: CompositionLimits
+) {
+  return {
+    state: host.model.scenes[0],
+    scene: 'overview',
+    sequences: host.sequences,
+    assets: linkedAssets,
+    include: ['plugin'],
+    snapshots: [snapshotOf(host), snapshotOf(plugin)],
+    sequencesByModel: { host: host.sequences, plugin: plugin.sequences },
+    ...(limits === undefined ? {} : { limits })
+  };
+}
+
+test("linked HTML export shares the admission gate with svg and png (format: 'html')", async () => {
+  const { root } = await fixture();
+  cold();
+  try {
+    const { host, plugin } = await linkedSnapshots(root);
+    // Defaults admit the two-project document.
+    const allowed = await exportLinkedDocument(
+      host.model,
+      linkedExportOptions(host, plugin, { ...DEFAULT_COMPOSITION_LIMITS })
+    );
+    assert.deepEqual(
+      allowed.document.snapshots.map((snapshot) => snapshot.id),
+      ['host', 'plugin']
+    );
+    // A stricter project budget refuses the same document whole, like the other formats.
+    await assert.rejects(
+      exportLinkedDocument(
+        host.model,
+        linkedExportOptions(host, plugin, { ...DEFAULT_COMPOSITION_LIMITS, projects: 1 })
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof BudgetExceededError);
+        assert.deepEqual(error.diagnostics[0].budget, {
+          resource: 'projects',
+          actual: 2,
+          limit: 1
+        });
+        return true;
+      }
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('visible counts include bridges, ports and stubs toward the visible gates', async () => {
+  const { root, options } = await fixture();
+  cold();
+  try {
+    const { composed } = await composeFromSelector('host', { composition: 'plugins' }, options);
+    let localNodes = 0;
+    let localEdges = 0;
+    let ports = 0;
+    for (const project of composed.projects) {
+      localNodes += project.diagram?.nodes.length ?? 0;
+      localEdges += project.diagram?.edges.length ?? 0;
+      ports += project.ports.length;
+    }
+    assert.ok(composed.bridges.length > 0, 'the fixture draws bridges');
+    assert.ok(composed.stubs.length > 0, 'the fixture leaves reference stubs');
+    // Bridges count as visible edges on top of the local diagrams.
+    await assert.rejects(
+      composeFromSelector(
+        'host',
+        { composition: 'plugins' },
+        { ...options, limits: { ...DEFAULT_COMPOSITION_LIMITS, visibleEdges: localEdges } }
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof BudgetExceededError);
+        assert.deepEqual(error.diagnostics[0].budget, {
+          resource: 'visible_edges',
+          actual: localEdges + composed.bridges.length,
+          limit: localEdges
+        });
+        return true;
+      }
+    );
+    // Ports and stubs count as visible nodes on top of the local diagrams.
+    await assert.rejects(
+      composeFromSelector(
+        'host',
+        { composition: 'plugins' },
+        { ...options, limits: { ...DEFAULT_COMPOSITION_LIMITS, visibleNodes: localNodes } }
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof BudgetExceededError);
+        assert.deepEqual(error.diagnostics[0].budget, {
+          resource: 'visible_nodes',
+          actual: localNodes + ports + composed.stubs.length,
+          limit: localNodes
+        });
+        return true;
+      }
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

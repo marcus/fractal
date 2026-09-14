@@ -287,3 +287,52 @@ test('refuses --composition together with --composition-state', async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('inspect --selection is validated through the state parser rules, not cast', async () => {
+  const { root, run } = await fixture();
+  try {
+    // A well-formed qualified selection inspects through the shared boundary.
+    const valid = run([
+      'inspect',
+      '--model',
+      'host',
+      '--composition',
+      'plugins',
+      '--selection',
+      JSON.stringify({ kind: 'project', model: 'host' })
+    ]);
+    assert.equal(valid.status, 0);
+    assert.deepEqual((({ kind, model }) => ({ kind, model }))(JSON.parse(valid.stdout)), {
+      kind: 'project',
+      model: 'host'
+    });
+
+    // A malformed selection is a contract diagnostic with a path, exit 1.
+    const malformed = run([
+      'inspect',
+      '--model',
+      'host',
+      '--composition',
+      'plugins',
+      '--selection',
+      JSON.stringify({ kind: 'element' })
+    ]);
+    assert.equal(malformed.status, 1);
+    assert.equal(malformed.stdout, '');
+    assert.match(JSON.parse(malformed.stderr).error, /composition\.selection/);
+
+    const unknownKind = run([
+      'inspect',
+      '--model',
+      'host',
+      '--composition',
+      'plugins',
+      '--selection',
+      JSON.stringify({ kind: 'fleet', model: 'host' })
+    ]);
+    assert.equal(unknownKind.status, 1);
+    assert.match(JSON.parse(unknownKind.stderr).error, /composition\.selection\.kind/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
