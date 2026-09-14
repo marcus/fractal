@@ -1,4 +1,4 @@
-import type { LayoutEngineId, Status, ThemeId, ViewState } from '../core/types';
+import type { Diagram, LayoutEngineId, Point, Status, ThemeId, ViewState } from '../core/types';
 
 /** Phase 0 contracts; no loader, route, CLI or renderer consumes these yet. */
 export interface ElementReference {
@@ -86,4 +86,64 @@ export interface CompositionDiagnostic {
   target?: { model: string; element?: string; scene?: string };
   recovery: 'register' | 'retry' | 'repair' | 'upgrade' | 'reload' | 'reduce';
   budget?: { resource: string; actual: number; limit: number };
+}
+
+/** Phase 1 composed output. Frame/content coordinates are in one shared composed space. */
+export interface Frame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface ComposedProject {
+  model: string;
+  title: string;
+  mode: 'open' | 'collapsed';
+  revision: string;
+  scene?: string;
+  /** Outer rectangle in composed coordinates, including the title band. */
+  frame: Frame;
+  titleLines: string[];
+  titleHeight: number;
+  /** Where the local diagram's (0,0) lands; null-size when collapsed. */
+  content: Frame;
+  diagram: Diagram | null;
+}
+/** A visible stand-in for an authored endpoint: a node, the whole project, or a perimeter port. */
+export type BridgeRepresentative =
+  | { kind: 'node'; id: string }
+  | { kind: 'project' }
+  | { kind: 'port'; reason: 'outside-scope' | 'hidden' };
+export interface BridgeEndpoint {
+  model: string;
+  element: string;
+  representative: BridgeRepresentative;
+  /** Composed coordinates on the representative's edge. */
+  point: Point;
+}
+export interface ComposedBridge extends Omit<ProjectConnection, 'source' | 'target'> {
+  owner: string;
+  source: BridgeEndpoint;
+  target: BridgeEndpoint;
+  points: Point[];
+  label: Point;
+  labelLines: string[];
+}
+export interface ReferenceStub {
+  owner: string;
+  linkId?: string;
+  connectionId?: string;
+  anchor: { model: string; element?: string };
+  target: { model: string; element?: string; scene?: string };
+  state: 'not_loaded' | 'unavailable' | 'invalid';
+  title: string;
+}
+export interface ComposedDiagram {
+  state: CompositionState;
+  projects: ComposedProject[];
+  bridges: ComposedBridge[];
+  stubs: ReferenceStub[];
+  diagnostics: CompositionDiagnostic[];
+  width: number;
+  height: number;
 }
