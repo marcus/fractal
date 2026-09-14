@@ -2704,6 +2704,66 @@ test('composition export dialog writes SVG, PNG and HTML in every theme', async 
     await unresolvedPending;
     await expect(dialog).toBeVisible();
 
+    // Busy feedback starts at the reveal action: a fast linked render never flashes the
+    // slow-request badge, while a slow source-model load raises it from the click.
+    const watchBadges = (target: Page) =>
+      target.evaluate(() => {
+        const seen = window as unknown as { __badgeSeen?: boolean };
+        seen.__badgeSeen = false;
+        new MutationObserver((mutations) => {
+          for (const mutation of mutations)
+            for (const node of mutation.addedNodes)
+              if (
+                node instanceof Element &&
+                (node.matches('.loading-badge') || node.querySelector('.loading-badge'))
+              )
+                seen.__badgeSeen = true;
+        }).observe(document.body, { childList: true, subtree: true });
+      });
+    const badgeSeen = (target: Page) =>
+      target.evaluate(() => (window as unknown as { __badgeSeen?: boolean }).__badgeSeen);
+    const fast = await page.context().newPage();
+    try {
+      await fast.goto(`${base}/?model=host&scene=overview`);
+      await ready(fast);
+      await fast.locator('[data-node-id="core"]').click();
+      await fast.getByRole('button', { name: 'Plugin adapter', exact: true }).click();
+      await ready(fast);
+      await watchBadges(fast);
+      await fast.locator('[data-open-link="plugin"]').click();
+      await expect(fast.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+      await expect(fast.locator('[data-project-frame]')).toHaveCount(2);
+      expect(await badgeSeen(fast)).toBe(false);
+    } finally {
+      await fast.close();
+    }
+    // The source-model load takes 400 ms here, so a badge within 500 ms of the click proves
+    // the clock starts at the action: the render request only goes out once the load lands.
+    const slow = await page.context().newPage();
+    try {
+      await slow.route('**/api/models/plugin', async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        await route.continue();
+      });
+      await slow.goto(`${base}/?model=host&scene=overview`);
+      await ready(slow);
+      await slow.locator('[data-node-id="core"]').click();
+      await slow.getByRole('button', { name: 'Plugin adapter', exact: true }).click();
+      await ready(slow);
+      const clicked = Date.now();
+      await slow.locator('[data-open-link="plugin"]').click();
+      await expect(slow.locator('.diagram-area')).toHaveAttribute('aria-busy', 'true');
+      await expect(slow.locator('.loading-badge')).toBeVisible({ timeout: 400 });
+      expect(Date.now() - clicked).toBeLessThan(500);
+      await expect(slow.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false', {
+        timeout: 30000
+      });
+      await expect(slow.locator('[data-project-frame]')).toHaveCount(2);
+      await expect(slow.locator('.loading-badge')).toHaveCount(0);
+    } finally {
+      await slow.close();
+    }
+
     expect(errors).toEqual([]);
   } finally {
     server.kill('SIGTERM');

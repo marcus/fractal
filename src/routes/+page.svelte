@@ -834,91 +834,112 @@
   }
   async function openLink(link: DiagramLink) {
     if (!model) return;
-    await ensureLinks();
-    if (composition?.state.projects.some((project) => project.model === link.target.model)) {
-      compositionSelection = null;
-      await tick();
-      composedCanvas?.revealProject(link.target.model);
-      return;
-    }
-    if (
-      !composition &&
-      cachedSession?.state.projects.some((project) => project.model === link.target.model)
-    ) {
-      compositionSelection = null;
-      composition = cachedSession;
-      compositionMounted = true;
-      return;
-    }
-    const sourceModel = selectedCompositionModel ?? modelId;
-    if (composition) compositionAnchor = captureAnchor(sourceModel, 'title');
-    else {
-      const origin = canvas?.screenOfOrigin();
-      compositionAnchor = origin
-        ? {
-            model: modelId,
-            kind: 'content',
-            screen: { x: origin.x, y: origin.y },
-            scale: origin.scale
-          }
-        : null;
-    }
-    let state = composition?.state;
-    if (!state) {
-      if (!authoredLinks) return;
-      const rootSnapshot = {
-        id: modelId,
-        model,
-        links: authoredLinks.links,
-        origins: { elements: {}, relationships: {} },
-        revision: authoredLinks.revision
-      };
-      // Start from the scene defaults, then keep exactly what the reader is looking at: the root's
-      // local diagram must not change just because it gained a frame.
-      state = parseCompositionState({
-        ...rootState(rootSnapshot, {
-          scene: sceneId ?? undefined,
-          theme: view.theme,
-          layout: view.layout
-        }),
-        projects: [
-          {
-            model: modelId,
-            ...(sceneId === null ? {} : { scene: sceneId }),
-            mode: 'open' as const,
-            view: {
-              expanded: [...view.expanded],
-              proposed: view.proposed,
-              lens: view.lens,
-              ...(view.scope === undefined ? {} : { scope: view.scope })
+    // The busy clock starts at the reveal action, before any source fetch, so the
+    // slow-request badge measures from the click and a slow model load still raises it.
+    // Geometry landing clears it through the render path; early exits settle only their
+    // own request, so a newer model, view or composition flow keeps the busy state.
+    const generation = compositionGeneration;
+    const modelToken = modelRequestId;
+    const requestToken = requestId;
+    busy = true;
+    const settle = () => {
+      if (
+        generation === compositionGeneration &&
+        modelToken === modelRequestId &&
+        requestToken === requestId &&
+        !compositionInFlight
+      )
+        busy = false;
+    };
+    try {
+      await ensureLinks();
+      if (composition?.state.projects.some((project) => project.model === link.target.model)) {
+        compositionSelection = null;
+        await tick();
+        composedCanvas?.revealProject(link.target.model);
+        return;
+      }
+      if (
+        !composition &&
+        cachedSession?.state.projects.some((project) => project.model === link.target.model)
+      ) {
+        compositionSelection = null;
+        composition = cachedSession;
+        compositionMounted = true;
+        return;
+      }
+      const sourceModel = selectedCompositionModel ?? modelId;
+      if (composition) compositionAnchor = captureAnchor(sourceModel, 'title');
+      else {
+        const origin = canvas?.screenOfOrigin();
+        compositionAnchor = origin
+          ? {
+              model: modelId,
+              kind: 'content',
+              screen: { x: origin.x, y: origin.y },
+              scale: origin.scale
             }
-          }
-        ]
-      });
-      compositionModels = { ...compositionModels, [modelId]: model };
-      if (authoredLinks) compositionLinks = { ...compositionLinks, [modelId]: authoredLinks };
+          : null;
+      }
+      let state = composition?.state;
+      if (!state) {
+        if (!authoredLinks) return;
+        const rootSnapshot = {
+          id: modelId,
+          model,
+          links: authoredLinks.links,
+          origins: { elements: {}, relationships: {} },
+          revision: authoredLinks.revision
+        };
+        // Start from the scene defaults, then keep exactly what the reader is looking at: the root's
+        // local diagram must not change just because it gained a frame.
+        state = parseCompositionState({
+          ...rootState(rootSnapshot, {
+            scene: sceneId ?? undefined,
+            theme: view.theme,
+            layout: view.layout
+          }),
+          projects: [
+            {
+              model: modelId,
+              ...(sceneId === null ? {} : { scene: sceneId }),
+              mode: 'open' as const,
+              view: {
+                expanded: [...view.expanded],
+                proposed: view.proposed,
+                lens: view.lens,
+                ...(view.scope === undefined ? {} : { scope: view.scope })
+              }
+            }
+          ]
+        });
+        compositionModels = { ...compositionModels, [modelId]: model };
+        if (authoredLinks) compositionLinks = { ...compositionLinks, [modelId]: authoredLinks };
+      }
+      const ownerLinks = compositionLinks[sourceModel] ?? authoredLinks;
+      const resolution = ownerLinks?.resolution.find((entry) => entry.model === link.target.model);
+      if (resolution?.status === 'resolved' || !resolution) {
+        const loaded = await loadProjectModel(link.target.model);
+        const snapshot = snapshotFor(link.target.model);
+        if (loaded && snapshot) state = openProject(state, snapshot, link.target.scene);
+      }
+      if (!state.projects.some((project) => project.model === link.target.model))
+        state = parseCompositionState({
+          ...state,
+          projects: [
+            ...state.projects,
+            {
+              model: link.target.model,
+              mode: 'open',
+              view: { expanded: [], proposed: false, lens: 'structure' }
+            }
+          ]
+        });
+      compositionSelection = null;
+      await renderComposition(state);
+    } finally {
+      settle();
     }
-    const ownerLinks = compositionLinks[sourceModel] ?? authoredLinks;
-    const resolution = ownerLinks?.resolution.find((entry) => entry.model === link.target.model);
-    if (resolution?.status === 'resolved' || !resolution) {
-      const loaded = await loadProjectModel(link.target.model);
-      const snapshot = snapshotFor(link.target.model);
-      if (loaded && snapshot) state = openProject(state, snapshot, link.target.scene);
-    }
-    if (!state.projects.some((project) => project.model === link.target.model))
-      state = parseCompositionState({
-        ...state,
-        projects: [
-          ...state.projects,
-          {
-            model: link.target.model,
-            mode: 'open',
-            view: { expanded: [], proposed: false, lens: 'structure' }
-          }
-        ]
-      });
-    compositionSelection = null;
-    await renderComposition(state);
   }
   function closeComposition() {
     abandonCompositionRequests();
