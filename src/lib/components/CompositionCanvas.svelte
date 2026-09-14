@@ -12,13 +12,22 @@
   import type {
     ComposedBridge,
     ComposedDiagram,
+    ComposedPort,
     CompositionDiagnostic,
     QualifiedSelection
   } from '$lib/composition/types';
   import type { LayoutNode, Model, Point } from '$lib/core/types';
+  import type { Direction } from '$lib/core/navigation';
 
   type Insets = { left: number; right: number; bottom: number; top: number };
-  type ProjectAction = 'collapse' | 'reopen' | 'close' | 'standalone' | 'fit';
+  export type ProjectAction =
+    | 'collapse'
+    | 'reopen'
+    | 'close'
+    | 'standalone'
+    | 'fit'
+    | { kind: 'scene'; scene: string }
+    | { kind: 'scope'; element?: string };
 
   /**
    * The shared camera over a composed diagram. It holds one absolute transform (screen = origin +
@@ -32,6 +41,7 @@
     onselect,
     ontoggle,
     onprojectaction,
+    onrevealport,
     measureInsets = () => ({ left: 0, right: 0, top: 0, bottom: 0 }),
     presentation = false
   }: {
@@ -41,6 +51,7 @@
     onselect: (selection: QualifiedSelection) => void;
     ontoggle: (model: string, id: string) => void;
     onprojectaction: (model: string, action: ProjectAction) => void;
+    onrevealport?: (port: ComposedPort) => void;
     measureInsets?: () => Insets;
     presentation?: boolean;
   } = $props();
@@ -68,6 +79,14 @@
     return composed.projects.find((candidate) => candidate.model === model);
   }
   const menuProject = $derived(menuModel ? project(menuModel) : null);
+  const menuScenes = $derived(menuModel ? (models[menuModel]?.scenes ?? []) : []);
+  const menuEntry = $derived(
+    menuModel ? composed.state.projects.find((candidate) => candidate.model === menuModel) : null
+  );
+  const menuFocusElement = $derived.by(() => {
+    if (!menuModel || selection?.kind !== 'element' || selection.model !== menuModel) return null;
+    return models[menuModel]?.elements.find((element) => element.id === selection.element) ?? null;
+  });
 
   export function fit() {
     menuModel = null;
@@ -146,11 +165,167 @@
     });
   }
 
+  /** Screen position of a composed point at the current camera, used to keep a title in place. */
+  export function screenOf(point: Point) {
+    return {
+      x: transform.x + point.x * transform.scale,
+      y: transform.y + point.y * transform.scale,
+      scale: transform.scale
+    };
+  }
+
+  export function zoom(direction: number) {
+    const next = Math.max(0.05, Math.min(8, transform.scale * (direction > 0 ? 1.2 : 1 / 1.2)));
+    const px = size.width / 2;
+    const py = size.height / 2;
+    const ratio = next / transform.scale;
+    transform = {
+      scale: next,
+      x: px - (px - transform.x) * ratio,
+      y: py - (py - transform.y) * ratio
+    };
+  }
+
+  function titlePoint(target: NonNullable<ReturnType<typeof project>>): Point {
+    return {
+      x: target.frame.x + COMPOSITION_METRICS.padding + 44 + 8,
+      y: target.frame.y + COMPOSITION_METRICS.titleClearance
+    };
+  }
+
+  export function screenOfTitle(model: string) {
+    const target = project(model);
+    return target ? screenOf(titlePoint(target)) : null;
+  }
+
+  export function titleOffset(model: string) {
+    const target = project(model);
+    return target ? titlePoint(target) : null;
+  }
+
+  export function contentOffset(model: string) {
+    const target = project(model);
+    return target ? { x: target.content.x, y: target.content.y } : null;
+  }
+
+  export function screenOfContent(model: string) {
+    const target = project(model);
+    return target ? screenOf({ x: target.content.x, y: target.content.y }) : null;
+  }
+
   function menuAction(action: ProjectAction) {
     if (!menuProject) return;
     const target = menuProject.model;
     menuModel = null;
     onprojectaction(target, action);
+  }
+
+  interface NavTarget {
+    key: string;
+    x: number;
+    y: number;
+    focus: () => void;
+  }
+
+  function composedTargets(): NavTarget[] {
+    const targets: NavTarget[] = [];
+    for (const entry of composed.projects) {
+      if (entry.diagram) {
+        for (const node of entry.diagram.nodes) {
+          targets.push({
+            key: `element:${entry.model}:${node.id}`,
+            x: entry.content.x + node.x + node.width / 2,
+            y: entry.content.y + node.y + (node.expanded ? 28 : node.height / 2),
+            focus: () => {
+              const el = svg.querySelector<SVGGElement>(
+                `[data-project="${CSS.escape(entry.model)}"][data-local-id="${CSS.escape(node.id)}"]`
+              );
+              el?.focus({ preventScroll: true });
+              onselect({ kind: 'element', model: entry.model, element: node.id });
+            }
+          });
+        }
+      }
+      for (const port of entry.ports) {
+        targets.push({
+          key: `port:${entry.model}:${port.side}:${port.reveal.element}`,
+          x: port.point.x,
+          y: port.point.y,
+          focus: () => {
+            const el = svg.querySelector<SVGGElement>(
+              `[data-project-port="${CSS.escape(entry.model)}"][data-port-element="${CSS.escape(port.reveal.element)}"][data-port-side="${port.side}"]`
+            );
+            el?.focus({ preventScroll: true });
+          }
+        });
+      }
+    }
+    for (const bridge of composed.bridges) {
+      targets.push({
+        key: `bridge:${bridge.owner}:${bridge.id}`,
+        x: bridge.label.x,
+        y: bridge.label.y,
+        focus: () => {
+          const el = svg.querySelector<SVGGElement>(
+            `[data-connection-owner="${CSS.escape(bridge.owner)}"][data-connection-id="${CSS.escape(bridge.id)}"]`
+          );
+          el?.focus({ preventScroll: true });
+          onselect({ kind: 'connection', ownerModel: bridge.owner, connectionId: bridge.id });
+        }
+      });
+    }
+    return targets;
+  }
+
+  function activeNavKey(): string | null {
+    const el = document.activeElement;
+    if (!(el instanceof Element) || !svg.contains(el)) {
+      if (selection?.kind === 'element') return `element:${selection.model}:${selection.element}`;
+      if (selection?.kind === 'connection')
+        return `bridge:${selection.ownerModel}:${selection.connectionId}`;
+      return null;
+    }
+    const node = el.closest<HTMLElement>('[data-project][data-local-id]');
+    if (node)
+      return `element:${node.getAttribute('data-project')}:${node.getAttribute('data-local-id')}`;
+    const port = el.closest<HTMLElement>('[data-project-port][data-port-element]');
+    if (port)
+      return `port:${port.getAttribute('data-project-port')}:${port.getAttribute('data-port-side')}:${port.getAttribute('data-port-element')}`;
+    const bridge = el.closest<HTMLElement>('[data-connection-owner][data-connection-id]');
+    if (bridge)
+      return `bridge:${bridge.getAttribute('data-connection-owner')}:${bridge.getAttribute('data-connection-id')}`;
+    return null;
+  }
+
+  /** Spatial focus across frames, ports and bridges, using composed coordinates. */
+  export function navigate(direction: Direction) {
+    const targets = composedTargets();
+    if (!targets.length) return;
+    const currentKey = activeNavKey();
+    const start = targets.find((target) => target.key === currentKey);
+    if (!start) {
+      targets[0].focus();
+      return;
+    }
+    const origin = { x: start.x, y: start.y };
+    const ranked = targets
+      .filter((target) => target.key !== start.key)
+      .map((target) => {
+        const dx = target.x - origin.x;
+        const dy = target.y - origin.y;
+        const forward =
+          direction === 'right' ? dx : direction === 'left' ? -dx : direction === 'down' ? dy : -dy;
+        const cross = Math.abs(direction === 'left' || direction === 'right' ? dy : dx);
+        return { target, forward, cross };
+      })
+      .filter((candidate) => candidate.forward > 1);
+    if (!ranked.length) return;
+    ranked.sort(
+      (a, b) =>
+        a.forward + a.cross * 2 - (b.forward + b.cross * 2) ||
+        a.target.key.localeCompare(b.target.key)
+    );
+    ranked[0].target.focus();
   }
   /** Close an open project menu; returns whether one was open, so Escape can chain outward. */
   export function dismissMenu(): boolean {
@@ -212,6 +387,7 @@
     const target = event.target as Element;
     if (target.closest('[data-interactive="toggle"], [data-interactive="project-menu"]')) return;
     if (target.closest('[data-interactive="project-menu-item"]')) return;
+    if (target.closest('[data-interactive="port"]')) return;
     menuModel = null;
     moved = false;
     dragging = {
@@ -347,6 +523,7 @@
           project={entry}
           menuOpen={menuModel === entry.model}
           onmenu={(model) => (menuModel = menuModel === model ? null : model)}
+          onrevealport={(port) => onrevealport?.(port)}
         />
       {/each}
       {#each composed.bridges as bridge (`${bridge.owner}/${bridge.id}`)}
@@ -567,6 +744,23 @@
       style={`left:${menuPoint.x}px;top:${menuPoint.y}px`}
       data-interactive="project-menu-item"
     >
+      {#each menuScenes as scene (scene.id)}
+        <button
+          role="menuitemradio"
+          aria-checked={menuEntry?.scene === scene.id}
+          onclick={() => menuAction({ kind: 'scene', scene: scene.id })}>{scene.title}</button
+        >
+      {/each}
+      {#if menuFocusElement}
+        <button
+          role="menuitem"
+          onclick={() => menuAction({ kind: 'scope', element: menuFocusElement.id })}
+          >Focus {menuFocusElement.title}</button
+        >
+      {/if}
+      {#if menuEntry?.view.scope}
+        <button role="menuitem" onclick={() => menuAction({ kind: 'scope' })}>Clear focus</button>
+      {/if}
       {#if menuProject.mode === 'collapsed'}
         <button role="menuitem" onclick={() => menuAction('reopen')}>Reopen</button>
       {:else}
@@ -670,7 +864,8 @@
     border: 0;
     background: none;
     text-align: left;
-    padding: 8px 10px;
+    min-height: 44px;
+    padding: 10px 12px;
     border-radius: 7px;
     font-size: 12px;
     color: var(--ui-text, #283d34);
@@ -680,5 +875,8 @@
   .project-menu button:focus-visible {
     background: var(--ui-hover, #edf1ea);
     outline: none;
+  }
+  .project-menu button[aria-checked='true'] {
+    font-weight: 600;
   }
 </style>

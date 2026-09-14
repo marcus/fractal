@@ -9,6 +9,7 @@ export type CommandId =
   | 'toggle-sidebar'
   | 'toggle-flow'
   | 'open-linked'
+  | 'reload-sources'
   | 'toggle-presentation'
   | 'export'
   | 'copy-link'
@@ -86,6 +87,13 @@ export const SHORTCUTS = [
     label: 'Open linked diagram',
     group: 'Global',
     keys: ['mod+shift+l'],
+    contexts: ['studio']
+  },
+  {
+    id: 'reload-sources',
+    label: 'Reload changed sources',
+    group: 'View',
+    keys: ['mod+shift+r'],
     contexts: ['studio']
   },
   {
@@ -232,7 +240,8 @@ export function shortcutsForSurface(
           'next-scene',
           'activate',
           'info',
-          'open-linked'
+          'open-linked',
+          'reload-sources'
         ].includes(command.id)
     ).map((command) => ({
       ...command,
@@ -250,7 +259,10 @@ export function shortcutsForSurface(
   // Flow direction belongs to architecture placement; the sequence surface has no engine to swap.
   return SHORTCUTS.filter(
     (command) =>
-      command.id !== 'info' && command.id !== 'toggle-flow' && command.id !== 'open-linked'
+      command.id !== 'info' &&
+      command.id !== 'toggle-flow' &&
+      command.id !== 'open-linked' &&
+      command.id !== 'reload-sources'
   ).map((command) => ({
     ...command,
     label: labels[command.id] ?? command.label

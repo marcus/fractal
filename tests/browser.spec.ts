@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -2076,6 +2076,140 @@ test('a linked project opens beside its host with two frames and one bridge', as
       .poll(async () => (await titleAt(page, '[data-node-id="core"]')).y)
       .toBeCloseTo(before.y, 0);
     expect((await titleAt(page, '[data-node-id="core"]')).scale).toBeCloseTo(before.scale, 3);
+    expect(errors).toEqual([]);
+  } finally {
+    server.kill('SIGTERM');
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a linked three-project composition restores permalinks, ports, search and revision reload', async ({
+  page
+}) => {
+  test.setTimeout(120000);
+  const root = await mkdtemp(join(tmpdir(), 'fractal-linked3-'));
+  await cp(join('tests', 'fixtures', 'linked-projects', 'host'), join(root, 'host'), {
+    recursive: true
+  });
+  await cp(join('tests', 'fixtures', 'linked-projects', 'plugin'), join(root, 'plugin'), {
+    recursive: true
+  });
+  await cp(join('tests', 'fixtures', 'linked-projects', 'third'), join(root, 'third'), {
+    recursive: true
+  });
+  const hostLinksPath = join(root, 'host', 'links.json');
+  const hostLinks = JSON.parse(await readFile(hostLinksPath, 'utf8')) as {
+    links: {
+      id: string;
+      from?: string;
+      target: { model: string; scene?: string };
+      title: string;
+    }[];
+  };
+  hostLinks.links.push({
+    id: 'third',
+    from: 'cli',
+    target: { model: 'third', scene: 'overview' },
+    title: 'Relay architecture'
+  });
+  await writeFile(hostLinksPath, JSON.stringify(hostLinks, null, 2));
+  await mkdir('artifacts/linked-project-phase2', { recursive: true });
+  const port = await freePort();
+  const server = spawn(
+    'npx',
+    ['vite', 'dev', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        FRACTAL_CATALOG: '',
+        FRACTAL_MODELS_DIR: root,
+        HOST: '127.0.0.1',
+        PORT: String(port)
+      },
+      stdio: ['ignore', 'ignore', 'ignore']
+    }
+  );
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    await waitForServer(`${base}/api/models`);
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${base}/?model=host&scene=overview`);
+    await ready(page);
+
+    await page.locator('[data-node-id="core"]').click();
+    await page.getByRole('button', { name: 'Plugin adapter', exact: true }).click();
+    await ready(page);
+    await page.locator('[data-open-link="plugin"]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-project-frame]')).toHaveCount(2);
+
+    await page.locator('[data-node-id="host:cli"]').click();
+    await expect(page.locator('[data-open-link="third"]')).toBeVisible();
+    await page.locator('[data-open-link="third"]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-project-frame]')).toHaveCount(3);
+    await expect(page.locator('[data-project-frame="host"]')).toBeVisible();
+    await expect(page.locator('[data-project-frame="plugin"]')).toBeVisible();
+    await expect(page.locator('[data-project-frame="third"]')).toBeVisible();
+    await page.locator('.composition-canvas svg').focus();
+    await page.keyboard.press('0');
+    await expect
+      .poll(async () => {
+        const area = (await page.locator('.diagram-area').boundingBox())!;
+        const frame = (await page.locator('[data-project-frame="third"]').boundingBox())!;
+        return (
+          frame.x >= area.x - 1 &&
+          frame.y >= area.y - 1 &&
+          frame.x + frame.width <= area.x + area.width + 1 &&
+          frame.y + frame.height <= area.y + area.height + 1
+        );
+      })
+      .toBe(true);
+    await page.screenshot({ path: 'artifacts/linked-project-phase2/three-frames.png' });
+
+    // Diamond reuse: opening plugin again from the third project does not add a fourth frame.
+    await page.locator('[data-node-id="third:core"]').click({ force: true });
+    await expect(page.getByRole('region', { name: 'Linked diagrams' })).toBeVisible();
+    await page.locator('[data-open-link="plugin"]').click();
+    await expect(page.locator('[data-project-frame]')).toHaveCount(3);
+
+    // Scope the plugin so its bridge endpoint sits outside the view: a perimeter port appears.
+    await page.locator('[data-node-id="plugin:store"]').click({ force: true });
+    await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
+    await page.getByRole('menuitem', { name: 'Focus Plugin records' }).click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-project-port="plugin"]')).toBeVisible();
+    await page.screenshot({ path: 'artifacts/linked-project-phase2/port.png' });
+
+    const permalink = page.url();
+    expect(permalink).toContain('composition=');
+    await page.reload();
+    await expect(page.locator('[data-project-frame]')).toHaveCount(3);
+    await expect(page.locator('[data-project-port="plugin"]')).toBeVisible();
+
+    await page.keyboard.press('Meta+k');
+    await expect(page.getByRole('dialog', { name: 'Jump to' })).toBeVisible();
+    await page.getByRole('combobox').fill('Plugin CLI');
+    await page.locator('[data-jump-model="plugin"][data-jump-kind="element"]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-node-id="plugin:cli"]')).toBeVisible();
+
+    const fractalPath = join(root, 'host', 'fractal.json');
+    const fractal = JSON.parse(await readFile(fractalPath, 'utf8')) as { description: string };
+    fractal.description = `${fractal.description} (edited for revision reload)`;
+    await writeFile(fractalPath, `${JSON.stringify(fractal, null, 2)}\n`);
+    await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
+    await page.getByRole('menuitem', { name: 'Collapse' }).click();
+    await expect(page.locator('[data-revision-banner="revision_changed"]')).toBeVisible();
+    await expect(page.locator('[data-revision-banner]')).toContainText('Sources changed');
+    await expect(page.locator('[data-revision-banner]')).toContainText('host');
+    await page.screenshot({ path: 'artifacts/linked-project-phase2/revision-banner.png' });
+    await page.locator('[data-reload-sources]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-revision-banner]')).toHaveCount(0);
+    await expect(page.locator('[data-project-frame]')).toHaveCount(3);
     expect(errors).toEqual([]);
   } finally {
     server.kill('SIGTERM');

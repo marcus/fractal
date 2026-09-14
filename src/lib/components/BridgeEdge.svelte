@@ -29,7 +29,8 @@
   data-connection-id={bridge.id}
   role="button"
   tabindex="0"
-  aria-label={`${bridge.title}: ${bridge.source.model}/${bridge.source.element} to ${bridge.target.model}/${bridge.target.element}`}
+  data-bridge-count={bridge.count}
+  aria-label={`${bridge.title}${bridge.count > 1 ? ` ×${bridge.count}` : ''}: ${bridge.source.model}/${bridge.source.element} to ${bridge.target.model}/${bridge.target.element}`}
   onclick={() => onselect(bridge)}
   onkeydown={(event) => {
     if (event.key === 'Enter' || event.key === ' ') {
