@@ -1,8 +1,21 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { decodeCompositionState } from '../composition/codec';
 import { compose } from '../composition/compose';
 import { inspectQualified, type QualifiedInspection } from '../composition/inspect';
+import {
+  checkAdmission,
+  DEFAULT_COMPOSITION_LIMITS,
+  estimateBytes,
+  type CompositionCounts
+} from '../composition/limits';
 import { parseCompositionState } from '../composition/parse';
+import {
+  revisionConflicts,
+  type CompositionGeneration,
+  type RevisionVector
+} from '../composition/revision';
+import { searchComposition, type CompositionSearchResult } from '../composition/search';
 import type { ProjectSnapshot, ResolutionOutcome, SnapshotResolver } from '../composition/snapshot';
 import { rootState, stateFromComposition } from '../composition/state';
 import type {
@@ -12,10 +25,10 @@ import type {
   ProjectLinks,
   QualifiedSelection
 } from '../composition/types';
-import type { LayoutEngineId, Model, Status, ThemeId } from '../core/types';
-import { searchModel } from '../core/search';
+import type { LayoutEngineId, Model, ThemeId } from '../core/types';
 import { createCache } from './cache';
 import {
+  catalogReloader,
   catalogResolver,
   loadModel,
   resolveProject,
@@ -38,6 +51,75 @@ export class CompositionUsageError extends Error {
     super(message);
     this.name = 'CompositionUsageError';
   }
+}
+
+/**
+ * A participating source changed under the caller's coherent view: the loaded revision
+ * differs from the vector the caller composed against. Routes translate it to HTTP 409;
+ * the caller reloads and retries with the fresh vector.
+ */
+export class RevisionConflictError extends Error {
+  readonly code = 'revision_changed' as const;
+  readonly recovery = 'reload' as const;
+  readonly model: string;
+  readonly expected: string;
+  readonly actual: string;
+  constructor(model: string, expected: string, actual: string) {
+    super(`${model} changed on disk. Reload the composition before continuing.`);
+    this.name = 'RevisionConflictError';
+    this.model = model;
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
+/**
+ * The composition exceeds its admission limits. The result is refused whole — never
+ * truncated — so the caller collapses, focuses or narrows the composition and retries.
+ * Routes translate it to HTTP 422; the CLI exits nonzero.
+ */
+export class BudgetExceededError extends Error {
+  readonly code = 'budget_exceeded' as const;
+  readonly diagnostics: CompositionDiagnostic[];
+  constructor(diagnostics: CompositionDiagnostic[]) {
+    super(diagnostics[0]?.message ?? 'The composition exceeds its resource budget.');
+    this.name = 'BudgetExceededError';
+    this.diagnostics = diagnostics;
+  }
+}
+
+/**
+ * Per-request composition options. Limit overrides live here (service configuration only);
+ * untrusted callers pass revisions and generations, never limits.
+ */
+export interface CompositionRequest extends CatalogOptions {
+  /**
+   * The revision vector the caller composed against. Every participating model present in
+   * both vectors must match; the first mismatch (in model order) throws
+   * `RevisionConflictError`. Models the loader never resolved cannot conflict.
+   */
+  revisions?: RevisionVector;
+  /**
+   * Client-owned monotonic generation, echoed verbatim in the result. Cancelled or older
+   * generations never replace newer state: slow responses carry their generation and the
+   * caller discards any response older than its latest dispatch.
+   */
+  generation?: CompositionGeneration;
+  /**
+   * Reload every participating snapshot fresh with stamp verification (one retry, then
+   * `SourceChangingError`) instead of trusting the parse cache.
+   */
+  reload?: boolean;
+}
+
+/**
+ * Accept an explicit composition state as a decoded object or as a versioned encoded
+ * `v1.` permalink value. Anything else is parsed as resolved state; malformed input is
+ * never partially applied.
+ */
+export function resolveCompositionStateInput(value: unknown): CompositionState {
+  if (typeof value === 'string' && value.startsWith('v1.')) return decodeCompositionState(value);
+  return parseCompositionState(value);
 }
 
 /** The traversal budget for strict linked validation, in distinct models. */
@@ -75,7 +157,10 @@ export interface CompositionSelector {
   composition?: string;
   /** Path to an explicit resolved state file; read by this boundary, never by a route. */
   stateFile?: string;
-  /** Decoded explicit resolved state; mutually exclusive with `composition`. */
+  /**
+   * Explicit resolved state: a decoded object or a versioned encoded `v1.` permalink
+   * value. Mutually exclusive with `composition`.
+   */
   state?: unknown;
   scene?: string;
   theme?: ThemeId;
@@ -86,19 +171,12 @@ export interface CompositionResult {
   state: CompositionState;
   composed: ComposedDiagram;
   revisions: Record<string, string>;
-}
-
-export interface QualifiedSearchResult {
-  model: string;
-  source: 'model' | 'link';
-  type: 'element' | 'relationship' | 'scene' | 'link';
-  id: string;
-  title: string;
-  description: string;
-  status?: Status;
-  /** For a link metadata result, the model that authored the link. */
-  owner?: string;
-  target?: { model: string; scene?: string };
+  /**
+   * The caller's generation echoed verbatim, present only when the request carried one.
+   * It is never part of the cache key: the same content serves every generation, and the
+   * caller discards responses older than its latest dispatch.
+   */
+  generation?: CompositionGeneration;
 }
 
 const COMPOSITION_CACHE_LIMIT = 64;
@@ -333,10 +411,14 @@ function declaredTargets(owner: ProjectSnapshot): DeclaredTarget[] {
 }
 
 /**
- * Strict linked validation: local syntax, `from` and local endpoints, then the declared link
- * closure resolved with a visited set. A target's own links are followed only once it resolves.
- * Unresolved claims are diagnostics, never throws; only an unknown root or a malformed root model
- * fails the call. Exceeding the model traversal budget adds one `budget_exceeded` diagnostic.
+ * Strict linked validation: resolve the declared link closure with a visited set first (a
+ * target's own links are followed only once it resolves), then validate every participating
+ * owner's connections against every resolved endpoint model. Checking endpoints only after
+ * the closure is complete keeps validation symmetric: a claim the traversal reaches late
+ * is judged against the same snapshots as one reached early, regardless of visit order.
+ * Unresolved claims are diagnostics, never throws; only an unknown root or a malformed
+ * root model fails the call. Exceeding the model traversal budget adds one
+ * `budget_exceeded` diagnostic.
  */
 export async function validateLinkedSnapshot(
   root: ProjectSnapshot,
@@ -354,7 +436,6 @@ export async function validateLinkedSnapshot(
 
   while (queue.length) {
     const owner = queue.shift()!;
-    diagnostics.push(...localDiagnostics(owner, snapshots));
     for (const ref of declaredTargets(owner)) {
       if (snapshots.has(ref.model)) continue;
       let outcome = outcomes.get(ref.model);
@@ -398,6 +479,8 @@ export async function validateLinkedSnapshot(
     }
   }
 
+  for (const owner of snapshots.values()) diagnostics.push(...localDiagnostics(owner, snapshots));
+
   diagnostics.sort(
     (a, b) => compare(a.ownerModel, b.ownerModel) || compare(a.path ?? '', b.path ?? '')
   );
@@ -411,8 +494,11 @@ export async function validateLinked(
   return validateLinkedSnapshot(snapshotOf(await loadModel(model, options)), options);
 }
 
-async function loadRootSnapshot(model: string, options: CatalogOptions): Promise<ProjectSnapshot> {
-  const outcome = await catalogResolver(options).resolve(model);
+async function loadRootSnapshot(
+  model: string,
+  resolver: SnapshotResolver
+): Promise<ProjectSnapshot> {
+  const outcome = await resolver.resolve(model);
   if (outcome.status !== 'resolved') throw new CompositionUsageError(outcome.message);
   return outcome.snapshot;
 }
@@ -434,12 +520,70 @@ function replayResolver(outcomes: Map<string, ResolutionOutcome>): SnapshotResol
 async function resolveAdditional(
   outcomes: Map<string, ResolutionOutcome>,
   models: string[],
-  options: CatalogOptions
+  resolver: SnapshotResolver
 ): Promise<void> {
-  const resolver = catalogResolver(options);
   for (const model of models) {
     if (!outcomes.has(model)) outcomes.set(model, await resolver.resolve(model));
   }
+}
+
+/**
+ * Admission counts for a composed result. Loaded counts cover every resolved snapshot;
+ * visible counts cover open (laid-out) projects only — collapsed projects keep no diagram.
+ * Source and cache bytes are deterministic serialization-size approximations, not heap
+ * measurements. An over-limit composition is refused whole, never truncated.
+ */
+function admissionCounts(
+  state: CompositionState,
+  outcomes: Map<string, ResolutionOutcome>,
+  composed: ComposedDiagram
+): CompositionCounts {
+  let loadedElements = 0;
+  let relationships = 0;
+  let sourceBytesPerProject = 0;
+  let snapshotBytes = 0;
+  for (const outcome of outcomes.values()) {
+    if (outcome.status !== 'resolved') continue;
+    const snapshot = outcome.snapshot;
+    loadedElements += snapshot.model.elements.length;
+    relationships += snapshot.model.relationships.length;
+    const bytes = estimateBytes(snapshot);
+    snapshotBytes += bytes;
+    if (bytes > sourceBytesPerProject) sourceBytesPerProject = bytes;
+  }
+  let visibleNodes = 0;
+  let visibleEdges = 0;
+  for (const project of composed.projects) {
+    if (!project.diagram) continue;
+    visibleNodes += project.diagram.nodes.length;
+    visibleEdges += project.diagram.edges.length;
+  }
+  return {
+    projects: state.projects.length,
+    loadedElements,
+    relationships,
+    visibleNodes,
+    visibleEdges,
+    sourceBytesPerProject,
+    cacheBytes: estimateBytes(composed) + snapshotBytes
+  };
+}
+
+function checkGeneration(
+  generation: unknown
+): asserts generation is CompositionGeneration | undefined {
+  if (generation === undefined) return;
+  if (typeof generation !== 'number' || !Number.isInteger(generation) || generation < 0)
+    throw new CompositionUsageError('generation must be a nonnegative integer');
+}
+
+function checkRevisionVector(revisions: unknown): asserts revisions is RevisionVector | undefined {
+  if (revisions === undefined) return;
+  if (typeof revisions !== 'object' || revisions === null || Array.isArray(revisions))
+    throw new CompositionUsageError('revisions must be an object');
+  for (const revision of Object.values(revisions as Record<string, unknown>))
+    if (typeof revision !== 'string')
+      throw new CompositionUsageError('revisions values must be strings');
 }
 
 function revisionVector(
@@ -459,11 +603,19 @@ function revisionVector(
  * and cache by canonical state plus the participating revision vector. `--composition` and an
  * explicit state are mutually exclusive. `root` may be a model ID or an already-loaded snapshot
  * so the CLI's explicit `--directory` entry point shares the same catalog-backed resolution.
+ *
+ * `options.revisions` carries the vector the caller composed against: a participating source
+ * whose loaded revision differs throws `RevisionConflictError` before any geometry is reused.
+ * `options.generation` is echoed verbatim so callers discard superseded responses.
+ * `options.reload` parses every participating snapshot fresh with stamp verification instead
+ * of trusting the parse cache. Admission limits (`options.limits`, service configuration
+ * only) are checked on loaded and visible counts before returning; an over-limit
+ * composition throws `BudgetExceededError` whole and is never cached or truncated.
  */
 export async function composeFromSelector(
   root: string | ProjectSnapshot,
   selector: CompositionSelector,
-  options: CatalogOptions = {}
+  options: CompositionRequest = {}
 ): Promise<CompositionResult> {
   const explicitState = selector.state !== undefined || selector.stateFile !== undefined;
   if (selector.composition !== undefined && explicitState)
@@ -472,8 +624,12 @@ export async function composeFromSelector(
     );
   if (selector.state !== undefined && selector.stateFile !== undefined)
     throw new CompositionUsageError('composition state and state file are mutually exclusive');
+  checkRevisionVector(options.revisions);
+  checkGeneration(options.generation);
 
-  const rootSnapshot = typeof root === 'string' ? await loadRootSnapshot(root, options) : root;
+  // Reloads resolve through stamp-verified fresh parses; ordinary renders use the cache.
+  const loader = options.reload === true ? catalogReloader(options) : catalogResolver(options);
+  const rootSnapshot = typeof root === 'string' ? await loadRootSnapshot(root, loader) : root;
   const outcomes = new Map<string, ResolutionOutcome>([
     [rootSnapshot.id, { status: 'resolved', snapshot: rootSnapshot }]
   ]);
@@ -488,7 +644,7 @@ export async function composeFromSelector(
     await resolveAdditional(
       outcomes,
       composition.projects.map((project) => project.model),
-      options
+      loader
     );
     state = stateFromComposition(rootSnapshot, selector.composition, (model) => {
       const outcome = outcomes.get(model);
@@ -499,7 +655,7 @@ export async function composeFromSelector(
       selector.stateFile !== undefined
         ? JSON.parse(await readFile(resolve(selector.stateFile), 'utf8'))
         : selector.state;
-    state = parseCompositionState(raw);
+    state = resolveCompositionStateInput(raw);
     if (state.root !== rootSnapshot.id)
       throw new CompositionUsageError(
         `Composition state root ${state.root} does not match the resolved root ${rootSnapshot.id}`
@@ -515,17 +671,46 @@ export async function composeFromSelector(
   await resolveAdditional(
     outcomes,
     state.projects.map((project) => project.model),
-    options
+    loader
   );
+  // Only successfully validated snapshots contribute revisions: an unopened target adds its
+  // revision after validation, and a model the loader never resolved has no revision here.
   const revisions = revisionVector(state, outcomes);
+  if (options.revisions !== undefined) {
+    const [conflict] = revisionConflicts(options.revisions, revisions);
+    if (conflict)
+      throw new RevisionConflictError(conflict.model, conflict.expected, conflict.actual);
+  }
+  const withGeneration = (result: CompositionResult): CompositionResult =>
+    options.generation === undefined ? result : { ...result, generation: options.generation };
   const key = compositionKey(state, revisions);
   const cached = composedCache.get(key);
-  if (cached) return structuredClone(cached);
+  if (cached) return withGeneration(structuredClone(cached));
 
   const composed = await compose(replayResolver(outcomes), state);
+  const over = checkAdmission(
+    admissionCounts(state, outcomes, composed),
+    options.limits ?? DEFAULT_COMPOSITION_LIMITS,
+    state.root
+  );
+  if (over.length > 0) throw new BudgetExceededError(over);
   const result: CompositionResult = { state, composed, revisions };
   composedCache.set(key, structuredClone(result));
-  return result;
+  return withGeneration(result);
+}
+
+/**
+ * Reload a composition against current sources: every participating snapshot is parsed
+ * fresh with stamp verification (one retry, then `SourceChangingError`) and the composed
+ * cache is bypassed by the fresh revision vector. The response carries the new vector;
+ * callers adopt it for subsequent revision checks.
+ */
+export async function reloadComposition(
+  root: string | ProjectSnapshot,
+  selector: CompositionSelector,
+  options: CompositionRequest = {}
+): Promise<CompositionResult> {
+  return composeFromSelector(root, selector, { ...options, reload: true });
 }
 
 /** Forget every composed result. Tests use this to start from a cold cache. */
@@ -559,66 +744,27 @@ export async function inspectInComposition(
   root: string | ProjectSnapshot,
   selector: CompositionSelector,
   selection: QualifiedSelection,
-  options: CatalogOptions = {}
+  options: CompositionRequest = {}
 ): Promise<QualifiedInspection> {
   const { state, composed } = await composeFromSelector(root, selector, options);
   return inspectQualified(composed, await participatingSnapshots(root, state, options), selection);
 }
 
-function matchesLink(
-  link: { id: string; title: string; target: { model: string } },
-  query: string
-): boolean {
-  const needle = query.trim().toLocaleLowerCase();
-  if (!needle) return true;
-  return [link.id, link.title, link.target.model].some((value) =>
-    value.toLocaleLowerCase().includes(needle)
-  );
-}
-
 /**
- * Search every participating project and qualify each hit with its model. Unopened link targets
- * are never searched; their authored link titles appear as link metadata results instead.
- * Ordering is deterministic: projects in state order, model hits in search order, then links.
+ * Search a composition through the shared core scorer. Only participating projects are
+ * searched, and only through already-loaded snapshots: an unopened link's target is never
+ * loaded to answer a query — the authored link title, ID and target model appear as a
+ * `link` result instead. Every hit carries the qualified selection an inspector consumes
+ * and a reveal hint that mounts the hit before restoring focus.
  */
 export async function searchInComposition(
   root: string | ProjectSnapshot,
   selector: CompositionSelector,
   query: string,
-  options: CatalogOptions = {}
-): Promise<QualifiedSearchResult[]> {
-  const { state, composed } = await composeFromSelector(root, selector, options);
-  const participating = new Set(state.projects.map((project) => project.model));
-  const snapshots = await participatingSnapshots(root, state, options);
-  const results: QualifiedSearchResult[] = [];
-  for (const project of state.projects) {
-    const snapshot = snapshots.get(project.model);
-    if (!snapshot) continue;
-    for (const entry of searchModel(snapshot.model, query))
-      results.push({ model: project.model, source: 'model', ...entry });
-  }
-  for (const project of state.projects) {
-    const snapshot = snapshots.get(project.model);
-    if (!snapshot?.links) continue;
-    for (const link of snapshot.links.links) {
-      if (participating.has(link.target.model)) continue;
-      if (!matchesLink(link, query)) continue;
-      results.push({
-        model: link.target.model,
-        source: 'link',
-        type: 'link',
-        id: link.id,
-        title: link.title,
-        description: `${project.model} → ${link.target.model}`,
-        owner: project.model,
-        target: {
-          model: link.target.model,
-          ...(link.target.scene === undefined ? {} : { scene: link.target.scene })
-        }
-      });
-    }
-  }
-  return results;
+  options: CompositionRequest = {}
+): Promise<CompositionSearchResult[]> {
+  const { state } = await composeFromSelector(root, selector, options);
+  return searchComposition(await participatingSnapshots(root, state, options), state, query);
 }
 
 /** The `project` command's composition view: everything except per-project diagram geometry. */

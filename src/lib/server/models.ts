@@ -6,6 +6,7 @@ import { parseModelWithOrigins } from '../adapters/likec4';
 import { parseSequences } from '../sequence/parse';
 import { parseCatalog, type CatalogEntry, type ProjectSummary } from '../core/catalog';
 import type { Model } from '../core/types';
+import type { CompositionLimits } from '../composition/limits';
 import { CompositionContractError, parseLinks } from '../composition/parse';
 import type { ProjectSnapshot, SnapshotResolver } from '../composition/snapshot';
 import type { IdentityOrigins, ProjectLinks } from '../composition/types';
@@ -16,6 +17,11 @@ export interface CatalogOptions {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   home?: string;
+  /**
+   * Admission-limit overrides for linked composition. Only service configuration may set
+   * this; untrusted input (URLs, saved state, HTTP bodies) can never raise a limit.
+   */
+  limits?: CompositionLimits;
 }
 
 export interface ResolvedCatalog {
@@ -247,6 +253,52 @@ export function clearModelCache(): void {
   parsedModels.clear();
 }
 
+/**
+ * A reload that collided with a concurrent write: the directory stamps taken before and
+ * after the read disagree, even after one retry. The load did not complete and retrying is
+ * safe; the caller reports `source_changing` with recovery `retry` instead of mixing states.
+ */
+export class SourceChangingError extends Error {
+  readonly code = 'source_changing';
+  readonly recovery = 'retry';
+  readonly directory: string;
+  constructor(directory: string) {
+    super(`Model source ${directory} is changing on disk. Retry the load.`);
+    this.name = 'SourceChangingError';
+    this.directory = directory;
+  }
+}
+
+type ParsedDirectory = Awaited<ReturnType<typeof parseDirectory>>;
+
+/**
+ * Reload one model directory with stamp verification: the stamps taken before and after the
+ * read must agree, or the read raced a concurrent write. A mismatch retries once from a
+ * fresh stamp; a second mismatch throws `SourceChangingError` instead of returning a model
+ * mixed from two states. The read always parses fresh — the stamp cache is only written,
+ * never trusted — so a reload observes the latest committed write.
+ */
+export async function reloadDirectory(
+  directory: string,
+  io: {
+    stamp?: () => Promise<string>;
+    read?: () => Promise<ParsedDirectory>;
+  } = {}
+): Promise<ParsedDirectory> {
+  const stamp = io.stamp ?? (() => directoryStamp(directory));
+  const read = io.read ?? (() => parseDirectory(directory));
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const before = await stamp();
+    const parsed = await read();
+    const after = await stamp();
+    if (before === after) {
+      parsedModels.set(`${directory}\0${after}`, Promise.resolve(parsed));
+      return parsed;
+    }
+  }
+  throw new SourceChangingError(directory);
+}
+
 /** Parses skipped and parses performed since the last clear. A test seam, not a metric. */
 export function modelCacheStats(): { hits: number; misses: number; size: number } {
   return { ...parsedModels.stats, size: parsedModels.size };
@@ -301,6 +353,35 @@ export function catalogResolver(options: CatalogOptions = {}): SnapshotResolver 
           return { status: 'invalid', code: 'unsupported_version', message: error.message };
         return { status: 'invalid', code: 'model_invalid', message: (error as Error).message };
       }
+    }
+  };
+}
+
+/**
+ * A resolver over the configured catalog that reloads every entry: each snapshot is parsed
+ * fresh with stamp verification (one retry, then `SourceChangingError`) instead of trusting
+ * the stamp cache. Explicit reloads — not ordinary renders — use this, so steady-state reads
+ * stay cheap while a reload observes the latest committed write.
+ */
+export function catalogReloader(options: CatalogOptions = {}): SnapshotResolver {
+  return {
+    async resolve(model) {
+      if (!catalogSlug.test(model))
+        return {
+          status: 'unavailable',
+          code: 'model_unavailable',
+          message: `Model ${model} is not a valid catalog identifier.`
+        };
+      let entry: CatalogEntry;
+      try {
+        entry = (await resolveProject(model, options)).entry;
+      } catch (error) {
+        const message = (error as Error).message;
+        if (message.startsWith('Unknown model:') || message.startsWith('Model directory missing:'))
+          return { status: 'unavailable', code: 'model_unavailable', message };
+        return { status: 'invalid', code: 'model_invalid', message };
+      }
+      return { status: 'resolved', snapshot: snapshotOf(await reloadDirectory(entry.directory)) };
     }
   };
 }
