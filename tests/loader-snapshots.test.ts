@@ -121,6 +121,30 @@ test('validateCatalog reports both failures instead of throwing', async () => {
   }
 });
 
+test('an existing directory without a companion is invalid, never missing', async () => {
+  const { root, models, options } = await fixture();
+  clearModelCache();
+  try {
+    await mkdir(join(models, 'no-companion'));
+    const catalog = await json(options.catalog);
+    catalog.projects.push({ id: 'no-companion', directory: join(models, 'no-companion') });
+    await writeFile(options.catalog, JSON.stringify(catalog));
+
+    const [project] = (await listProjects(options)).filter((entry) => entry.id === 'no-companion');
+    assert.equal(project.title, 'no-companion');
+    assert.match(project.diagnostic ?? '', /is invalid:/);
+    assert.doesNotMatch(project.diagnostic ?? '', /Model directory missing/);
+
+    const [validation] = (await validateCatalog(options)).projects.filter(
+      (entry) => entry.id === 'no-companion'
+    );
+    assert.match(validation.error ?? '', /is invalid:/);
+    assert.doesNotMatch(validation.error ?? '', /Model directory missing/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('loadModel folds links.json into the revision and drops it honestly', async () => {
   const { root, models, options } = await fixture();
   clearModelCache();

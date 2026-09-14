@@ -374,8 +374,10 @@ server at all.
   ELK adapter factory, `ViewState.layout`, `--layout`, `engines`, contract tests; fingerprints
   and export bytes identical to the pre-seam baseline.
 - 2026-09-11: Step 1 landed (td-45b8a9): `bin/fractal bench`, `npm run bench:browser`, and the
-  baseline table. Step 2 landed (td-5ca34f): parsed-model cache, layout-result cache, warm-up on
-  server start, a delayed "Composing view" badge, and a parallel model request on page open.
+  baseline table. Step 2 landed (td-5ca34f): parsed-model cache, layout-result cache, a delayed
+  "Composing view" badge, and a parallel model request on page open.
+- 2026-09-13: Removed the server-start catalog warm-up (td-4bfcce). Catalog listing no longer
+  compiles models, so the hook was deleted; a targeted model parses on first use.
 - 2026-09-11: Step 4 landed (td-1ff679): the ELK engine takes its ELK instance, and the portable
   document runs elkjs's worker from an inlined blob URL instead of the bundled main-thread build.
   On td, long tasks in the reader went from 106 ms on page open, 128 ms on expand and 51 ms on

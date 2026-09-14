@@ -318,13 +318,35 @@ export async function loadModel(id: string, options: CatalogOptions = {}) {
  * Lightweight picker summaries: read companion metadata only, never compile a model. A broken
  * entry keeps its ID as a title and carries a diagnostic instead of taking the list down.
  */
+/** A picker row for an entry that cannot be listed as a healthy project. */
+function unhealthyProject(entry: CatalogEntry, diagnostic: string): CatalogProject {
+  return {
+    id: entry.id,
+    title: entry.id,
+    description: '',
+    directory: entry.directory,
+    diagnostic
+  };
+}
+
 async function projectSummary(
   catalog: ResolvedCatalog,
   entry: CatalogEntry
 ): Promise<CatalogProject> {
   try {
-    const info = await stat(entry.directory);
-    if (!info.isDirectory()) throw new Error(`${entry.directory} is not a directory`);
+    if (!(await stat(entry.directory)).isDirectory())
+      return unhealthyProject(entry, `Model directory missing: ${entry.directory}`);
+  } catch (error) {
+    const failure = error as NodeJS.ErrnoException;
+    // Only a directory that cannot be stat'd is missing; a missing companion is an invalid entry.
+    if (failure.code === 'ENOENT')
+      return unhealthyProject(entry, `Model directory missing: ${entry.directory}`);
+    return unhealthyProject(
+      entry,
+      `Catalog ${catalog.path} project ${entry.id} (${entry.directory}) is invalid: ${failure.message}`
+    );
+  }
+  try {
     const companion = JSON.parse(await readFile(join(entry.directory, 'fractal.json'), 'utf8')) as {
       id?: unknown;
       title?: unknown;
@@ -345,17 +367,10 @@ async function projectSummary(
       directory: entry.directory
     };
   } catch (error) {
-    const failure = error as NodeJS.ErrnoException;
-    return {
-      id: entry.id,
-      title: entry.id,
-      description: '',
-      directory: entry.directory,
-      diagnostic:
-        failure.code === 'ENOENT'
-          ? `Model directory missing: ${entry.directory}`
-          : `Catalog ${catalog.path} project ${entry.id} (${entry.directory}) is invalid: ${failure.message}`
-    };
+    return unhealthyProject(
+      entry,
+      `Catalog ${catalog.path} project ${entry.id} (${entry.directory}) is invalid: ${(error as Error).message}`
+    );
   }
 }
 
