@@ -6,11 +6,11 @@ import { parseModelWithOrigins } from '../adapters/likec4';
 import { parseSequences } from '../sequence/parse';
 import { parseCatalog, type CatalogEntry, type ProjectSummary } from '../core/catalog';
 import type { Model } from '../core/types';
-import type { CompositionLimits } from '../composition/limits';
+import { estimateBytes, type CompositionLimits } from '../composition/limits';
 import { CompositionContractError, parseLinks } from '../composition/parse';
 import type { ProjectSnapshot, SnapshotResolver } from '../composition/snapshot';
 import type { IdentityOrigins, ProjectLinks } from '../composition/types';
-import { createCache } from './cache';
+import { createCache, serverCachePool, type CacheSnapshot } from './cache';
 
 export interface CatalogOptions {
   catalog?: string;
@@ -200,7 +200,40 @@ async function parseDirectory(directory: string) {
  */
 const MODEL_FILES = ['model.c4', 'fractal.json', 'sequences.json', 'links.json'] as const;
 const MODEL_CACHE_LIMIT = 64;
-const parsedModels = createCache<ReturnType<typeof parseDirectory>>(MODEL_CACHE_LIMIT);
+/**
+ * Parsed models, bounded by entries and estimated bytes. A stored promise carries a nominal
+ * in-flight estimate until it settles, when the snapshot's serialized size replaces it; the
+ * pool evicts composed results and layouts before these parses. Entries are tagged with
+ * their directory and model ID so one project's edit invalidates exactly its dependents.
+ */
+const parsedModels = createCache<ReturnType<typeof parseDirectory>>(MODEL_CACHE_LIMIT, {
+  maxBytes: 64 * 1024 * 1024,
+  settleSizeOf: (parsed) => estimateBytes(snapshotOf(parsed)),
+  inFlightBytes: 64 * 1024,
+  pool: serverCachePool,
+  priority: 2
+});
+
+/**
+ * Invalidation aids, not cached content: the last model ID and every stamp parsed from
+ * each directory. A stamp never seen for a known directory means the source changed, and
+ * only then are dependents dropped — a first sight (or a second directory holding an
+ * identical copy) invalidates nothing, so entries that are still valid are never evicted.
+ * These survive `clearModelCache` on purpose: forgetting them would serve stale layouts
+ * after an edit followed by a model-cache clear.
+ */
+const directoryModels = new Map<string, string>();
+const directoryStamps = new Map<string, Set<string>>();
+
+/**
+ * Drop every parsed model, layout and composed result tagged with this project. Returns the
+ * entries removed. Editing one target's source calls this (through the fresh-parse path
+ * below) so unrelated projects' layout entries survive.
+ */
+export function invalidateProject(model: string, directory?: string): number {
+  const tags = directory === undefined || directory === model ? [model] : [model, directory];
+  return serverCachePool.invalidateTags(tags);
+}
 
 /**
  * Size and modification time of every file a model is parsed from. Any change — an edit, a
@@ -239,9 +272,26 @@ export async function loadDirectory(directory: string) {
   const cached = parsedModels.get(key);
   if (cached) return cached;
   const pending = parseDirectory(directory);
+  // Stored untagged until the parse settles: the invalidation below must not remove the entry
+  // it just created, while every older entry for this directory is already tagged.
   parsedModels.set(key, pending);
   try {
-    return await pending;
+    const parsed = await pending;
+    // A stamp never seen for a known directory means the source changed: drop this
+    // project's stale parses, layouts and composed results, while unrelated projects
+    // survive. A first sight invalidates nothing.
+    const seen = directoryStamps.get(directory);
+    if (seen !== undefined && !seen.has(stamp)) {
+      invalidateProject(parsed.model.id, directory);
+      const previous = directoryModels.get(directory);
+      if (previous !== undefined && previous !== parsed.model.id)
+        serverCachePool.invalidateTags([previous]);
+    }
+    if (seen) seen.add(stamp);
+    else directoryStamps.set(directory, new Set([stamp]));
+    directoryModels.set(directory, parsed.model.id);
+    parsedModels.tag(key, [directory, parsed.model.id]);
+    return parsed;
   } catch (error) {
     parsedModels.delete(key);
     throw error;
@@ -292,16 +342,32 @@ export async function reloadDirectory(
     const parsed = await read();
     const after = await stamp();
     if (before === after) {
-      parsedModels.set(`${directory}\0${after}`, Promise.resolve(parsed));
+      // Invalidate before storing: the new entry is tagged, so the reverse order would
+      // remove it as well. A reload observes the latest committed write, never the cache.
+      if (typeof parsed.model?.id === 'string') {
+        invalidateProject(parsed.model.id, directory);
+        const previous = directoryModels.get(directory);
+        if (previous !== undefined && previous !== parsed.model.id)
+          serverCachePool.invalidateTags([previous]);
+        directoryModels.set(directory, parsed.model.id);
+        const seen = directoryStamps.get(directory);
+        if (seen) seen.add(after);
+        else directoryStamps.set(directory, new Set([after]));
+        parsedModels.set(`${directory}\0${after}`, Promise.resolve(parsed), {
+          tags: [directory, parsed.model.id]
+        });
+      } else {
+        parsedModels.set(`${directory}\0${after}`, Promise.resolve(parsed));
+      }
       return parsed;
     }
   }
   throw new SourceChangingError(directory);
 }
 
-/** Parses skipped and parses performed since the last clear. A test seam, not a metric. */
-export function modelCacheStats(): { hits: number; misses: number; size: number } {
-  return { ...parsedModels.stats, size: parsedModels.size };
+/** Parses skipped and performed, entries, estimated bytes and evictions. A test seam and metric. */
+export function modelCacheStats(): CacheSnapshot {
+  return parsedModels.snapshot();
 }
 /**
  * A snapshot for the composition core: the parsed model, its optional authored links, the

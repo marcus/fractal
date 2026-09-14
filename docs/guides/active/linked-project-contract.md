@@ -267,3 +267,55 @@ over-limit composition is 422 with `code: 'budget_exceeded'`; recoverable target
 elements, 20,000 relationships, 500 visible nodes, 1,000 visible edges, 5 MiB source bytes per
 project and 128 MiB estimated cache payload; overrides come from service configuration only,
 never from URLs, state payloads or request bodies.
+
+## Limits and caching
+
+Admission is checked on loaded counts, visible counts, per-project source bytes and
+estimated cache bytes in `composeFromSelector`, which serves the render and export paths
+alike. Overrides come from service/CLI configuration only: an explicit
+`CatalogOptions.limits`, or the `FRACTAL_COMPOSITION_LIMITS` JSON object from the service
+environment (parsed once per environment; an empty value means defaults). Limits join the
+composed-result cache key, so a stricter configuration is never served a result admitted
+under looser limits. An over-limit composition is refused whole with `budget_exceeded`
+diagnostics (HTTP 422, CLI nonzero) and the previous cached view is retained; nothing is
+truncated.
+
+Parsed models, local layouts and composed results each carry an entry bound and an
+estimated-bytes bound with LRU eviction, and report
+`{ hits, misses, entries, bytes, evictions }`. Estimates are deterministic canonical-JSON
+serialization sizes (bridge geometry included), not heap measurements; in-flight parses
+carry a nominal estimate until they settle. A shared 128 MiB pool bounds the retained
+total and evicts composed results before layouts before parsed models, so small semantic
+records survive pressure on large artifacts.
+
+Editing one target's source invalidates that target's parsed model, its local layouts and
+every composed result that included it; unrelated projects' layout entries survive.
+Invalidation is change-driven: a stamp never seen for a known directory triggers it,
+while a first load (or an identical copy elsewhere) invalidates nothing.
+
+Resolution and layout jobs run through one bounded work queue per server: at most two
+concurrent jobs, identical in-flight requests coalesced, a bounded wait (refused with
+`server_busy`, HTTP 429, when full). A request carrying an older `generation` than the
+latest for the same root is answered `stale` without doing work; once started, a job
+runs to completion and the caller discards superseded responses by generation.
+
+`GET /api/composition/stats` and `fractal composition-stats --json` report:
+
+```json
+{
+  "version": 1,
+  "limits": { "projects": 20, "loadedElements": 10000, "relationships": 20000 },
+  "caches": {
+    "models": { "hits": 0, "misses": 0, "entries": 0, "bytes": 0, "evictions": 0 },
+    "layouts": { "hits": 0, "misses": 0, "entries": 0, "bytes": 0, "evictions": 0 },
+    "composed": { "hits": 0, "misses": 0, "entries": 0, "bytes": 0, "evictions": 0 }
+  },
+  "queue": { "active": 0, "queued": 0, "completed": 0, "coalesced": 0 },
+  "rejected": { "stale": 0, "overLimit": 0 }
+}
+```
+
+(`limits` carries the full seven configured bounds.) The composition benchmark includes
+this snapshot in its JSON report. Tests reset composed results, rejected counters and
+queue generations with `resetCompositionState`, and clear the parsed-model and layout
+caches directly.

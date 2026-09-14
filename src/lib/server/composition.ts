@@ -7,7 +7,8 @@ import {
   checkAdmission,
   DEFAULT_COMPOSITION_LIMITS,
   estimateBytes,
-  type CompositionCounts
+  type CompositionCounts,
+  type CompositionLimits
 } from '../composition/limits';
 import { parseCompositionState } from '../composition/parse';
 import {
@@ -26,15 +27,18 @@ import type {
   QualifiedSelection
 } from '../composition/types';
 import type { LayoutEngineId, Model, ThemeId } from '../core/types';
-import { createCache } from './cache';
+import { createCache, serverCachePool, type CacheSnapshot } from './cache';
 import {
   catalogReloader,
   catalogResolver,
   loadModel,
+  modelCacheStats,
   resolveProject,
   snapshotOf,
   type CatalogOptions
 } from './models';
+import { compositionWorkQueue, resetCompositionQueue, type JobsSnapshot } from './queue';
+import { renderCacheStats } from './render';
 
 /**
  * The application boundary for linked composition: the CLI and HTTP routes both call these small
@@ -180,7 +184,80 @@ export interface CompositionResult {
 }
 
 const COMPOSITION_CACHE_LIMIT = 64;
-const composedCache = createCache<CompositionResult>(COMPOSITION_CACHE_LIMIT);
+/**
+ * Composed results, bounded by entries and estimated bytes (local geometry plus routed
+ * bridge geometry). Entries are tagged with every participating model so editing one
+ * target drops exactly the compositions that included it; the pool evicts these before
+ * layouts and parsed models when retained bytes run over budget.
+ */
+const composedCache = createCache<CompositionResult>(COMPOSITION_CACHE_LIMIT, {
+  maxBytes: 32 * 1024 * 1024,
+  sizeOf: (result) => estimateBytes(result.composed),
+  pool: serverCachePool,
+  priority: 0
+});
+
+/** Work refused since the last reset: superseded generations and over-limit compositions. */
+const rejected = { stale: 0, overLimit: 0 };
+
+const LIMIT_FIELDS = [
+  'projects',
+  'loadedElements',
+  'relationships',
+  'visibleNodes',
+  'visibleEdges',
+  'sourceBytesPerProject',
+  'cacheBytes'
+] as const;
+
+/** Parsed service configuration per environment object, so the process environment parses once. */
+const envLimitsCache = new WeakMap<NodeJS.ProcessEnv, CompositionLimits>();
+
+function parseEnvLimits(env: NodeJS.ProcessEnv): CompositionLimits {
+  const raw = env.FRACTAL_COMPOSITION_LIMITS;
+  if (raw === undefined || raw === '') return DEFAULT_COMPOSITION_LIMITS;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(raw);
+  } catch {
+    throw new CompositionUsageError(
+      'FRACTAL_COMPOSITION_LIMITS must be a JSON object of limit overrides.'
+    );
+  }
+  if (typeof decoded !== 'object' || decoded === null || Array.isArray(decoded))
+    throw new CompositionUsageError(
+      'FRACTAL_COMPOSITION_LIMITS must be a JSON object of limit overrides.'
+    );
+  const limits: CompositionLimits = { ...DEFAULT_COMPOSITION_LIMITS };
+  for (const [field, value] of Object.entries(decoded as Record<string, unknown>)) {
+    if (!(LIMIT_FIELDS as readonly string[]).includes(field))
+      throw new CompositionUsageError(
+        `Unknown composition limit: ${field} (known: ${LIMIT_FIELDS.join(', ')}).`
+      );
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+      throw new CompositionUsageError(`Composition limit ${field} must be a finite number >= 0.`);
+    limits[field as (typeof LIMIT_FIELDS)[number]] = value;
+  }
+  return limits;
+}
+
+/**
+ * The admission limits for this call: an explicit service/CLI override wins, otherwise the
+ * `FRACTAL_COMPOSITION_LIMITS` JSON object from the service environment (parsed once per
+ * environment), otherwise the plan defaults. Untrusted input — URLs, saved state, HTTP
+ * bodies — can never raise a limit: no request field reaches this function.
+ */
+export function effectiveLimits(
+  options: { limits?: CompositionLimits; env?: NodeJS.ProcessEnv } = {}
+): CompositionLimits {
+  if (options.limits !== undefined) return options.limits;
+  const env = options.env ?? process.env;
+  const cached = envLimitsCache.get(env);
+  if (cached) return cached;
+  const parsed = parseEnvLimits(env);
+  envLimitsCache.set(env, parsed);
+  return parsed;
+}
 
 function compare(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -210,33 +287,6 @@ export function compositionKey(state: CompositionState, revisions: Record<string
     .sort()
     .map((model) => [model, revisions[model]]);
   return canonical({ state, revisions: vector });
-}
-
-export interface RevisionConflict {
-  code: 'revision_changed';
-  model: string;
-  error: string;
-}
-
-/**
- * Compare a client's revision vector with the revisions of the projects that were just loaded.
- * Only participating models can conflict; an entry for a model this composition never loaded is
- * ignored. Models are checked in sorted order so the first conflict is deterministic.
- */
-export function revisionConflict(
-  current: Record<string, string>,
-  requested: Record<string, string>
-): RevisionConflict | undefined {
-  for (const model of Object.keys(requested).sort(compare)) {
-    const revision = current[model];
-    if (revision !== undefined && revision !== requested[model])
-      return {
-        code: 'revision_changed',
-        model,
-        error: `${model} changed on disk. Reload the composition before continuing.`
-      };
-  }
-  return undefined;
 }
 
 /** Distinct foreign models named by a project's links and connections, sorted. */
@@ -612,6 +662,19 @@ function revisionVector(
  * only) are checked on loaded and visible counts before returning; an over-limit
  * composition throws `BudgetExceededError` whole and is never cached or truncated.
  */
+/**
+ * The identity of a cached composed result: the canonical state, the participating revision
+ * vector, and the effective admission limits. Limits join the key so a stricter service
+ * configuration never receives a result admitted — and cached — under looser limits.
+ */
+function compositionCacheKey(
+  state: CompositionState,
+  revisions: Record<string, string>,
+  limits: CompositionLimits
+): string {
+  return `${compositionKey(state, revisions)}\0${canonical(limits)}`;
+}
+
 export async function composeFromSelector(
   root: string | ProjectSnapshot,
   selector: CompositionSelector,
@@ -683,19 +746,22 @@ export async function composeFromSelector(
   }
   const withGeneration = (result: CompositionResult): CompositionResult =>
     options.generation === undefined ? result : { ...result, generation: options.generation };
-  const key = compositionKey(state, revisions);
+  // Limits are resolved before the cache lookup and join its key: a hit was admitted under
+  // these exact limits, so a stricter configuration can never be served a cached over-limit
+  // result. A refusal throws before storing, so the previous cached view is retained whole.
+  const limits = effectiveLimits(options);
+  const key = compositionCacheKey(state, revisions, limits);
   const cached = composedCache.get(key);
   if (cached) return withGeneration(structuredClone(cached));
 
   const composed = await compose(replayResolver(outcomes), state);
-  const over = checkAdmission(
-    admissionCounts(state, outcomes, composed),
-    options.limits ?? DEFAULT_COMPOSITION_LIMITS,
-    state.root
-  );
-  if (over.length > 0) throw new BudgetExceededError(over);
+  const over = checkAdmission(admissionCounts(state, outcomes, composed), limits, state.root);
+  if (over.length > 0) {
+    rejected.overLimit += 1;
+    throw new BudgetExceededError(over);
+  }
   const result: CompositionResult = { state, composed, revisions };
-  composedCache.set(key, structuredClone(result));
+  composedCache.set(key, structuredClone(result), { tags: Object.keys(revisions) });
   return withGeneration(result);
 }
 
@@ -718,9 +784,92 @@ export function clearCompositionCache(): void {
   composedCache.clear();
 }
 
-/** Compositions computed and reused since the last clear. A test seam, not a metric. */
-export function compositionCacheStats(): { hits: number; misses: number; size: number } {
-  return { ...composedCache.stats, size: composedCache.size };
+/** Compositions computed and reused, entries, estimated bytes and evictions. A test seam and metric. */
+export function compositionCacheStats(): CacheSnapshot {
+  return composedCache.snapshot();
+}
+
+export type CompositionRenderOutcome =
+  | { status: 'ready'; result: CompositionResult; coalesced: boolean }
+  | { status: 'stale'; generation: number; current: number };
+
+/**
+ * The HTTP service's render path: one bounded queue per server for resolution and layout
+ * jobs (two concurrent, identical in-flight requests coalesced). A request carrying an
+ * older `generation` than the latest for the same root is answered `stale` without doing
+ * work. The CLI calls `composeFromSelector` directly and never queues.
+ */
+export async function submitCompositionRender(
+  root: string | ProjectSnapshot,
+  selector: CompositionSelector,
+  options: CompositionRequest = {}
+): Promise<CompositionRenderOutcome> {
+  const scope = typeof root === 'string' ? root : root.id;
+  // The queue key covers everything that changes the work; generation is excluded because
+  // the same content serves every generation, and the caller discards superseded responses.
+  // Limits are included so a stricter request never shares an admitted request's work.
+  const key = canonical({
+    selector,
+    revisions: options.revisions ?? null,
+    reload: options.reload ?? false,
+    limits: effectiveLimits(options)
+  });
+  const outcome = await compositionWorkQueue.submit(
+    scope,
+    key,
+    () => composeFromSelector(root, selector, options),
+    options.generation === undefined ? {} : { generation: options.generation }
+  );
+  if (outcome.status === 'stale') {
+    rejected.stale += 1;
+    return outcome;
+  }
+  return { status: 'ready', result: outcome.result, coalesced: outcome.coalesced };
+}
+
+export interface CompositionStats {
+  version: 1;
+  /** The configured admission limits this server enforces. */
+  limits: CompositionLimits;
+  caches: {
+    models: CacheSnapshot;
+    layouts: CacheSnapshot;
+    composed: CacheSnapshot;
+  };
+  queue: JobsSnapshot;
+  /** Work refused since the last reset: superseded generations and over-limit compositions. */
+  rejected: { stale: number; overLimit: number };
+}
+
+/**
+ * Instrumentation for `GET /api/composition/stats` and `fractal composition-stats`: cache
+ * hits/misses/entries/bytes/evictions, queue/jobs counts, rejected work and the
+ * configured limits. The bench agent reads this shape.
+ */
+export function getCompositionStats(): CompositionStats {
+  return {
+    version: 1,
+    limits: effectiveLimits({}),
+    caches: {
+      models: modelCacheStats(),
+      layouts: renderCacheStats(),
+      composed: compositionCacheStats()
+    },
+    queue: compositionWorkQueue.snapshot(),
+    rejected: { ...rejected }
+  };
+}
+
+/**
+ * Reset the composed cache, the rejected-work counters and the queue generations. Tests
+ * also clear the parsed-model and layout caches directly. Only reset when the queue is
+ * idle: queued waiters are not resumed.
+ */
+export function resetCompositionState(): void {
+  clearCompositionCache();
+  resetCompositionQueue();
+  rejected.stale = 0;
+  rejected.overLimit = 0;
 }
 
 async function participatingSnapshots(

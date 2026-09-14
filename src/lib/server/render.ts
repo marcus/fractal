@@ -1,5 +1,6 @@
 import { layout } from '../core/layout';
-import { createCache } from './cache';
+import { estimateBytes } from '../composition/limits';
+import { createCache, serverCachePool, type CacheSnapshot } from './cache';
 import type { Diagram, Model, ViewState } from '../core/types';
 
 /** What a cached render needs from a loaded model: the geometry source and its content hash. */
@@ -9,7 +10,17 @@ export interface RenderableModel {
 }
 
 const LAYOUT_CACHE_LIMIT = 64;
-const diagrams = createCache<Diagram>(LAYOUT_CACHE_LIMIT);
+/**
+ * Local layouts, bounded by entries and estimated geometry bytes. Entries are tagged with
+ * their model ID so editing that project's source drops exactly its layouts; the pool
+ * evicts these before parsed models when retained bytes run over budget.
+ */
+const diagrams = createCache<Diagram>(LAYOUT_CACHE_LIMIT, {
+  maxBytes: 32 * 1024 * 1024,
+  sizeOf: (diagram) => estimateBytes(diagram),
+  pool: serverCachePool,
+  priority: 1
+});
 
 /**
  * A stable string for any JSON-shaped value: object keys in sorted order, undefined dropped so an
@@ -61,8 +72,8 @@ export async function renderDiagram(loaded: RenderableModel, state: ViewState): 
     return { ...structuredClone(cached), state: { ...state, expanded: [...state.expanded] } };
   const diagram = await layout(loaded.model, state);
   // The stored copy is private too, so nothing a caller does to the diagram it was handed can
-  // reach the next reader.
-  diagrams.set(key, structuredClone(diagram));
+  // reach the next reader. The model-ID tag is what targeted invalidation removes on edit.
+  diagrams.set(key, structuredClone(diagram), { tags: [loaded.model.id] });
   return diagram;
 }
 
@@ -71,7 +82,7 @@ export function clearRenderCache(): void {
   diagrams.clear();
 }
 
-/** Layouts skipped and layouts performed since the last clear. A test seam, not a metric. */
-export function renderCacheStats(): { hits: number; misses: number; size: number } {
-  return { ...diagrams.stats, size: diagrams.size };
+/** Layouts skipped and performed, entries, estimated bytes and evictions. A test seam and metric. */
+export function renderCacheStats(): CacheSnapshot {
+  return diagrams.snapshot();
 }

@@ -35,6 +35,7 @@ import {
   type CompositionRow
 } from './bench-fixtures';
 import { showAllStructure } from '../src/lib/core/navigation';
+import { getCompositionStats } from '../src/lib/server/composition';
 import { loadDirectory, resolveCatalog } from '../src/lib/server/models';
 import type { Model, ViewState } from '../src/lib/core/types';
 
@@ -483,6 +484,8 @@ async function finishComposition(
           iterations,
           ...meta,
           rows,
+          // The server bounds seam: retained cache bytes, jobs and rejected work after the run.
+          stats: getCompositionStats(),
           ...(comparison ? { baseline: { path: baselinePath, ...comparison } } : {}),
           ...(values.output !== undefined ? { output: resolve(values.output) } : {})
         },

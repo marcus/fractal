@@ -2,11 +2,12 @@ import { json } from '@sveltejs/kit';
 import { CompositionContractError } from '$lib/composition/parse';
 import {
   BudgetExceededError,
-  composeFromSelector,
+  submitCompositionRender,
   RevisionConflictError,
   type CompositionRequest
 } from '$lib/server/composition';
 import { SourceChangingError } from '$lib/server/models';
+import { QueueFullError } from '$lib/server/queue';
 import type { RequestHandler } from './$types';
 
 interface RenderInput {
@@ -23,10 +24,13 @@ interface RenderInput {
 }
 
 /**
- * Resolve, lay out and place a composition. Only catalog entries are ever loaded; the route
- * accepts no directories or URLs. Invalid input is 400, a changed participating revision or
- * a source that is changing under the read is 409, a state payload or composition over
- * budget is 422, and recoverable target failures stay 200 with diagnostics.
+ * Resolve, lay out and place a composition through the server's bounded work queue (two
+ * concurrent jobs, identical in-flight requests coalesced). Only catalog entries are ever
+ * loaded; the route accepts no directories or URLs. Invalid input is 400, a changed
+ * participating revision or a source that is changing under the read is 409, a state
+ * payload or composition over budget is 422, an older generation than the latest for the
+ * same root is 200 with a `stale` envelope (no work is done), a full queue is 429, and
+ * recoverable target failures stay 200 with diagnostics.
  */
 export const POST: RequestHandler = async ({ request }) => {
   let input: RenderInput;
@@ -52,7 +56,14 @@ export const POST: RequestHandler = async ({ request }) => {
         : { generation: input.generation as CompositionRequest['generation'] }),
       ...(input.reload === true ? { reload: true as const } : {})
     };
-    return json(await composeFromSelector(input.root, selector, options));
+    const outcome = await submitCompositionRender(input.root, selector, options);
+    if (outcome.status === 'stale')
+      return json({
+        status: 'stale',
+        generation: outcome.generation,
+        current: outcome.current
+      });
+    return json(outcome.result);
   } catch (error) {
     if (error instanceof RevisionConflictError)
       return json(
@@ -78,6 +89,11 @@ export const POST: RequestHandler = async ({ request }) => {
       );
     if (error instanceof CompositionContractError && error.code === 'budget_exceeded')
       return json({ error: error.message, code: 'budget_exceeded' }, { status: 422 });
+    if (error instanceof QueueFullError)
+      return json(
+        { error: error.message, code: error.code, recovery: error.recovery },
+        { status: 429 }
+      );
     return json({ error: (error as Error).message }, { status: 400 });
   }
 };

@@ -37,6 +37,7 @@ Commands:
   bench      Time the layout pipeline and fingerprint its geometry (bin/fractal bench --help)
   shortcuts  List keyboard commands from the shared registry
   search     Search all components, connections and views, with resolved view state
+  composition-stats  Cache, queue and limit instrumentation (--json)
 
 Options:
   --model ID                     Catalog model (default delivery)
@@ -75,7 +76,7 @@ Examples:
   npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg
 ```
 
-`projects`, `links`, `journeys`, `journey`, `sequence`, `sequence-export`, `validate`, `inspect`, `project`, `layout`, `export`, `themes`, `engines`, `shortcuts`, `search` print this same text with `--help`.
+`projects`, `links`, `journeys`, `journey`, `sequence`, `sequence-export`, `validate`, `inspect`, `project`, `layout`, `export`, `themes`, `engines`, `shortcuts`, `search`, `composition-stats` print this same text with `--help`.
 
 ## fractal service
 
