@@ -4,7 +4,7 @@
 // collapse and show-all, with frame timing and long tasks during each; then does the same
 // toggles in a freshly exported portable document. Toggle latency is the headline number.
 // Prints JSON. This is a proof tool, not part of CI.
-import { chromium, type Browser, type Page } from '@playwright/test';
+import { chromium, type Browser, type Locator, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { access, cp, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
@@ -185,9 +185,16 @@ function summarize(target: string, watch: RawWatch): ToggleResult {
   };
 }
 
-/** Click a control and report what the diagram did, timed from the click event itself. */
-async function measureClick(page: Page, selector: string, label: string): Promise<ToggleResult> {
-  const control = page.locator(selector).first();
+/**
+ * Click a control and report what the diagram did, timed from the click event itself. A locator
+ * is accepted because a composed toggle is an SVG `<g role="button">`, not a `<button>`.
+ */
+async function measureClick(
+  page: Page,
+  target: string | Locator,
+  label: string
+): Promise<ToggleResult> {
+  const control = typeof target === 'string' ? page.locator(target).first() : target.first();
   await control.waitFor({ state: 'attached', timeout: 15000 });
   const watching = page.evaluate('window.__bench.watch(400, 15000)') as Promise<RawWatch>;
   await control.click();
@@ -337,6 +344,31 @@ async function waitForFrames(page: Page, count: number, timeout = 20000): Promis
   );
 }
 
+/**
+ * A linked frame opens offscreen by design, so fit the whole composition before clicking anything
+ * inside it, then wait until the frame actually sits within the diagram area.
+ */
+async function fitComposition(page: Page, model = 'plugin'): Promise<void> {
+  await page.getByRole('button', { name: 'Fit composition', exact: true }).click();
+  await page.waitForFunction(
+    (id: string) => {
+      const frame = document.querySelector(`[data-project-frame="${id}"]`);
+      const area = document.querySelector('.diagram-area');
+      if (!frame || !area) return false;
+      const f = frame.getBoundingClientRect();
+      const a = area.getBoundingClientRect();
+      return (
+        f.left >= a.left - 1 &&
+        f.top >= a.top - 1 &&
+        f.right <= a.right + 1 &&
+        f.bottom <= a.bottom + 1
+      );
+    },
+    model,
+    { timeout: 10000 }
+  );
+}
+
 /** Open the host's linked plugin without the measurement wrapper, for the cycle loop. */
 async function openLinked(page: Page): Promise<void> {
   if ((await page.locator('[data-open-link="plugin"]').count()) === 0) {
@@ -346,6 +378,7 @@ async function openLinked(page: Page): Promise<void> {
   }
   await page.locator('[data-open-link="plugin"]').click();
   await waitForFrames(page, 2);
+  await fitComposition(page);
 }
 
 /** Close the linked plugin from its project menu. */
@@ -417,10 +450,12 @@ async function compositionJourney(
   await waitForFrames(page, 2);
   open.dom = await diagramDom(page);
   const foreignAfterOpen = modelRequests.filter((path) => /plugin|missing-plugin/.test(path));
+  // The new frame lands offscreen; fit before reaching into it.
+  await fitComposition(page);
 
   const expand = await measureClick(
     page,
-    'button[aria-label="Expand Beacon plugin"]',
+    page.getByRole('button', { name: 'Expand Beacon plugin', exact: true }),
     'expand Beacon plugin'
   );
   await page.locator('[data-node-id="plugin:cli"]').waitFor({ state: 'visible', timeout: 15000 });
@@ -579,6 +614,8 @@ async function runCompositionMode(values: {
           version: 1,
           mode: 'composition',
           timestamp: new Date().toISOString(),
+          model: values.model ?? 'host',
+          scene: COMPOSITION_SCENE,
           url,
           startedServer: true,
           catalog,
