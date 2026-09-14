@@ -1954,6 +1954,16 @@ test('a linked project opens beside its host with two frames and one bridge', as
     await expect(page.locator('[data-link-id="plugin"]')).toContainText('Beacon architecture');
     await expect(page.locator('[data-link-id="plugin"]')).toContainText('Not opened');
     await expect(page.locator('[data-link-id="unavailable"]')).toContainText('Unavailable');
+
+    // An unavailable link renders an honest stub card, never a fabricated node.
+    await page.locator('[data-open-link="unavailable"]').click();
+    await expect(page.locator('[data-stub-target="missing-plugin"]')).toContainText(
+      'Diagram unavailable'
+    );
+    await page.getByRole('button', { name: 'Close linked view' }).click();
+    await expect(page.locator('[data-stub-target="missing-plugin"]')).toHaveCount(0);
+    await expect(page.locator('[data-node-id="core"]')).toBeVisible();
+
     const before = await titleAt(page, '[data-node-id="core"]');
 
     await page.locator('[data-open-link="plugin"]').click();

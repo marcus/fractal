@@ -534,7 +534,9 @@ h1 {
   inset: 0;
 }
 .canvas-layer.layer-hidden {
-  display: none;
+  /* Hidden but still laid out: the single-model camera keeps its exact size and position. */
+  visibility: hidden;
+  pointer-events: none;
 }
 .loading-badge {
   position: absolute;
