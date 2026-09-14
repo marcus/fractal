@@ -4,6 +4,7 @@
   import { searchModel, type SearchResult } from '$lib/core/search';
   import { searchProjects } from '$lib/core/catalog';
   import type { Model } from '$lib/core/types';
+  import type { CompositionSearchResult } from '$lib/composition/search';
   import { Grid, ArrowUpRight, Link } from '@marcusv/roc/svelte/outline';
   type ProjectResult = {
     id: string;
@@ -16,6 +17,7 @@
     type: 'sequence';
     status: 'current' | 'proposed';
   };
+  type CompositionHit = CompositionSearchResult & { type: 'composition' };
   let {
     model,
     projects,
@@ -25,6 +27,9 @@
     projectsOnly = false,
     catalogError = '',
     onpick,
+    oncomposition,
+    compositionSearch = undefined,
+    projectTitle = undefined,
     onproject,
     onrefresh,
     onclose
@@ -38,6 +43,9 @@
     projectsOnly?: boolean;
     catalogError?: string;
     onpick: (result: SearchResult) => void;
+    oncomposition?: (result: CompositionSearchResult) => void;
+    compositionSearch?: (query: string) => CompositionSearchResult[];
+    projectTitle?: (model: string) => string;
     onproject: (id: string) => void;
     onrefresh: () => void;
     onclose: () => void;
@@ -46,7 +54,7 @@
   let input: HTMLInputElement;
   let query = $state('');
   let active = $state(0);
-  const results = $derived<(SearchResult | ProjectResult | JourneyResult)[]>([
+  const results = $derived<(SearchResult | ProjectResult | JourneyResult | CompositionHit)[]>([
     ...searchProjects(projects, query).map((project) => ({ ...project, type: 'project' as const })),
     ...(!projectsOnly && onsequence
       ? searchProjects(journeys, query).map((journey) => ({
@@ -54,12 +62,58 @@
           type: 'sequence' as const
         }))
       : []),
-    ...(!projectsOnly && model ? searchModel(model, query) : [])
+    ...(!projectsOnly && compositionSearch
+      ? compositionSearch(query).map((result) => ({ ...result, type: 'composition' as const }))
+      : !projectsOnly && model
+        ? searchModel(model, query)
+        : [])
   ]);
-  function pick(result: SearchResult | ProjectResult | JourneyResult) {
+  function pick(result: SearchResult | ProjectResult | JourneyResult | CompositionHit) {
     if (result.type === 'project') onproject(result.id);
     else if (result.type === 'sequence') onsequence?.(result.id);
+    else if (result.type === 'composition') oncomposition?.(result);
     else onpick(result);
+  }
+  function resultKey(result: SearchResult | ProjectResult | JourneyResult | CompositionHit) {
+    if (result.type === 'composition')
+      return `composition:${result.model}:${result.kind}:${result.id}`;
+    return `${result.type}:${result.id}`;
+  }
+  function resultHeading(result: SearchResult | ProjectResult | JourneyResult | CompositionHit) {
+    if (result.type === 'composition' && result.kind === 'link') return `Open ${result.title}`;
+    return result.title;
+  }
+  function resultDetail(result: SearchResult | ProjectResult | JourneyResult | CompositionHit) {
+    if (result.type !== 'composition') return result.description;
+    const project = projectTitle?.(result.model) ?? result.model;
+    return `${project} · ${result.description}`;
+  }
+  function resultKindLabel(result: SearchResult | ProjectResult | JourneyResult | CompositionHit) {
+    const proposed = result.status === 'proposed' ? 'Proposed · ' : '';
+    if (result.type === 'composition') {
+      if (result.kind === 'link') return 'Open linked';
+      if (result.kind === 'scene') return `${proposed}View`;
+      if (result.kind === 'relationship') return `${proposed}Connection`;
+      if (result.kind === 'boundary') return 'Boundary';
+      return `${proposed}Component`;
+    }
+    if (result.type === 'project')
+      return result.id === currentProject ? 'Current project' : 'Project';
+    if (result.type === 'sequence') return `${proposed}Sequence`;
+    if (result.type === 'scene') return 'View';
+    if (result.type === 'relationship') return `${proposed}Connection`;
+    return `${proposed}Component`;
+  }
+  function resultIcon(result: SearchResult | ProjectResult | JourneyResult | CompositionHit) {
+    if (result.type === 'composition') {
+      if (result.kind === 'link' || result.kind === 'scene') return 'grid';
+      if (result.kind === 'relationship') return 'link';
+      return 'arrow';
+    }
+    if (result.type === 'scene' || result.type === 'project' || result.type === 'sequence')
+      return 'grid';
+    if (result.type === 'relationship') return 'link';
+    return 'arrow';
   }
   onMount(() => {
     dialog.showModal();
@@ -127,38 +181,28 @@
   />
   {#if catalogError}<p class="catalog-error" role="alert">{catalogError}</p>{/if}
   <div class="jump-results" id="jump-results" role="listbox" aria-label="Search results">
-    {#each results as result, i (result.type + ':' + result.id)}
+    {#each results as result, i (resultKey(result))}
       <button
         id={`jump-result-${i}`}
         role="option"
         aria-selected={i === active}
         tabindex="-1"
         class:highlighted={i === active}
+        data-jump-kind={result.type === 'composition' ? result.kind : result.type}
+        data-jump-model={result.type === 'composition' ? result.model : undefined}
         onclick={() => pick(result)}
       >
         <span class="result-symbol" aria-hidden="true"
-          >{#if result.type === 'scene' || result.type === 'project' || result.type === 'sequence'}<Grid
+          >{#if resultIcon(result) === 'grid'}<Grid
               size={18}
-            />{:else if result.type === 'relationship'}<Link size={18} />{:else}<ArrowUpRight
+            />{:else if resultIcon(result) === 'link'}<Link size={18} />{:else}<ArrowUpRight
               size={18}
             />{/if}</span
         >
         <span class="result-copy"
-          ><strong>{result.title}</strong><small>{result.description}</small></span
+          ><strong>{resultHeading(result)}</strong><small>{resultDetail(result)}</small></span
         >
-        <span class="result-type"
-          >{result.status === 'proposed' ? 'Proposed · ' : ''}{result.type === 'project'
-            ? result.id === currentProject
-              ? 'Current project'
-              : 'Project'
-            : result.type === 'sequence'
-              ? 'Sequence'
-              : result.type === 'scene'
-                ? 'View'
-                : result.type === 'relationship'
-                  ? 'Connection'
-                  : 'Component'}</span
-        >
+        <span class="result-type">{resultKindLabel(result)}</span>
       </button>
     {:else}<p class="jump-empty">
         {projectsOnly && !projects.length

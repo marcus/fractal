@@ -31,6 +31,7 @@
     inspectElement,
     fullSystem,
     onopenlink,
+    onshowproposed,
     onclose,
     onsettled
   }: {
@@ -43,6 +44,7 @@
       state: CompositionState;
       composed: ComposedDiagram;
       models: Record<string, Model>;
+      links?: Record<string, ProjectLinks | null>;
     } | null;
     compositionSelection?: QualifiedSelection | null;
     links?: AuthoredLinks | null;
@@ -51,6 +53,7 @@
     inspectElement: (id: string) => void;
     fullSystem: () => void;
     onopenlink?: (link: DiagramLink) => void;
+    onshowproposed?: (model: string) => void;
     onclose: () => void;
     onsettled: () => void;
   } = $props();
@@ -68,12 +71,84 @@
   const name = (id: string) => model.elements.find((e) => e.id === id)?.title ?? id;
   const connection = $derived(
     composition && compositionSelection?.kind === 'connection'
-      ? inspectConnection(composition.composed, (model) => composition.models[model], {
-          ownerModel: compositionSelection.ownerModel,
-          connectionId: compositionSelection.connectionId
-        })
+      ? inspectConnection(
+          composition.composed,
+          (id) => composition.models[id],
+          {
+            ownerModel: compositionSelection.ownerModel,
+            connectionId: compositionSelection.connectionId
+          },
+          (id) => composition.links?.[id] ?? null
+        )
       : null
   );
+  const hiddenClaims = $derived.by(() => {
+    if (!composition) return [];
+    return composition.composed.hidden.filter((claim) => {
+      const authored = composition.links?.[claim.owner]?.connections.find(
+        (entry) => entry.id === claim.connectionId
+      );
+      if (!authored) return claim.owner === model.id;
+      return (
+        claim.owner === model.id ||
+        authored.source.model === model.id ||
+        authored.target.model === model.id
+      );
+    });
+  });
+  function projectName(id: string): string {
+    return (
+      composition?.models[id]?.title ??
+      composition?.composed.projects.find((p) => p.model === id)?.title ??
+      id
+    );
+  }
+  function hiddenTitle(claim: (typeof hiddenClaims)[number]): string {
+    return (
+      composition?.links?.[claim.owner]?.connections.find(
+        (entry) => entry.id === claim.connectionId
+      )?.title ?? claim.connectionId
+    );
+  }
+  /** True when this project's Proposed switch being off is what hides the endpoint. */
+  function endpointHidesProposed(modelId: string, elementId: string): boolean {
+    const entry = composition?.state.projects.find((project) => project.model === modelId);
+    if (!entry || entry.view.proposed) return false;
+    const elements = composition?.models[modelId]?.elements ?? [];
+    let current = elements.find((element) => element.id === elementId);
+    while (current) {
+      if (current.status === 'proposed') return true;
+      current = current.parent
+        ? elements.find((element) => element.id === current!.parent)
+        : undefined;
+    }
+    return false;
+  }
+  /**
+   * The project whose Proposed switch would reveal this hidden claim. For a proposed-endpoint
+   * claim that is the endpoint (source, then target) whose switch is off; never "the other
+   * project from the one being inspected."
+   */
+  function showProposedTarget(
+    claim: (typeof hiddenClaims)[number],
+    authored:
+      | { source: { model: string; element: string }; target: { model: string; element: string } }
+      | undefined
+  ): string {
+    if (claim.reason === 'proposed-owner' || !authored) return claim.owner;
+    if (endpointHidesProposed(authored.source.model, authored.source.element))
+      return authored.source.model;
+    if (endpointHidesProposed(authored.target.model, authored.target.element))
+      return authored.target.model;
+    const off = [authored.source.model, authored.target.model].find((id) => {
+      const entry = composition?.state.projects.find((project) => project.model === id);
+      return entry !== undefined && !entry.view.proposed;
+    });
+    return off ?? claim.owner;
+  }
+  function hiddenSwitch(modelId: string): string {
+    return `${projectName(modelId)} Proposed`;
+  }
   const linkedDiagrams = $derived(
     (links?.links?.links ?? []).filter((link) => link.from === selected || link.from === undefined)
   );
@@ -143,6 +218,41 @@
             </dd>
           </dl>
         </section>
+        {#if connection.underlying.length}
+          <section aria-label="Underlying claims">
+            <h3>
+              Underlying claims <span>{connection.count}</span>
+            </h3>
+            <div class="item-list">
+              {#each connection.underlying as claim (`${claim.owner}/${claim.connectionId}`)}
+                <InspectorDisclosure>
+                  {#snippet heading()}
+                    <span class="item-summary"
+                      ><strong class="item-title">{claim.owner} / {claim.connectionId}</strong
+                      ></span
+                    >
+                  {/snippet}
+                  <dl>
+                    <dt>Owner</dt>
+                    <dd><code>{claim.owner}</code></dd>
+                    <dt>Endpoints</dt>
+                    <dd>
+                      <code
+                        >{claim.endpoints.source.model} / {claim.endpoints.source.element} → {claim
+                          .endpoints.target.model} / {claim.endpoints.target.element}</code
+                      >
+                    </dd>
+                  </dl>
+                  {#if claim.evidence.length}
+                    <h3>Source references</h3>
+                    {#each claim.evidence as evidence}<code class="evidence">{evidence}</code
+                      >{/each}
+                  {/if}
+                </InspectorDisclosure>
+              {/each}
+            </div>
+          </section>
+        {/if}
         <div class="secondary">
           <InspectorDisclosure label="Claim & evidence">
             <dl>
@@ -249,6 +359,45 @@
             {:else}<p class="meta">No connections in this view.</p>{/each}
           </div>
         </section>
+        {#if hiddenClaims.length}
+          <section aria-label="Hidden by proposal switch" data-hidden-claims>
+            <h3>Hidden by proposal switch <span>{hiddenClaims.length}</span></h3>
+            <div class="item-list">
+              {#each hiddenClaims as claim (`${claim.owner}/${claim.connectionId}`)}
+                {@const authored = composition?.links?.[claim.owner]?.connections.find(
+                  (entry) => entry.id === claim.connectionId
+                )}
+                {@const switchProject = showProposedTarget(claim, authored)}
+                <div
+                  class="linked-item"
+                  data-hidden-claim={claim.connectionId}
+                  data-hidden-owner={claim.owner}
+                  data-hidden-reason={claim.reason}
+                >
+                  <strong class="item-title">{hiddenTitle(claim)}</strong>
+                  <p class="meta">
+                    Hidden because {hiddenSwitch(switchProject)} is off.
+                  </p>
+                  {#if authored}
+                    <p class="detail-copy">
+                      <code
+                        >{authored.source.model} / {authored.source.element} → {authored.target
+                          .model} / {authored.target.element}</code
+                      >
+                    </p>
+                  {/if}
+                  {#if onshowproposed}
+                    <button
+                      class="button"
+                      data-show-proposed={switchProject}
+                      onclick={() => onshowproposed(switchProject)}>Show proposed</button
+                    >
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          </section>
+        {/if}
         {#if linkedDiagrams.length}
           <section aria-label="Linked diagrams">
             <h3>Linked diagrams <span>{linkedDiagrams.length}</span></h3>

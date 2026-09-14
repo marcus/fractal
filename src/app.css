@@ -538,6 +538,28 @@ h1 {
   visibility: hidden;
   pointer-events: none;
 }
+.revision-banner {
+  position: absolute;
+  z-index: 5;
+  top: 17px;
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--ui-border, #dce3d7);
+  border-radius: 12px;
+  background: var(--ui-card, #fff);
+  box-shadow: var(--float-shadow, 0 12px 40px #10251a14);
+  color: var(--ui-text, #283d34);
+  font-size: 12px;
+  max-width: min(520px, calc(100% - 48px));
+}
+.revision-banner .button {
+  min-height: 44px;
+  padding: 8px 12px;
+}
 .loading-badge {
   position: absolute;
   top: 17px;

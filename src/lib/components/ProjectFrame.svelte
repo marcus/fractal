@@ -1,7 +1,7 @@
 <script lang="ts">
   import { COMPOSITION_METRICS } from '$lib/composition/place';
   import { ARCHITECTURE_NODE_METRICS as NODE_METRICS } from '$lib/core/node-metrics';
-  import type { ComposedProject } from '$lib/composition/types';
+  import type { ComposedPort, ComposedProject } from '$lib/composition/types';
 
   /**
    * One project's presentation geometry: a solid perimeter, a measured title band and a native
@@ -11,23 +11,33 @@
   let {
     project,
     menuOpen = false,
-    onmenu
+    onmenu,
+    onrevealport
   }: {
     project: ComposedProject;
     menuOpen?: boolean;
     onmenu: (model: string) => void;
+    onrevealport?: (port: ComposedPort) => void;
   } = $props();
   const slug = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, '-');
   const titleId = $derived(`project-title-${slug(project.model)}`);
+  // Title-band tap targets stay at least 44px so touch reaches the same menu a pointer does.
+  const menuSize = 44;
   // The menu sits at the frame's leading edge, so it stays reachable when a wide frame is panned.
-  const menuX = $derived(project.frame.x + COMPOSITION_METRICS.padding + 2);
-  const menuY = $derived(project.frame.y + COMPOSITION_METRICS.titleClearance);
-  const titleX = $derived(
-    project.frame.x + COMPOSITION_METRICS.padding + COMPOSITION_METRICS.titleClearance + 18
-  );
+  const menuX = $derived(project.frame.x + COMPOSITION_METRICS.padding);
+  const menuY = $derived(project.frame.y + Math.max(4, (project.titleHeight - menuSize) / 2));
+  const titleX = $derived(menuX + menuSize + 8);
   const firstLineY = $derived(
     project.frame.y + COMPOSITION_METRICS.titleClearance + NODE_METRICS.titleSize
   );
+  const PORT_TAB = { width: 78, height: 22 };
+  function portOrigin(port: ComposedPort) {
+    const { width, height } = PORT_TAB;
+    if (port.side === 'right') return { x: port.point.x - width, y: port.point.y - height / 2 };
+    if (port.side === 'left') return { x: port.point.x, y: port.point.y - height / 2 };
+    if (port.side === 'top') return { x: port.point.x - width / 2, y: port.point.y };
+    return { x: port.point.x - width / 2, y: port.point.y - height };
+  }
 </script>
 
 <g
@@ -78,16 +88,49 @@
       }
     }}
   >
-    <rect width="24" height="24" rx="6" fill="transparent" />
-    <circle cx="6" cy="12" r="1.6" />
-    <circle cx="12" cy="12" r="1.6" />
-    <circle cx="18" cy="12" r="1.6" />
+    <rect width={menuSize} height={menuSize} rx="8" fill="transparent" />
+    <circle cx="14" cy="22" r="1.8" />
+    <circle cx="22" cy="22" r="1.8" />
+    <circle cx="30" cy="22" r="1.8" />
   </g>
   {#if project.mode === 'collapsed'}
     <text class="project-summary" x={titleX} y={project.frame.y + project.titleHeight + 30}
       >Collapsed summary</text
     >
   {/if}
+  {#each project.ports as port (`${port.side}:${port.reveal.element}`)}
+    {@const origin = portOrigin(port)}
+    <g
+      class="project-port"
+      data-interactive="port"
+      data-project-port={project.model}
+      data-port-side={port.side}
+      data-port-element={port.reveal.element}
+      data-port-count={port.count}
+      role="button"
+      tabindex="0"
+      aria-label={`Outside-scope port: ${port.labelLines.join(' ')}. Reveal ${port.reveal.element}.`}
+      transform={`translate(${origin.x} ${origin.y})`}
+      onclick={(event) => {
+        event.stopPropagation();
+        onrevealport?.(port);
+      }}
+      onkeydown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          event.stopPropagation();
+          onrevealport?.(port);
+        }
+      }}
+    >
+      <rect width={PORT_TAB.width} height={PORT_TAB.height} rx="7" class="port-tab" />
+      {#each port.labelLines as line, index}
+        <text x={PORT_TAB.width / 2} y={14 + index * 11} text-anchor="middle" class="port-label"
+          >{line}</text
+        >
+      {/each}
+    </g>
+  {/each}
 </g>
 
 <style>
@@ -127,5 +170,24 @@
   }
   .project-menu-trigger circle {
     fill: currentColor;
+  }
+  .project-port {
+    pointer-events: auto;
+    cursor: pointer;
+    outline: none;
+  }
+  .port-tab {
+    fill: var(--card, #fff);
+    stroke: var(--accent, #267566);
+    stroke-width: 1.2;
+  }
+  .project-port:focus-visible .port-tab {
+    stroke-width: 2;
+  }
+  .port-label {
+    font-size: 10px;
+    font-weight: 600;
+    fill: var(--text, #243b34);
+    pointer-events: none;
   }
 </style>

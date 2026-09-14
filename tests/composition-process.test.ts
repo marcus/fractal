@@ -174,3 +174,81 @@ test('revision conflict and reload against a live server', { timeout: 100_000 },
     await rm(root, { recursive: true, force: true });
   }
 });
+
+/**
+ * A reloaded tab starts its generation counter at 1. Generations are client-owned, so a
+ * new client (or no client) must still get frames after another caller has already
+ * dispatched higher generations for the same root.
+ */
+test(
+  'a composition permalink reload after several renders still gets frames',
+  { timeout: 100_000 },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fractal-composition-reload-'));
+    const models = join(root, 'models');
+    await mkdir(models);
+    await cp(join(FIXTURES, 'host'), join(models, 'host'), { recursive: true });
+    await cp(join(FIXTURES, 'plugin'), join(models, 'plugin'), { recursive: true });
+    const catalog = join(root, 'catalog.json');
+    await writeFile(
+      catalog,
+      JSON.stringify({
+        version: 1,
+        projects: [
+          { id: 'host', directory: join(models, 'host') },
+          { id: 'plugin', directory: join(models, 'plugin') }
+        ]
+      })
+    );
+
+    const port = await freePort();
+    const server = spawn(
+      'npx',
+      ['vite', 'dev', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+      {
+        cwd: process.cwd(),
+        env: { ...process.env, FRACTAL_CATALOG: catalog },
+        stdio: ['ignore', 'ignore', 'ignore']
+      }
+    );
+    const base = `http://127.0.0.1:${port}`;
+    try {
+      await waitForServer(`${base}/api/models`);
+      const first = await render(base, {
+        root: 'host',
+        composition: 'plugins',
+        client: 'tab-a',
+        generation: 1
+      });
+      assert.equal(first.status, 200);
+      assert.notEqual(first.json.status, 'stale');
+      const state = first.json.state;
+      for (const generation of [2, 3, 4, 5]) {
+        const step = await render(base, {
+          root: 'host',
+          state,
+          client: 'tab-a',
+          generation
+        });
+        assert.equal(step.status, 200);
+        assert.notEqual(step.json.status, 'stale');
+      }
+      const reloaded = await render(base, {
+        root: 'host',
+        state,
+        client: 'tab-b',
+        generation: 1
+      });
+      assert.equal(reloaded.status, 200);
+      assert.notEqual(reloaded.json.status, 'stale');
+      assert.equal(reloaded.json.composed.projects.length, 2);
+      const anonymous = await render(base, { root: 'host', state, generation: 1 });
+      assert.equal(anonymous.status, 200);
+      assert.notEqual(anonymous.json.status, 'stale');
+      assert.equal(anonymous.json.composed.projects.length, 2);
+    } finally {
+      await stop(server);
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+);

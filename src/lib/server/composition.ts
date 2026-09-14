@@ -107,9 +107,16 @@ export interface CompositionRequest extends CatalogOptions {
   /**
    * Client-owned monotonic generation, echoed verbatim in the result. Cancelled or older
    * generations never replace newer state: slow responses carry their generation and the
-   * caller discards any response older than its latest dispatch.
+   * caller discards any response older than its latest dispatch. Stale answers are scoped
+   * by `client`; without a client id the queue never answers stale.
    */
   generation?: CompositionGeneration;
+  /**
+   * Opaque per-caller identity (at most 64 characters) that scopes generation tracking.
+   * Two tabs of the same root keep independent generation counters. Omit it to skip
+   * stale answers while still coalescing identical in-flight work.
+   */
+  client?: string;
   /**
    * Reload every participating snapshot fresh with stamp verification (one retry, then
    * `SourceChangingError`) instead of trusting the parse cache.
@@ -637,6 +644,12 @@ function checkGeneration(
     throw new CompositionUsageError('generation must be a nonnegative integer');
 }
 
+function checkClient(client: unknown): asserts client is string | undefined {
+  if (client === undefined) return;
+  if (typeof client !== 'string' || client.length === 0 || client.length > 64)
+    throw new CompositionUsageError('client must be an opaque string of at most 64 characters');
+}
+
 function checkRevisionVector(revisions: unknown): asserts revisions is RevisionVector | undefined {
   if (revisions === undefined) return;
   if (typeof revisions !== 'object' || revisions === null || Array.isArray(revisions))
@@ -807,18 +820,22 @@ export type CompositionRenderOutcome =
 /**
  * The HTTP service's render path: one bounded queue per server for resolution and layout
  * jobs (two concurrent, identical in-flight requests coalesced). A request carrying an
- * older `generation` than the latest for the same root is answered `stale` without doing
- * work. The CLI calls `composeFromSelector` directly and never queues.
+ * older `generation` than the latest for the same root+client is answered `stale` without
+ * doing work. Without a client id the queue never answers stale. The CLI calls
+ * `composeFromSelector` directly and never queues.
  */
 export async function submitCompositionRender(
   root: string | ProjectSnapshot,
   selector: CompositionSelector,
   options: CompositionRequest = {}
 ): Promise<CompositionRenderOutcome> {
+  checkGeneration(options.generation);
+  checkClient(options.client);
   const scope = typeof root === 'string' ? root : root.id;
-  // The queue key covers everything that changes the work; generation is excluded because
-  // the same content serves every generation, and the caller discards superseded responses.
-  // Limits are included so a stricter request never shares an admitted request's work.
+  // The queue key covers everything that changes the work; generation and client are
+  // excluded because the same content serves every generation, and the caller discards
+  // superseded responses. Limits are included so a stricter request never shares an
+  // admitted request's work.
   const key = canonical({
     selector,
     revisions: options.revisions ?? null,
@@ -829,7 +846,10 @@ export async function submitCompositionRender(
     scope,
     key,
     () => composeFromSelector(root, selector, options),
-    options.generation === undefined ? {} : { generation: options.generation }
+    {
+      ...(options.generation === undefined ? {} : { generation: options.generation }),
+      ...(options.client === undefined ? {} : { client: options.client })
+    }
   );
   if (outcome.status === 'stale') {
     rejected.stale += 1;

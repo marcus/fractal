@@ -2,10 +2,12 @@
  * One bounded work queue per server for resolution and layout jobs.
  *
  * At most two jobs run at once; the rest wait in a bounded FIFO. Identical in-flight
- * requests share one promise instead of redoing work, and a request carrying an older
- * `generation` than the latest seen for the same root is answered `stale` without doing
- * work — the caller already dispatched something newer. Generations are scoped per root
- * (the composition root model), so unrelated projects never stall each other.
+ * requests share one promise instead of redoing work. A request that names a `client`
+ * and carries an older `generation` than the latest seen for that root+client is
+ * answered `stale` without doing work — that caller already dispatched something newer.
+ * Generations are client-owned: the latest-generation key is root plus client, so two
+ * tabs never stale each other. Without a client id the queue never answers stale; it
+ * still coalesces identical in-flight work. Unrelated roots never stall each other.
  */
 
 /** The queue is full: every worker is busy and no waiting slot remains. */
@@ -44,7 +46,7 @@ export interface WorkQueue {
     scope: string,
     key: string,
     work: () => Promise<T>,
-    options?: { generation?: number }
+    options?: { generation?: number; client?: string }
   ): Promise<QueueOutcome<T>>;
   snapshot(): JobsSnapshot;
   /** Clear generations and counters. Only reset when idle: queued waiters are not resumed. */
@@ -80,18 +82,25 @@ export function createWorkQueue(options: { concurrency: number; maxWaiting?: num
       scope: string,
       key: string,
       work: () => Promise<T>,
-      submitOptions: { generation?: number } = {}
+      submitOptions: { generation?: number; client?: string } = {}
     ): Promise<QueueOutcome<T>> {
       const generation = submitOptions.generation;
+      const client = submitOptions.client;
       const flightKey = `${scope}\0${key}`;
-      const current = latest.get(scope);
-      if (isStale(generation, current))
+      // Latest-generation tracking is per root+client. No client means no stale answers.
+      const latestKey = client === undefined ? undefined : `${scope}\0${client}`;
+      const current = latestKey === undefined ? undefined : latest.get(latestKey);
+      if (latestKey !== undefined && isStale(generation, current))
         return { status: 'stale', generation: generation as number, current: current as number };
-      if (generation !== undefined && (current === undefined || generation > current))
-        latest.set(scope, generation);
+      if (
+        latestKey !== undefined &&
+        generation !== undefined &&
+        (current === undefined || generation > current)
+      )
+        latest.set(latestKey, generation);
 
       // A shared outcome can go stale while we wait on it (a newer generation for this
-      // scope arrived after its owner queued). When that happens and our own generation is
+      // client arrived after its owner queued). When that happens and our own generation is
       // still current, fall through and run as fresh work instead of inheriting the stale
       // answer. The loop terminates: every retry needs a strictly newer generation to have
       // arrived, which eventually supersedes us too.
@@ -103,8 +112,13 @@ export function createWorkQueue(options: { concurrency: number; maxWaiting?: num
           coalesced += 1;
           return { status: 'ready', result: shared, coalesced: true };
         }
-        const now = latest.get(scope);
-        if (generation !== undefined && now !== undefined && generation < now)
+        const now = latestKey === undefined ? undefined : latest.get(latestKey);
+        if (
+          latestKey !== undefined &&
+          generation !== undefined &&
+          now !== undefined &&
+          generation < now
+        )
           return { status: 'stale', generation, current: now };
       }
 
@@ -123,8 +137,8 @@ export function createWorkQueue(options: { concurrency: number; maxWaiting?: num
         try {
           if (!immediate) {
             await gate;
-            // A newer generation for this root may have arrived while queued.
-            if (isStale(generation, latest.get(scope))) return STALE;
+            // A newer generation for this client may have arrived while queued.
+            if (latestKey !== undefined && isStale(generation, latest.get(latestKey))) return STALE;
           }
           try {
             return await work();
@@ -144,7 +158,7 @@ export function createWorkQueue(options: { concurrency: number; maxWaiting?: num
       }
       const result = await outcome;
       if (result === STALE) {
-        const now = latest.get(scope) ?? 0;
+        const now = (latestKey === undefined ? undefined : latest.get(latestKey)) ?? 0;
         return { status: 'stale', generation: generation ?? now, current: now };
       }
       return { status: 'ready', result, coalesced: false };

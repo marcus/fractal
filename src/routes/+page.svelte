@@ -2,7 +2,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { replaceState } from '$app/navigation';
   import DiagramCanvas from '$lib/components/DiagramCanvas.svelte';
-  import CompositionCanvas from '$lib/components/CompositionCanvas.svelte';
+  import CompositionCanvas, { type ProjectAction } from '$lib/components/CompositionCanvas.svelte';
   import type { ProjectLinks } from '$lib/composition/types';
   import ModelNavigation from '$lib/components/ModelNavigation.svelte';
   import JumpDialog from '$lib/components/JumpDialog.svelte';
@@ -44,10 +44,27 @@
     sidebarCollapsedPreference
   } from '$lib/ui/preferences';
   import type { Model, Diagram, ViewState } from '$lib/core/types';
-  import { parseCompositionState } from '$lib/composition/parse';
-  import { rootState, openProject, closeProject, setProjectMode } from '$lib/composition/state';
+  import { CompositionContractError, parseCompositionState } from '$lib/composition/parse';
+  import {
+    closeProject,
+    focusProject,
+    openProject,
+    rootState,
+    setProjectMode,
+    setProjectScene,
+    setProjectScope
+  } from '$lib/composition/state';
+  import {
+    COMPOSITION_URL_PARAM,
+    compositionStateFromUrl,
+    compositionStateToUrl
+  } from '$lib/composition/codec';
+  import { searchComposition, type CompositionSearchResult } from '$lib/composition/search';
+  import { isStale, nextGeneration } from '$lib/composition/revision';
+  import type { ProjectSnapshot } from '$lib/composition/snapshot';
   import type {
     ComposedDiagram,
+    ComposedPort,
     CompositionState,
     DiagramLink,
     QualifiedSelection
@@ -70,7 +87,11 @@
     composed: ComposedDiagram;
     revisions: Record<string, string>;
   }
-  type ProjectAction = 'collapse' | 'reopen' | 'close' | 'standalone' | 'fit';
+  type RevisionNotice = {
+    kind: 'revision_changed' | 'source_changing' | 'budget_exceeded';
+    model?: string;
+    message: string;
+  };
 
   let catalog = $state<{ id: string; title: string; description: string }[]>([]);
   let catalogError = $state('');
@@ -140,8 +161,23 @@
   let compositionModels = $state<Record<string, Model>>({});
   let compositionSelection = $state<QualifiedSelection | null>(null);
   let compositionRequestId = 0;
-  /** Where the root's local origin sat on screen, so opening a frame leaves it there. */
-  let compositionAnchor: { x: number; y: number; scale: number } | null = null;
+  let compositionGeneration = 0;
+  /** Per-tab identity so this tab's generation counter never stales another tab's. */
+  let compositionClient = '';
+  function compositionClientId(): string {
+    if (!compositionClient) compositionClient = crypto.randomUUID();
+    return compositionClient;
+  }
+  let compositionLinks = $state<Record<string, LinksResult>>({});
+  let revisionNotice = $state<RevisionNotice | null>(null);
+  let pendingComposition: CompositionState | undefined;
+  /** Keep a composed point at its screen position across a re-layout. */
+  let compositionAnchor: {
+    model: string;
+    kind: 'content' | 'title';
+    screen: { x: number; y: number };
+    scale: number;
+  } | null = null;
 
   let composedCanvas = $state<{
     placeContent: (value: {
@@ -149,10 +185,16 @@
       screen: { x: number; y: number };
       scale: number;
     }) => void;
+    screenOfTitle: (model: string) => { x: number; y: number; scale: number } | null;
+    screenOfContent: (model: string) => { x: number; y: number; scale: number } | null;
+    titleOffset: (model: string) => { x: number; y: number } | null;
+    contentOffset: (model: string) => { x: number; y: number } | null;
     revealProject: (model: string) => void;
     revealElement: (model: string, id: string) => void;
     fit: () => void;
     fitProject: (model: string) => void;
+    zoom: (direction: number) => void;
+    navigate: (direction: Direction) => void;
     dismissMenu: () => boolean;
   }>();
   let authoredLinks = $state<LinksResult | null>(null);
@@ -181,7 +223,14 @@
   });
   const inspectorComposition = $derived(
     composition
-      ? { state: composition.state, composed: composition.composed, models: compositionModels }
+      ? {
+          state: composition.state,
+          composed: composition.composed,
+          models: compositionModels,
+          links: Object.fromEntries(
+            Object.entries(compositionLinks).map(([id, result]) => [id, result.links])
+          )
+        }
       : null
   );
   const inspectorView = $derived.by(() => {
@@ -319,18 +368,35 @@
   function updateUrl() {
     const url = new URL(location.href);
     url.searchParams.set('model', modelId);
-    url.searchParams.set('view', JSON.stringify(view));
-    if (sceneId) url.searchParams.set('scene', sceneId);
-    else url.searchParams.delete('scene');
-    // The selection rides beside the view, so a refresh or a copied link reopens the inspector
-    // on the same thing. Its type is inferred again from the rendered diagram.
-    if (selected) url.searchParams.set('selected', selected);
-    else url.searchParams.delete('selected');
+    if (composition) {
+      try {
+        const next = { ...composition.state };
+        if (compositionSelection) next.selection = compositionSelection;
+        else delete next.selection;
+        compositionStateToUrl(parseCompositionState(next), url.searchParams);
+      } catch {
+        // An oversized composition still renders; it just cannot round-trip through the URL.
+      }
+      url.searchParams.delete('view');
+      url.searchParams.delete('scene');
+      url.searchParams.delete('selected');
+    } else {
+      url.searchParams.delete(COMPOSITION_URL_PARAM);
+      url.searchParams.set('view', JSON.stringify(view));
+      if (sceneId) url.searchParams.set('scene', sceneId);
+      else url.searchParams.delete('scene');
+      // The selection rides beside the view, so a refresh or a copied link reopens the inspector
+      // on the same thing. Its type is inferred again from the rendered diagram.
+      if (selected) url.searchParams.set('selected', selected);
+      else url.searchParams.delete('selected');
+    }
     replaceState(url, {});
   }
   $effect(() => {
     void selected;
-    if (diagram) untrack(updateUrl);
+    void composition;
+    void compositionSelection;
+    if (diagram || composition) untrack(updateUrl);
   });
   /** What a remembered selection is in this diagram, or null when the view no longer shows it. */
   function selectionType(id: string, rendered: Diagram) {
@@ -398,8 +464,10 @@
       composition = null;
       compositionSelection = null;
       compositionModels = {};
+      compositionLinks = {};
       authoredLinks = null;
       authoredLinksModel = '';
+      revisionNotice = null;
     }
     busy = true;
     error = '';
@@ -447,60 +515,158 @@
     }
   }
   /** Authored links for the current root, loaded once per model when the inspector needs them. */
-  async function ensureLinks() {
-    if (!model || (authoredLinksModel === modelId && authoredLinks)) return;
+  async function ensureLinks(target = modelId) {
+    if (!target) return;
+    if (target === modelId && authoredLinksModel === modelId && authoredLinks) return;
+    if (compositionLinks[target]) return;
     try {
       const result: LinksResult = await readJson(
-        await fetch(`/api/composition/links?model=${encodeURIComponent(modelId)}`)
+        await fetch(`/api/composition/links?model=${encodeURIComponent(target)}`)
       );
-      authoredLinks = result;
-      authoredLinksModel = modelId;
+      compositionLinks = { ...compositionLinks, [target]: result };
+      if (target === modelId) {
+        authoredLinks = result;
+        authoredLinksModel = modelId;
+      }
     } catch {
-      authoredLinks = null;
-      authoredLinksModel = modelId;
+      if (target === modelId) {
+        authoredLinks = null;
+        authoredLinksModel = modelId;
+      }
     }
   }
   $effect(() => {
     if (!composition && selectedType === 'element' && selected && model)
       untrack(() => void ensureLinks());
   });
+  function snapshotFor(id: string): ProjectSnapshot | null {
+    const loaded = compositionModels[id];
+    if (!loaded) return null;
+    return {
+      id,
+      model: loaded,
+      links: compositionLinks[id]?.links ?? null,
+      origins: { elements: {}, relationships: {} },
+      revision: composition?.revisions[id] ?? compositionLinks[id]?.revision ?? ''
+    };
+  }
+  function captureAnchor(model: string, kind: 'content' | 'title') {
+    if (composedCanvas) {
+      const screen =
+        kind === 'title'
+          ? composedCanvas.screenOfTitle(model)
+          : composedCanvas.screenOfContent(model);
+      if (screen) return { model, kind, screen: { x: screen.x, y: screen.y }, scale: screen.scale };
+    }
+    const origin = canvas?.screenOfOrigin();
+    if (!origin) return null;
+    return {
+      model,
+      kind: 'content' as const,
+      screen: { x: origin.x, y: origin.y },
+      scale: origin.scale
+    };
+  }
   function placeCompositionAnchor() {
     if (!compositionAnchor || !composition || !composedCanvas) return;
-    const root =
-      composition.composed.projects.find((project) => project.model === modelId) ??
-      composition.composed.projects[0];
+    const offset =
+      compositionAnchor.kind === 'title'
+        ? (composedCanvas.titleOffset(compositionAnchor.model) ?? { x: 0, y: 0 })
+        : (composedCanvas.contentOffset(compositionAnchor.model) ?? { x: 0, y: 0 });
     composedCanvas.placeContent({
-      offset: { x: root.content.x, y: root.content.y },
-      screen: { x: compositionAnchor.x, y: compositionAnchor.y },
+      offset,
+      screen: compositionAnchor.screen,
       scale: compositionAnchor.scale
     });
   }
   function selectionSurvives(composed: ComposedDiagram, value: QualifiedSelection): boolean {
     if (value.kind === 'connection')
       return composed.bridges.some(
-        (bridge) => bridge.owner === value.ownerModel && bridge.id === value.connectionId
+        (bridge) =>
+          (bridge.owner === value.ownerModel && bridge.id === value.connectionId) ||
+          bridge.underlying.some(
+            (entry) => entry.owner === value.ownerModel && entry.connectionId === value.connectionId
+          )
       );
     return composed.projects.some((project) => project.model === value.model);
   }
-  async function renderComposition(next: CompositionState) {
+  async function renderComposition(
+    next: CompositionState,
+    options: { reload?: boolean; retryStale?: boolean } = {}
+  ) {
+    const generation = nextGeneration(compositionGeneration);
+    compositionGeneration = generation;
     const token = ++compositionRequestId;
     busy = true;
     error = '';
     try {
-      const result = await readJson(
-        await fetch('/api/composition/render', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            root: modelId,
-            state: next,
-            revisions: composition?.revisions ?? {}
-          })
+      const response = await fetch('/api/composition/render', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          root: modelId,
+          state: next,
+          revisions: options.reload ? {} : (composition?.revisions ?? {}),
+          generation,
+          client: compositionClientId(),
+          ...(options.reload ? { reload: true } : {})
         })
-      );
+      });
+      const payload = await response.json();
       if (token !== compositionRequestId) return;
-      composition = { state: result.state, composed: result.composed, revisions: result.revisions };
-      if (compositionSelection && !selectionSurvives(result.composed, compositionSelection))
+      if (payload.status === 'stale') {
+        // Discard: keep the last coherent view and never hang on Composing view.
+        if (!composition && !options.retryStale)
+          return await renderComposition(next, { ...options, retryStale: true });
+        return;
+      }
+      if (
+        typeof payload.generation === 'number' &&
+        isStale(payload.generation, compositionGeneration)
+      )
+        return;
+      if (response.status === 409 && payload.code === 'revision_changed') {
+        revisionNotice = {
+          kind: 'revision_changed',
+          model: payload.model,
+          message: `Sources changed${payload.model ? `: ${payload.model}` : ''}`
+        };
+        return;
+      }
+      if (response.status === 409 && payload.code === 'source_changing') {
+        revisionNotice = {
+          kind: 'source_changing',
+          model: payload.model,
+          message: `${payload.model ?? 'A source'} is changing. Retry the load.`
+        };
+        return;
+      }
+      if (response.status === 422 && payload.code === 'budget_exceeded') {
+        revisionNotice = {
+          kind: 'budget_exceeded',
+          message: payload.error ?? 'This composition exceeds its resource budget.'
+        };
+        return;
+      }
+      if (!response.ok) throw new Error(payload.error ?? `Request failed (${response.status})`);
+      const changing = (payload.composed?.diagnostics ?? []).find(
+        (diagnostic: { code: string }) => diagnostic.code === 'source_changing'
+      );
+      if (changing && composition) {
+        revisionNotice = {
+          kind: 'source_changing',
+          model: changing.target?.model ?? changing.ownerModel,
+          message: `${changing.target?.model ?? changing.ownerModel} is changing. Retry the load.`
+        };
+        return;
+      }
+      revisionNotice = null;
+      composition = {
+        state: payload.state,
+        composed: payload.composed,
+        revisions: payload.revisions
+      };
+      if (compositionSelection && !selectionSurvives(payload.composed, compositionSelection))
         compositionSelection = null;
       await tick();
       if (compositionAnchor) {
@@ -513,10 +679,26 @@
       if (token === compositionRequestId) busy = false;
     }
   }
+  function reloadComposition() {
+    if (!composition) return;
+    revisionNotice = null;
+    void renderComposition(composition.state, { reload: true });
+  }
   /**
    * Reveal the linked project beside the root at the reader's current scale. Nothing foreign is
    * fetched until this runs; a repeated activation pans to the frame that already exists.
    */
+  async function loadProjectModel(id: string): Promise<Model | null> {
+    if (compositionModels[id]) return compositionModels[id];
+    try {
+      const loaded = await readJson(await fetch(`/api/models/${encodeURIComponent(id)}`));
+      compositionModels = { ...compositionModels, [id]: loaded.model };
+      await ensureLinks(id);
+      return loaded.model as Model;
+    } catch {
+      return null;
+    }
+  }
   async function openLink(link: DiagramLink) {
     if (!model) return;
     await ensureLinks();
@@ -526,59 +708,60 @@
       composedCanvas?.revealProject(link.target.model);
       return;
     }
-    if (!authoredLinks) return;
-    compositionAnchor = canvas?.screenOfOrigin() ?? null;
-    const rootSnapshot = {
-      id: modelId,
-      model,
-      links: authoredLinks.links,
-      origins: { elements: {}, relationships: {} },
-      revision: authoredLinks.revision
-    };
-    // Start from the scene defaults, then keep exactly what the reader is looking at: the root's
-    // local diagram must not change just because it gained a frame.
-    let state = parseCompositionState({
-      ...rootState(rootSnapshot, {
-        scene: sceneId ?? undefined,
-        theme: view.theme,
-        layout: view.layout
-      }),
-      projects: [
-        {
-          model: modelId,
-          ...(sceneId === null ? {} : { scene: sceneId }),
-          mode: 'open' as const,
-          view: {
-            expanded: [...view.expanded],
-            proposed: view.proposed,
-            lens: view.lens,
-            ...(view.scope === undefined ? {} : { scope: view.scope })
+    const sourceModel = selectedCompositionModel ?? modelId;
+    if (composition) compositionAnchor = captureAnchor(sourceModel, 'title');
+    else {
+      const origin = canvas?.screenOfOrigin();
+      compositionAnchor = origin
+        ? {
+            model: modelId,
+            kind: 'content',
+            screen: { x: origin.x, y: origin.y },
+            scale: origin.scale
           }
-        }
-      ]
-    });
-    const nextModels: Record<string, Model> = { ...compositionModels, [modelId]: model };
-    const resolution = authoredLinks.resolution.find((entry) => entry.model === link.target.model);
-    if (resolution?.status === 'resolved') {
-      try {
-        const loaded = await readJson(
-          await fetch(`/api/models/${encodeURIComponent(link.target.model)}`)
-        );
-        state = openProject(
-          state,
+        : null;
+    }
+    let state = composition?.state;
+    if (!state) {
+      if (!authoredLinks) return;
+      const rootSnapshot = {
+        id: modelId,
+        model,
+        links: authoredLinks.links,
+        origins: { elements: {}, relationships: {} },
+        revision: authoredLinks.revision
+      };
+      // Start from the scene defaults, then keep exactly what the reader is looking at: the root's
+      // local diagram must not change just because it gained a frame.
+      state = parseCompositionState({
+        ...rootState(rootSnapshot, {
+          scene: sceneId ?? undefined,
+          theme: view.theme,
+          layout: view.layout
+        }),
+        projects: [
           {
-            id: link.target.model,
-            model: loaded.model,
-            links: null,
-            origins: { elements: {}, relationships: {} },
-            revision: loaded.revision
-          },
-          link.target.scene
-        );
-        nextModels[link.target.model] = loaded.model;
-      } catch {
-        // An unresolved or malformed target stays a project entry, so compose can report it.
-      }
+            model: modelId,
+            ...(sceneId === null ? {} : { scene: sceneId }),
+            mode: 'open' as const,
+            view: {
+              expanded: [...view.expanded],
+              proposed: view.proposed,
+              lens: view.lens,
+              ...(view.scope === undefined ? {} : { scope: view.scope })
+            }
+          }
+        ]
+      });
+      compositionModels = { ...compositionModels, [modelId]: model };
+      if (authoredLinks) compositionLinks = { ...compositionLinks, [modelId]: authoredLinks };
+    }
+    const ownerLinks = compositionLinks[sourceModel] ?? authoredLinks;
+    const resolution = ownerLinks?.resolution.find((entry) => entry.model === link.target.model);
+    if (resolution?.status === 'resolved' || !resolution) {
+      const loaded = await loadProjectModel(link.target.model);
+      const snapshot = snapshotFor(link.target.model);
+      if (loaded && snapshot) state = openProject(state, snapshot, link.target.scene);
     }
     if (!state.projects.some((project) => project.model === link.target.model))
       state = parseCompositionState({
@@ -592,7 +775,6 @@
           }
         ]
       });
-    compositionModels = nextModels;
     compositionSelection = null;
     await renderComposition(state);
   }
@@ -600,6 +782,24 @@
     composition = null;
     compositionSelection = null;
     compositionModels = {};
+    compositionLinks = {};
+    revisionNotice = null;
+  }
+  async function restoreComposition(state: CompositionState) {
+    if (!model) return;
+    compositionModels = { ...compositionModels, [modelId]: model };
+    await ensureLinks(modelId);
+    for (const project of state.projects) {
+      if (project.model === modelId) continue;
+      await loadProjectModel(project.model);
+    }
+    if (state.selection) compositionSelection = state.selection;
+    await renderComposition(state, { reload: true });
+    await tick();
+    if (state.selection?.kind === 'element')
+      composedCanvas?.revealElement(state.selection.model, state.selection.element);
+    else if (state.selection?.kind === 'connection')
+      composedCanvas?.revealProject(state.selection.ownerModel);
   }
   function selectComposition(next: QualifiedSelection) {
     compositionSelection = next;
@@ -608,6 +808,7 @@
     if (!composition) return;
     const entry = composition.state.projects.find((project) => project.model === projectModel);
     if (!entry) return;
+    compositionAnchor = captureAnchor(projectModel, 'title');
     const expanded = entry.view.expanded.includes(id)
       ? entry.view.expanded.filter((candidate) => candidate !== id)
       : [...entry.view.expanded, id];
@@ -633,6 +834,22 @@
       return;
     }
     try {
+      compositionAnchor = captureAnchor(target, 'title');
+      if (typeof action !== 'string') {
+        if (action.kind === 'scene') {
+          const snapshot = snapshotFor(target);
+          if (!snapshot) return;
+          void renderComposition(
+            setProjectScene(composition.state, target, action.scene, snapshot)
+          );
+          return;
+        }
+        const scoped = setProjectScope(composition.state, target, action.element);
+        void renderComposition(
+          focusProject(scoped, action.element === undefined ? undefined : target)
+        );
+        return;
+      }
       if (action === 'close') {
         const state = closeProject(composition.state, target);
         if (state.projects.length === 1) closeComposition();
@@ -646,11 +863,29 @@
       error = e instanceof Error ? e.message : String(e);
     }
   }
+  function revealPort(port: ComposedPort) {
+    if (!composition) return;
+    compositionAnchor = captureAnchor(port.reveal.model, 'title');
+    const entry = composition.state.projects.find((project) => project.model === port.reveal.model);
+    let state = composition.state;
+    if (entry?.mode === 'collapsed') state = setProjectMode(state, port.reveal.model, 'open');
+    state = setProjectScope(state, port.reveal.model, port.reveal.element);
+    compositionSelection = {
+      kind: 'element',
+      model: port.reveal.model,
+      element: port.reveal.element
+    };
+    void renderComposition(state);
+  }
   function linksForSelection(): DiagramLink[] {
-    if (!authoredLinks || selectedType !== 'element' || !selected) return [];
-    return (authoredLinks.links?.links ?? []).filter(
-      (link) => link.from === selected || link.from === undefined
-    );
+    const owner = composition ? selectedCompositionModel : modelId;
+    const selectedId =
+      composition && compositionSelection?.kind === 'element'
+        ? compositionSelection.element
+        : selected;
+    if (!owner || !selectedId) return [];
+    const links = (compositionLinks[owner] ?? authoredLinks)?.links?.links ?? [];
+    return links.filter((link) => link.from === selectedId || link.from === undefined);
   }
   onMount(() => {
     mac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -663,6 +898,17 @@
     const requestedTheme = params.get('theme');
     if (!initialView && isThemeId(requestedTheme)) initialTheme = requestedTheme;
     initialSelection = params.get('selected');
+    try {
+      pendingComposition = compositionStateFromUrl(params);
+    } catch (e) {
+      pendingComposition = undefined;
+      error =
+        e instanceof CompositionContractError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Invalid composition link.';
+    }
     const requested = params.get('model');
     // A link that names its project can ask for the model while the catalog is still loading.
     // The catalog still decides whether that project exists, and still chooses the project when
@@ -689,6 +935,11 @@
       const recent = lastProject();
       const id = requested ?? (items.some((item) => item.id === recent) ? recent! : items[0].id);
       await changeModel(id, params.get('scene'), id === requested ? preloaded : null);
+      if (pendingComposition && model) {
+        const replay = pendingComposition;
+        pendingComposition = undefined;
+        await restoreComposition(replay);
+      }
     });
     return () => {
       clearTimeout(toastTimer);
@@ -724,9 +975,7 @@
     const scene = model?.scenes.find((s) => s.id === id);
     if (!scene) return;
     if (composition) {
-      composition = null;
-      compositionSelection = null;
-      compositionModels = {};
+      closeComposition();
     }
     sceneId = scene.id;
     sceneAnchor = scene.id;
@@ -829,8 +1078,14 @@
   }
   function focus(id: string) {
     if (composition && selectedCompositionModel) {
+      compositionAnchor = captureAnchor(selectedCompositionModel, 'title');
       compositionSelection = { kind: 'element', model: selectedCompositionModel, element: id };
-      void tick().then(() => composedCanvas?.revealElement(selectedCompositionModel!, id));
+      void renderComposition(
+        focusProject(
+          setProjectScope(composition.state, selectedCompositionModel, id),
+          selectedCompositionModel
+        )
+      );
       return;
     }
     view = {
@@ -843,7 +1098,16 @@
     renderView();
   }
   function fullSystem() {
-    if (composition) return;
+    if (composition && selectedCompositionModel) {
+      compositionAnchor = captureAnchor(selectedCompositionModel, 'title');
+      void renderComposition(
+        focusProject(
+          setProjectScope(composition.state, selectedCompositionModel, undefined),
+          undefined
+        )
+      );
+      return;
+    }
     view = { ...view, scope: undefined };
     sceneId = null;
     selected = null;
@@ -884,6 +1148,91 @@
     if (kind === 'jump' || kind === 'projects') refreshCatalog();
     canvas?.clearPeek();
     modal = kind;
+  }
+  function compositionSnapshots(): Map<string, ProjectSnapshot> {
+    const snapshots = new Map<string, ProjectSnapshot>();
+    if (!composition) return snapshots;
+    for (const project of composition.state.projects) {
+      const snapshot = snapshotFor(project.model);
+      if (snapshot) snapshots.set(project.model, snapshot);
+    }
+    return snapshots;
+  }
+  function compositionSearch(query: string): CompositionSearchResult[] {
+    if (!composition) return [];
+    return searchComposition(compositionSnapshots(), composition.state, query);
+  }
+  async function jumpComposition(result: CompositionSearchResult) {
+    modal = null;
+    await tick();
+    if (result.kind === 'link' && result.target) {
+      await openLink({
+        id: result.linkId ?? result.id,
+        title: result.title,
+        target: result.target
+      });
+      return;
+    }
+    if (!composition) return;
+    if (result.kind === 'scene') {
+      const snapshot = snapshotFor(result.model);
+      if (!snapshot) return;
+      compositionAnchor = captureAnchor(result.model, 'title');
+      await renderComposition(
+        setProjectScene(composition.state, result.model, result.id, snapshot)
+      );
+      return;
+    }
+    const snapshot = snapshotFor(result.model);
+    if (!snapshot) return;
+    const entry = composition.state.projects.find((project) => project.model === result.model);
+    let state = composition.state;
+    if (entry?.mode === 'collapsed') state = setProjectMode(state, result.model, 'open');
+    if (result.kind === 'element' || result.kind === 'relationship') {
+      const hit = {
+        id: result.id,
+        type: result.kind,
+        title: result.title,
+        description: result.description
+      } as SearchResult;
+      const revealed = revealSearchResult(
+        snapshot.model,
+        {
+          expanded: [...(entry?.view.expanded ?? [])],
+          proposed: entry?.view.proposed ?? false,
+          lens: entry?.view.lens ?? 'structure',
+          ...(entry?.view.scope === undefined ? {} : { scope: entry.view.scope }),
+          theme: composition.state.theme,
+          layout: composition.state.layout
+        },
+        hit
+      );
+      state = parseCompositionState({
+        ...state,
+        projects: state.projects.map((project) =>
+          project.model === result.model
+            ? {
+                ...project,
+                view: {
+                  ...project.view,
+                  expanded: [...revealed.view.expanded],
+                  proposed: revealed.view.proposed,
+                  ...(revealed.view.scope === undefined
+                    ? { scope: undefined }
+                    : { scope: revealed.view.scope })
+                }
+              }
+            : project
+        )
+      });
+    }
+    compositionAnchor = captureAnchor(result.model, 'title');
+    compositionSelection = result.selection;
+    await renderComposition(state);
+    await tick();
+    if (result.selection.kind === 'element')
+      composedCanvas?.revealElement(result.selection.model, result.selection.element);
+    else composedCanvas?.revealProject(result.model);
   }
   async function jumpTo(result: SearchResult) {
     if (!model) return;
@@ -941,16 +1290,18 @@
         toggleFlow();
         break;
       case 'open-linked': {
-        if (composition) break;
         const link = linksForSelection()[0];
         if (link) void openLink(link);
         else
-          void ensureLinks().then(() => {
+          void ensureLinks(selectedCompositionModel ?? modelId).then(() => {
             const first = linksForSelection()[0];
             if (first) void openLink(first);
           });
         break;
       }
+      case 'reload-sources':
+        if (composition) reloadComposition();
+        break;
       case 'toggle-presentation':
         if (diagram) togglePresentation();
         break;
@@ -961,10 +1312,12 @@
         copyLink();
         break;
       case 'zoom-in':
-        canvas?.zoom(1);
+        if (composition) composedCanvas?.zoom(1);
+        else canvas?.zoom(1);
         break;
       case 'zoom-out':
-        canvas?.zoom(-1);
+        if (composition) composedCanvas?.zoom(-1);
+        else canvas?.zoom(-1);
         break;
       case 'fit':
         if (composition) composedCanvas?.fit();
@@ -980,23 +1333,75 @@
       case 'move-right':
       case 'move-up':
       case 'move-down':
-        canvas?.navigate(command.slice(5) as Direction);
+        if (composition) composedCanvas?.navigate(command.slice(5) as Direction);
+        else canvas?.navigate(command.slice(5) as Direction);
         break;
       case 'activate':
         if (edge) select(edge, 'relationship');
         else canvas?.toggleActive();
         break;
-      case 'inspect':
+      case 'inspect': {
+        const port = target.closest('[data-project-port]');
+        if (composition && port instanceof Element) {
+          const modelName = port.getAttribute('data-project-port');
+          const element = port.getAttribute('data-port-element');
+          const side = port.getAttribute('data-port-side');
+          const found = composition.composed.projects
+            .find((project) => project.model === modelName)
+            ?.ports.find(
+              (candidate) => candidate.reveal.element === element && candidate.side === side
+            );
+          if (found) revealPort(found);
+          break;
+        }
+        const local = target.closest('[data-project][data-local-id]');
+        const localModel = local?.getAttribute('data-project');
+        const localId = local?.getAttribute('data-local-id');
+        const relation = target.closest('[data-edge-id]')?.getAttribute('data-edge-id');
+        if (composition && localModel && localId) {
+          if (toggleControl) toggleCompositionElement(localModel, localId);
+          else selectComposition({ kind: 'element', model: localModel, element: localId });
+          break;
+        }
+        if (composition && relation?.includes(':')) {
+          const [modelName, ...rest] = relation.split(':');
+          selectComposition({
+            kind: 'relationship',
+            model: modelName,
+            relationship: rest.join(':')
+          });
+          break;
+        }
+        const bridge = target.closest('[data-connection-owner][data-connection-id]');
+        if (composition && bridge) {
+          selectComposition({
+            kind: 'connection',
+            ownerModel: bridge.getAttribute('data-connection-owner')!,
+            connectionId: bridge.getAttribute('data-connection-id')!
+          });
+          break;
+        }
         if (toggleControl && node) toggle(node);
         else if (edge) select(edge, 'relationship');
         else if (node) select(node, 'element');
         else canvas?.activate();
         break;
-      case 'toggle':
+      }
+      case 'toggle': {
+        const local = target.closest('[data-project][data-local-id]');
+        const localModel = local?.getAttribute('data-project');
+        const localId = local?.getAttribute('data-local-id');
+        if (composition && localModel && localId) {
+          const source = compositionModels[localModel];
+          if (source?.elements.some((element) => element.parent === localId))
+            toggleCompositionElement(localModel, localId);
+          break;
+        }
         if (edge) break;
         if (node && model?.elements.some((e) => e.parent === node)) toggle(node);
         else canvas?.toggleActive();
         break;
+      }
       case 'outward':
         if (!edge) canvas?.exitLayer();
         break;
@@ -1264,6 +1669,21 @@
         proposed={view.proposed}
         onlens={lens}
         onproposed={(proposed) => {
+          if (composition) {
+            const target = selectedCompositionModel ?? composition.state.root;
+            compositionAnchor = captureAnchor(target, 'title');
+            void renderComposition(
+              parseCompositionState({
+                ...composition.state,
+                projects: composition.state.projects.map((project) =>
+                  project.model === target
+                    ? { ...project, view: { ...project.view, proposed } }
+                    : project
+                )
+              })
+            );
+            return;
+          }
           view = { ...view, proposed };
           sceneId = null;
           renderView();
@@ -1315,6 +1735,7 @@
               onselect={selectComposition}
               ontoggle={toggleCompositionElement}
               onprojectaction={projectAction}
+              onrevealport={revealPort}
               {measureInsets}
               {presentation}
             />
@@ -1328,6 +1749,22 @@
                 select(OUTSIDE, 'outside');
               }}
             />{/if}
+          {#if revisionNotice}
+            <div class="revision-banner" data-revision-banner={revisionNotice.kind} role="status">
+              <span
+                >{revisionNotice.kind === 'revision_changed'
+                  ? `Sources changed${revisionNotice.model ? `: ${revisionNotice.model}` : ''}`
+                  : revisionNotice.message}</span
+              >
+              {#if revisionNotice.kind === 'source_changing'}
+                <button class="button" data-retry-sources onclick={reloadComposition}>Retry</button>
+              {:else if revisionNotice.kind === 'revision_changed'}
+                <button class="button" data-reload-sources onclick={reloadComposition}
+                  >Reload</button
+                >
+              {/if}
+            </div>
+          {/if}
           {#if slow}<div class="loading-badge"><span></span>Composing view</div>{/if}
           {#if !model && !busy && !error}<p class="empty">No model loaded.</p>{/if}
         </div>
@@ -1362,12 +1799,29 @@
         view={inspectorView}
         composition={inspectorComposition}
         {compositionSelection}
-        links={inspectorModel?.id === modelId ? authoredLinks : null}
+        links={inspectorModel
+          ? (compositionLinks[inspectorModel.id] ??
+            (inspectorModel.id === modelId ? authoredLinks : null))
+          : null}
         {toggle}
         {focus}
         {inspectElement}
         {fullSystem}
         onopenlink={openLink}
+        onshowproposed={(id) => {
+          if (!composition) return;
+          compositionAnchor = captureAnchor(id, 'title');
+          void renderComposition(
+            parseCompositionState({
+              ...composition.state,
+              projects: composition.state.projects.map((project) =>
+                project.model === id
+                  ? { ...project, view: { ...project.view, proposed: true } }
+                  : project
+              )
+            })
+          );
+        }}
         onclose={() => {
           if (composition) compositionSelection = null;
           else selected = null;
@@ -1411,6 +1865,12 @@
       onrefresh={refreshCatalog}
       onproject={switchProject}
       onpick={jumpTo}
+      oncomposition={jumpComposition}
+      compositionSearch={composition ? compositionSearch : undefined}
+      projectTitle={(id) =>
+        compositionModels[id]?.title ??
+        composition?.composed.projects.find((project) => project.model === id)?.title ??
+        id}
       onclose={() => (modal = null)}
     />{/if}
   {#if modal === 'shortcuts'}<ShortcutSheet {presentation} onclose={() => (modal = null)} />{/if}
