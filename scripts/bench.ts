@@ -3,7 +3,8 @@
 // src/lib/bench, and writes the table, JSON document or JSONL rows. All measurement logic lives
 // in the library so a server or a test can run the same numbers.
 import { execFileSync } from 'node:child_process';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -23,6 +24,16 @@ import {
   type BaselineComparison,
   type LoadedBenchModel
 } from '../src/lib/bench';
+import {
+  COMPOSITION_STAGES,
+  compareCompositionRows,
+  fixtureDigest,
+  generateFixtures,
+  measureComposition,
+  writeFixtures,
+  type CompositionComparison,
+  type CompositionRow
+} from './bench-fixtures';
 import { showAllStructure } from '../src/lib/core/navigation';
 import { loadDirectory, resolveCatalog } from '../src/lib/server/models';
 import type { Model, ViewState } from '../src/lib/core/types';
@@ -39,13 +50,23 @@ and reports composition quality. Deterministic order, no interaction, structured
 Stages: load (read and parse), project, measure (node content), layout (the engine call and
 assembly), svg, and sequence layout for models with journeys.
 
+Composition mode (--composition) times linked compositions instead of single models. With no
+value it generates the fixture matrix under a temporary catalog and removes it afterwards:
+resolve, parse, local projection/measure/layout, frame placement, bridge routing and
+serialization are timed separately, with counts, estimated bytes and a geometry fingerprint.
+With a value it measures one local composition from --catalog and --model, so real repository
+models are read only where they live and are never bundled.
+
 Options:
   --catalog PATH                 Use a specific catalog.json instead of the resolved one
-  --model ID[,ID]                Measure only these models
+  --model ID[,ID]                Measure only these models (composition: the root model ID)
   --directory PATH[,PATH]        Measure these model directories instead of a catalog
   --synthetic N[,N]              Also measure generated models of N elements (alone: only these)
   --views scene|all|both         Authored scenes, show-all of the first scene, or both (default both)
   --engine ID[,ID]               Layout engines to compare (default all: ${BENCH_ENGINES.join(', ')})
+  --composition [ID]             Measure the generated composition fixture matrix, or ID with
+                                 --catalog/--model for a local steel thread
+  --fixture ID[,ID]              Composition fixtures to generate (default all: see below)
   --iterations N                 Measured runs after one discarded warm-up (default 5)
   --json                         One JSON document on stdout
   --output FILE                  Write JSONL, one row per model, view and engine
@@ -53,12 +74,16 @@ Options:
   --fail-on-geometry-change      Exit nonzero when a fingerprint differs (needs --baseline)
   -h, --help                     Show this text
 
+Composition fixtures: unopened, visible, loaded, bridges, chain, cycle, diamond, labels.
+
 Examples:
   bin/fractal bench
   bin/fractal bench --model delivery --views scene --json
   bin/fractal bench --synthetic 60,240 --iterations 3
   bin/fractal bench --output artifacts/bench/today.jsonl
-  bin/fractal bench --baseline artifacts/bench/baseline.jsonl --fail-on-geometry-change`;
+  bin/fractal bench --baseline artifacts/bench/baseline.jsonl --fail-on-geometry-change
+  bin/fractal bench --composition --iterations 1 --json
+  bin/fractal bench --composition plugins --catalog /tmp/catalog.json --model sidecar --json`;
 
 interface BenchSource {
   id: string;
@@ -297,14 +322,283 @@ function renderComparison(comparison: BaselineComparison, path: string): string 
   return [`Baseline ${path}`, table(headers, body, align)].join('\n');
 }
 
+interface CompositionArg {
+  /** Bare `--composition`: measure the generated fixture matrix. */
+  matrix: boolean;
+  /** `--composition ID`: measure one local composition through --catalog and --model. */
+  real?: string;
+}
+
+/**
+ * `--composition` is both a mode switch and, with a value, a local composition selector. Node's
+ * argument parser cannot express an optional value, so pull it out before parsing: a following
+ * token that is not another flag is the authored composition ID, otherwise it is the matrix mode.
+ */
+function extractComposition(argv: string[]): { args: string[]; composition: CompositionArg } {
+  const args: string[] = [];
+  let matrix = false;
+  let real: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token === '--composition') {
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith('-')) {
+        real = next;
+        i++;
+      } else matrix = true;
+    } else if (token.startsWith('--composition=')) {
+      real = token.slice('--composition='.length);
+    } else args.push(token);
+  }
+  return { args, composition: { matrix, ...(real === undefined ? {} : { real }) } };
+}
+
+function renderCompositionRows(rows: readonly CompositionRow[]): string {
+  const stages = COMPOSITION_STAGES.filter((stage) =>
+    rows.some((row) => row.stages[stage] !== undefined)
+  );
+  const headers = [
+    'Fixture',
+    'Engine',
+    'Projects',
+    'Loaded',
+    'Nodes',
+    'Edges',
+    'Bridges',
+    'Stubs',
+    'Bytes',
+    ...stages.map((stage) => `${stage} p50`),
+    'Fingerprint'
+  ];
+  const align: ('left' | 'right')[] = [
+    'left',
+    'left',
+    ...['Projects', 'Loaded', 'Nodes', 'Edges', 'Bridges', 'Stubs', 'Bytes'].map(
+      () => 'right' as const
+    ),
+    ...stages.map(() => 'right' as const),
+    'left'
+  ];
+  const body = rows.map((row) => [
+    row.model,
+    row.engine,
+    String(row.counts.projects),
+    String(row.counts.loadedElements),
+    String(row.nodes),
+    String(row.edges),
+    String(row.counts.bridges),
+    String(row.counts.stubs),
+    String(row.bytes),
+    ...stages.map((stage) => ms(row.stages[stage]?.p50)),
+    row.fingerprint.slice(0, 12)
+  ]);
+  return table(headers, body, align);
+}
+
+function renderCompositionComparison(comparison: CompositionComparison, path: string): string {
+  const stages = COMPOSITION_STAGES.filter((stage) =>
+    comparison.rows.some((row) => row.stages.some((delta) => delta.stage === stage))
+  );
+  const headers = [
+    'Fixture',
+    'Engine',
+    ...stages.map((stage) => `${stage} Δ`),
+    'Geometry',
+    'Status'
+  ];
+  const align: ('left' | 'right')[] = [
+    'left',
+    'left',
+    ...stages.map(() => 'right' as const),
+    'left',
+    'left'
+  ];
+  const signed = (value: number | null): string => {
+    if (value === null) return '-';
+    const magnitude = Math.abs(value).toFixed(3);
+    return magnitude === '0.000' ? magnitude : `${value > 0 ? '+' : '-'}${magnitude}`;
+  };
+  const body = comparison.rows.map((row) => [
+    row.model,
+    row.engine,
+    ...stages.map((stage) =>
+      signed(row.stages.find((delta) => delta.stage === stage)?.delta ?? null)
+    ),
+    row.status === 'compared' ? (row.fingerprintChanged ? 'CHANGED' : 'same') : '-',
+    row.status
+  ]);
+  return [`Baseline ${path}`, table(headers, body, align)].join('\n');
+}
+
+interface CompositionOutputMeta {
+  generated?: {
+    digest: string;
+    models: number;
+    bytes: number;
+    fixtures: { id: string; title: string; root: string; composition: string }[];
+  };
+  steelThread?: { root: string; composition: string; catalog: string };
+}
+
+interface CompositionOptions {
+  json?: boolean;
+  output?: string;
+  baseline?: string;
+  'fail-on-geometry-change'?: boolean;
+  fixture?: string;
+  model?: string;
+  catalog?: string;
+}
+
+async function finishComposition(
+  rows: CompositionRow[],
+  values: CompositionOptions,
+  meta: CompositionOutputMeta,
+  iterations: number,
+  commit: string | null,
+  timestamp: string
+): Promise<void> {
+  let comparison: CompositionComparison | undefined;
+  let baselinePath: string | undefined;
+  if (values.baseline !== undefined) {
+    baselinePath = resolve(values.baseline);
+    const baseline = parseBenchRows(
+      await readFile(baselinePath, 'utf8')
+    ) as unknown as CompositionRow[];
+    comparison = compareCompositionRows(rows, baseline);
+  }
+  if (values.output !== undefined) {
+    const path = resolve(values.output);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
+  }
+  if (values.json)
+    console.log(
+      JSON.stringify(
+        {
+          version: 1,
+          mode: 'composition',
+          commit,
+          timestamp,
+          iterations,
+          ...meta,
+          rows,
+          ...(comparison ? { baseline: { path: baselinePath, ...comparison } } : {}),
+          ...(values.output !== undefined ? { output: resolve(values.output) } : {})
+        },
+        null,
+        2
+      )
+    );
+  else {
+    console.log(renderCompositionRows(rows));
+    console.log(
+      `\n${rows.length} composition rows · ${iterations} iterations after one warm-up${commit ? ` · commit ${commit.slice(0, 7)}` : ''}`
+    );
+    if (comparison) console.log(`\n${renderCompositionComparison(comparison, baselinePath!)}`);
+    if (values.output !== undefined) console.log(`\nWrote ${resolve(values.output)}`);
+  }
+  if (values['fail-on-geometry-change'] && comparison?.geometryChanged) {
+    console.error(JSON.stringify({ error: 'Geometry fingerprint changed against the baseline' }));
+    process.exitCode = 1;
+  }
+}
+
+/** Generate the fixture matrix under a temporary catalog and measure every fixture. */
+async function runCompositionMatrix(values: CompositionOptions, iterations: number): Promise<void> {
+  const requested = list(values.fixture);
+  const generated = generateFixtures(requested.length ? requested : undefined);
+  const digest = fixtureDigest(generated);
+  const directory = await mkdtemp(join(tmpdir(), 'fractal-bench-composition-'));
+  try {
+    const written = await writeFixtures(generated, directory);
+    const commit = gitCommit();
+    const timestamp = new Date().toISOString();
+    const rows: CompositionRow[] = [];
+    for (const fixture of generated.fixtures) {
+      const { row } = await measureComposition({
+        catalog: written.catalog,
+        root: fixture.root,
+        composition: fixture.composition,
+        label: fixture.id,
+        iterations
+      });
+      rows.push({ ...row, commit, timestamp });
+    }
+    await finishComposition(
+      rows,
+      values,
+      {
+        generated: {
+          digest,
+          models: generated.models.length,
+          bytes: written.bytes,
+          fixtures: generated.fixtures.map((fixture) => ({
+            id: fixture.id,
+            title: fixture.title,
+            root: fixture.root,
+            composition: fixture.composition
+          }))
+        }
+      },
+      iterations,
+      commit,
+      timestamp
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The local steel thread: one authored composition resolved through the caller's catalog. This
+ * never writes or bundles a repository model; it reads only the catalog the caller names.
+ */
+async function runSteelThread(
+  values: CompositionOptions,
+  iterations: number,
+  composition: string
+): Promise<void> {
+  if (values.model === undefined) throw new Error('--composition ID requires --model ROOT');
+  if (values.catalog === undefined)
+    throw new Error(
+      '--composition ID requires --catalog PATH; repository models are never bundled'
+    );
+  const commit = gitCommit();
+  const timestamp = new Date().toISOString();
+  const { row } = await measureComposition({
+    catalog: values.catalog,
+    root: values.model,
+    composition,
+    label: `steel-thread:${values.model}`,
+    iterations
+  });
+  await finishComposition(
+    [{ ...row, commit, timestamp }],
+    values,
+    {
+      steelThread: {
+        root: values.model,
+        composition,
+        catalog: resolve(values.catalog)
+      }
+    },
+    iterations,
+    commit,
+    timestamp
+  );
+}
+
 export async function runBench(argv: string[]): Promise<void> {
+  const extracted = extractComposition(argv);
   const { values } = parseArgs({
-    args: argv,
+    args: extracted.args,
     options: {
       catalog: { type: 'string' },
       model: { type: 'string' },
       directory: { type: 'string' },
       synthetic: { type: 'string' },
+      fixture: { type: 'string' },
       views: { type: 'string', default: 'both' },
       engine: { type: 'string' },
       iterations: { type: 'string', default: '5' },
@@ -319,14 +613,22 @@ export async function runBench(argv: string[]): Promise<void> {
     console.log(BENCH_HELP);
     return;
   }
-  if (!['scene', 'all', 'both'].includes(values.views!))
-    throw new Error('Views must be scene, all or both');
-  // Nothing to fail against: a silent exit 0 here would read as a passing gate.
-  if (values['fail-on-geometry-change'] && values.baseline === undefined)
-    throw new Error('--fail-on-geometry-change needs a --baseline to compare against');
   const iterations = Number(values.iterations);
   if (!Number.isInteger(iterations) || iterations < 1)
     throw new Error('Iterations must be a whole number of at least 1');
+  // Nothing to fail against: a silent exit 0 here would read as a passing gate.
+  if (values['fail-on-geometry-change'] && values.baseline === undefined)
+    throw new Error('--fail-on-geometry-change needs a --baseline to compare against');
+  if (extracted.composition.real !== undefined) {
+    await runSteelThread(values, iterations, extracted.composition.real);
+    return;
+  }
+  if (extracted.composition.matrix) {
+    await runCompositionMatrix(values, iterations);
+    return;
+  }
+  if (!['scene', 'all', 'both'].includes(values.views!))
+    throw new Error('Views must be scene, all or both');
   const engines: BenchEngineId[] = list(values.engine).length
     ? list(values.engine).map((id) => {
         if (!isBenchEngineId(id))

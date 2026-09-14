@@ -7,7 +7,7 @@
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
-import { access, mkdtemp, rm, stat } from 'node:fs/promises';
+import { access, cp, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,11 @@ Options:
   --model ID       Model to open (default: the largest model in the resolved catalog)
   --skip-build     Reuse an existing build/ instead of running npm run build
   --keep-portable  Leave the exported portable document on disk and report its path
+  --composition    Run the linked composition journey against a private temp catalog:
+                   cold startup with zero foreign fetches, open a link, expand the target,
+                   pan/zoom, then --cycles open/close cycles with retained heap growth
+  --cycles N       Open/close cycles in the composition journey (default 50)
+  --pan-ms N       Pan/zoom sampling window in milliseconds (default 3000)
   -h, --help       Show this text`;
 
 /**
@@ -45,6 +50,44 @@ window.__bench = {
     for (var i = 0; i < nodes.length; i++)
       parts.push(nodes[i].getAttribute('data-node-id') + '@' + nodes[i].getAttribute('transform'));
     return parts.join('|');
+  },
+  /**
+   * Samples frame deltas and long tasks over a fixed window, for gestures (pan/zoom) that do not
+   * change node transforms and so never move the geometry signature.
+   */
+  sample(windowMs) {
+    var started = performance.now();
+    var taskCount = window.__bench.longTasks.length;
+    var frames = [];
+    var last = started;
+    return new Promise(function (resolve) {
+      var tick = function () {
+        var now = performance.now();
+        frames.push(now - last);
+        last = now;
+        if (now - started > windowMs) {
+          resolve({
+            latencyMs: null,
+            frames: frames,
+            longTasks: window.__bench.longTasks.slice(taskCount)
+          });
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  },
+  /** Chromium's heap counters, when precise memory info is enabled. */
+  memory() {
+    var memory = performance.memory;
+    if (!memory) return null;
+    return { used: memory.usedJSHeapSize, total: memory.totalJSHeapSize };
+  },
+  /** Called before a heap reading when Chromium was launched with --expose-gc. */
+  collectGarbage() {
+    if (typeof window.gc === 'function') window.gc();
+    return true;
   },
   /**
    * Resolves when the diagram's geometry differs from the signature taken now, timed from the
@@ -268,6 +311,296 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+/** Studio API requests already completed, named with their path and query. */
+async function apiRequests(
+  page: Page
+): Promise<{ name: string; startMs: number; durationMs: number }[]> {
+  return (await page.evaluate(
+    `performance.getEntriesByType('resource')
+      .filter(function (entry) { return entry.name.indexOf('/api/') >= 0; })
+      .map(function (entry) {
+        return {
+          name: new URL(entry.name).pathname + new URL(entry.name).search,
+          startMs: Math.round(entry.startTime * 100) / 100,
+          durationMs: Math.round(entry.duration * 100) / 100
+        };
+      })`
+  )) as { name: string; startMs: number; durationMs: number }[];
+}
+
+/** Wait until exactly `count` project frames are mounted in the composed canvas. */
+async function waitForFrames(page: Page, count: number, timeout = 20000): Promise<void> {
+  await page.waitForFunction(
+    (expected: number) => document.querySelectorAll('[data-project-frame]').length === expected,
+    count,
+    { timeout }
+  );
+}
+
+/** Open the host's linked plugin without the measurement wrapper, for the cycle loop. */
+async function openLinked(page: Page): Promise<void> {
+  if ((await page.locator('[data-open-link="plugin"]').count()) === 0) {
+    await page.locator('[data-node-id="core"]').click();
+    await page.getByRole('button', { name: 'Plugin adapter', exact: true }).click();
+    await page.locator('[data-open-link="plugin"]').waitFor({ state: 'attached', timeout: 15000 });
+  }
+  await page.locator('[data-open-link="plugin"]').click();
+  await waitForFrames(page, 2);
+}
+
+/** Close the linked plugin from its project menu. */
+async function closeLinked(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
+  await page.getByRole('menuitem', { name: 'Close' }).click();
+  await waitForFrames(page, 0);
+}
+
+interface HeapReading {
+  used: number;
+  total: number;
+}
+
+/** A heap reading after a collection request; null when the browser exposes no counters. */
+async function readHeap(page: Page): Promise<HeapReading | null> {
+  await page.evaluate('window.__bench.collectGarbage()');
+  return (await page.evaluate('window.__bench.memory()')) as HeapReading | null;
+}
+
+interface CompositionJourneyOptions {
+  model: string;
+  scene: string;
+  cycles: number;
+  panMs: number;
+}
+
+/**
+ * The linked composition journey against the real routes: a cold studio startup that fetches the
+ * catalog and the root only, an explicit link open, a target expansion, a sustained pan/zoom
+ * sample, then repeated open/close cycles with a retained-heap reading where available.
+ */
+async function compositionJourney(
+  url: string,
+  options: CompositionJourneyOptions,
+  browser: Browser
+): Promise<Record<string, unknown>> {
+  const context = await browser.newContext({
+    viewport: { width: 1512, height: 982 },
+    reducedMotion: 'reduce'
+  });
+  await context.addInitScript(INIT_SCRIPT);
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const modelRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/models/')) modelRequests.push(new URL(request.url()).pathname);
+  });
+
+  const opened = Date.now();
+  await page.goto(
+    `${url}/?model=${encodeURIComponent(options.model)}&scene=${encodeURIComponent(options.scene)}`,
+    { waitUntil: 'load' }
+  );
+  await settle(page);
+  const coldStartupMs = Date.now() - opened;
+  const startupRequests = await apiRequests(page);
+  const foreignBeforeOpen = modelRequests.filter((path) => /plugin|missing-plugin/.test(path));
+
+  // Listing links must never fetch a foreign model; only the explicit open below may.
+  await page.locator('[data-node-id="core"]').click();
+  await page.getByRole('button', { name: 'Plugin adapter', exact: true }).click();
+  await page
+    .getByRole('region', { name: 'Linked diagrams' })
+    .waitFor({ state: 'visible', timeout: 15000 });
+
+  const open = await measureClick(page, '[data-open-link="plugin"]', 'open Beacon plugin');
+  await waitForFrames(page, 2);
+  open.dom = await diagramDom(page);
+  const foreignAfterOpen = modelRequests.filter((path) => /plugin|missing-plugin/.test(path));
+
+  const expand = await measureClick(
+    page,
+    'button[aria-label="Expand Beacon plugin"]',
+    'expand Beacon plugin'
+  );
+  await page.locator('[data-node-id="plugin:cli"]').waitFor({ state: 'visible', timeout: 15000 });
+  const domAfterExpand = await diagramDom(page);
+
+  await page.locator('.composition-canvas svg').focus();
+  const sampling = page.evaluate(`window.__bench.sample(${options.panMs})`) as Promise<RawWatch>;
+  const canvas = (await page.locator('.composition-canvas svg').boundingBox())!;
+  for (let i = 0; i < 10; i++) {
+    await page.keyboard.press(i % 2 === 0 ? '=' : '-');
+    await page.mouse.move(canvas.x + canvas.width * 0.4, canvas.y + canvas.height * 0.5);
+    await page.mouse.wheel(0, i % 2 === 0 ? -160 : 160);
+    await page.waitForTimeout(Math.max(20, Math.floor(options.panMs / 12)));
+  }
+  const panZoom = summarize('pan/zoom', await sampling);
+
+  const heapBefore = await readHeap(page);
+  const tasksBeforeCycles = (await page.evaluate('window.__bench.longTasks.length')) as number;
+  const cyclesStarted = Date.now();
+  for (let i = 0; i < options.cycles; i++) {
+    await closeLinked(page);
+    await openLinked(page);
+  }
+  const cyclesWallMs = Date.now() - cyclesStarted;
+  const cycleLongTasks = (await page.evaluate(
+    `window.__bench.longTasks.slice(${tasksBeforeCycles})`
+  )) as { startMs: number; durationMs: number }[];
+  const heapAfter = await readHeap(page);
+
+  const longTasksOver50 = [...open.longTasks, ...expand.longTasks, ...panZoom.longTasks].filter(
+    (task) => task.durationMs > 50
+  );
+  const heap =
+    heapBefore && heapAfter
+      ? {
+          supported: true,
+          beforeBytes: heapBefore.used,
+          afterBytes: heapAfter.used,
+          growthBytes: heapAfter.used - heapBefore.used,
+          growthPercent:
+            heapBefore.used > 0
+              ? round(((heapAfter.used - heapBefore.used) / heapBefore.used) * 100)
+              : null,
+          cycles: options.cycles
+        }
+      : { supported: false, cycles: options.cycles };
+
+  return {
+    journey: {
+      coldStartupMs,
+      startupRequests,
+      foreignModelRequestsBeforeOpen: foreignBeforeOpen,
+      foreignModelRequestsAfterOpen: foreignAfterOpen,
+      open,
+      expand,
+      dom: { atOpen: open.dom, afterExpand: domAfterExpand },
+      panZoom,
+      cycles: {
+        count: options.cycles,
+        wallMs: cyclesWallMs,
+        longTasks: cycleLongTasks,
+        heap
+      },
+      errors
+    },
+    headline: {
+      coldStartupMs,
+      openMs: open.latencyMs,
+      expandMs: expand.latencyMs,
+      frameP99Ms: panZoom.frames.p99,
+      longTasksOver50Ms: longTasksOver50.length,
+      foreignModelRequestsBeforeOpen: foreignBeforeOpen.length,
+      retainedHeapGrowthPercent: heap.supported ? heap.growthPercent : null
+    },
+    longTasksOver50
+  };
+}
+
+const COMPOSITION_SCENE = 'overview';
+
+/**
+ * Start a private server over an isolated temp catalog holding only the fictional host and plugin
+ * fixtures, then run the composition journey. Repository models are never copied or bundled.
+ */
+async function runCompositionMode(values: {
+  model?: string;
+  'skip-build'?: boolean;
+  cycles: string;
+  'pan-ms': string;
+}): Promise<void> {
+  const cycles = Number(values.cycles);
+  if (!Number.isInteger(cycles) || cycles < 1)
+    throw new Error('--cycles must be a whole number of at least 1');
+  const panMs = Number(values['pan-ms']);
+  if (!Number.isFinite(panMs) || panMs < 100)
+    throw new Error('--pan-ms must be a whole number of at least 100');
+  const directory = await mkdtemp(join(tmpdir(), 'fractal-bench-linked-'));
+  let server: ChildProcess | undefined;
+  let browser: Browser | undefined;
+  const stop = (code: number) => {
+    server?.kill('SIGTERM');
+    process.exit(code);
+  };
+  process.once('SIGINT', () => stop(130));
+  process.once('SIGTERM', () => stop(143));
+  try {
+    const host = join(directory, 'host');
+    const plugin = join(directory, 'plugin');
+    await cp(join(ROOT, 'tests', 'fixtures', 'linked-projects', 'host'), host, {
+      recursive: true
+    });
+    await cp(join(ROOT, 'tests', 'fixtures', 'linked-projects', 'plugin'), plugin, {
+      recursive: true
+    });
+    const catalog = join(directory, 'catalog.json');
+    await writeFile(
+      catalog,
+      JSON.stringify(
+        {
+          version: 1,
+          projects: [
+            { id: 'host', directory: host },
+            { id: 'plugin', directory: plugin }
+          ]
+        },
+        null,
+        2
+      ) + '\n'
+    );
+    if (!values['skip-build']) await run('npm', ['run', 'build']);
+    const port = await freePort();
+    const url = `http://127.0.0.1:${port}`;
+    server = spawn('node', ['build'], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        FRACTAL_CATALOG: catalog,
+        FRACTAL_MODELS_DIR: '',
+        PORT: String(port),
+        HOST: '127.0.0.1'
+      },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
+    await waitForServer(url, 30000);
+    browser = await chromium.launch({
+      args: ['--js-flags=--expose-gc', '--enable-precise-memory-info']
+    });
+    const journey = await compositionJourney(
+      url,
+      { model: values.model ?? 'host', scene: COMPOSITION_SCENE, cycles, panMs },
+      browser
+    );
+    console.log(
+      JSON.stringify(
+        {
+          version: 1,
+          mode: 'composition',
+          timestamp: new Date().toISOString(),
+          url,
+          startedServer: true,
+          catalog,
+          browser: {
+            name: 'Chromium',
+            version: browser.version(),
+            viewport: { width: 1512, height: 982 },
+            reducedMotion: 'reduce'
+          },
+          ...journey
+        },
+        null,
+        2
+      )
+    );
+  } finally {
+    await browser?.close();
+    server?.kill('SIGTERM');
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   const { values } = parseArgs({
     args: process.argv.slice(2),
@@ -276,11 +609,18 @@ async function main(): Promise<void> {
       model: { type: 'string' },
       'skip-build': { type: 'boolean' },
       'keep-portable': { type: 'boolean' },
+      composition: { type: 'boolean' },
+      cycles: { type: 'string', default: '50' },
+      'pan-ms': { type: 'string', default: '3000' },
       help: { type: 'boolean', short: 'h' }
     }
   });
   if (values.help) {
     console.log(HELP);
+    return;
+  }
+  if (values.composition) {
+    await runCompositionMode(values);
     return;
   }
   const { id: model, env } = await resolveModel(values.model);
@@ -342,17 +682,7 @@ async function main(): Promise<void> {
     await page.goto(`${url}/?model=${encodeURIComponent(model)}`, { waitUntil: 'load' });
     await settle(page);
     const pageOpenMs = Date.now() - opened;
-    const requests = (await page.evaluate(
-      `performance.getEntriesByType('resource')
-        .filter(function (entry) { return entry.name.indexOf('/api/') >= 0; })
-        .map(function (entry) {
-          return {
-            name: new URL(entry.name).pathname + new URL(entry.name).search,
-            startMs: Math.round(entry.startTime * 100) / 100,
-            durationMs: Math.round(entry.duration * 100) / 100
-          };
-        })`
-    )) as { name: string; startMs: number; durationMs: number }[];
+    const requests = await apiRequests(page);
     // Long tasks counted during page open: a nonzero count is also the proof that the observer
     // is live, so "no long tasks during a toggle" is a measurement rather than a silent failure.
     const studio = {

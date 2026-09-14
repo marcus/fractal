@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
   compareToBaseline,
@@ -11,6 +14,14 @@ import {
   syntheticModel,
   type BenchRow
 } from '../src/lib/bench';
+import {
+  COMPOSITION_STAGES,
+  compareCompositionRows,
+  fixtureDigest,
+  generateFixtures,
+  measureComposition,
+  writeFixtures
+} from '../scripts/bench-fixtures';
 import { layout } from '../src/lib/core/layout';
 import { project } from '../src/lib/core/projection';
 import { showAllStructure } from '../src/lib/core/navigation';
@@ -231,4 +242,89 @@ test('baseline rows read back from JSONL and from a JSON document', () => {
   assert.deepEqual(parseBenchRows(jsonl), rows);
   assert.deepEqual(parseBenchRows(JSON.stringify({ version: 1, rows }, null, 2)), rows);
   assert.throws(() => parseBenchRows('{"model":1}'), /fingerprint/);
+});
+
+/** Generate the named fixtures into a temporary catalog and hand its path to the test. */
+async function withCatalog<T>(ids: string[], run: (catalog: string) => Promise<T>): Promise<T> {
+  const directory = await mkdtemp(join(tmpdir(), 'fractal-bench-test-'));
+  try {
+    const written = await writeFixtures(generateFixtures(ids), directory);
+    return await run(written.catalog);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+test('composition fixture generators are deterministic and digestable', () => {
+  const first = generateFixtures();
+  const second = generateFixtures();
+  assert.match(fixtureDigest(first), /^[0-9a-f]{64}$/);
+  assert.equal(fixtureDigest(first), fixtureDigest(second));
+  assert.deepEqual(first.fixtures, second.fixtures);
+  assert.deepEqual(
+    first.fixtures.map((fixture) => fixture.id),
+    ['unopened', 'visible', 'loaded', 'bridges', 'chain', 'cycle', 'diamond', 'labels']
+  );
+  const ids = first.models.map((model) => model.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(first.models.filter((model) => model.id.startsWith('visible-')).length, 4);
+  assert.equal(first.models.filter((model) => model.id.startsWith('loaded-p')).length, 10);
+  assert.throws(() => generateFixtures(['absent']), /Unknown fixture/);
+});
+
+test('a small composition bench run produces the expected row shape', async () => {
+  await withCatalog(['cycle'], async (catalog) => {
+    const { row } = await measureComposition({
+      catalog,
+      root: 'cycle-c0',
+      composition: 'cycle',
+      label: 'cycle',
+      iterations: 2
+    });
+    assert.equal(row.model, 'cycle');
+    assert.equal(row.view, 'composition');
+    assert.equal(row.engine, 'elk-layered');
+    assert.deepEqual(Object.keys(row.stages).sort(), [...COMPOSITION_STAGES].sort());
+    for (const stage of COMPOSITION_STAGES) {
+      assert.equal(row.stages[stage]!.samples, 2, `${stage} sampled twice`);
+      assert.ok(row.stages[stage]!.p50 >= 0, `${stage} reported`);
+      assert.ok(row.stages[stage]!.p95 >= row.stages[stage]!.p50, `${stage} p95 follows p50`);
+    }
+    assert.equal(row.counts.projects, 3);
+    assert.equal(row.counts.bridges, 3);
+    assert.equal(row.counts.stubs, 0);
+    assert.equal(row.counts.diagnostics, 0);
+    assert.equal(row.nodes, 12, 'three four-node projects are visible');
+    assert.equal(row.edges, 3, 'one local relationship per project');
+    assert.ok(row.bytes > 0);
+    assert.match(row.fingerprint, /^[0-9a-f]{64}$/);
+    assert.ok(row.quality.edgeLength >= 0);
+    assert.equal(typeof row.coldParseMs, 'number');
+  });
+});
+
+test('the composition fingerprint is stable across two runs and detects a change', async () => {
+  await withCatalog(['cycle'], async (catalog) => {
+    const first = await measureComposition({
+      catalog,
+      root: 'cycle-c0',
+      composition: 'cycle',
+      label: 'cycle',
+      iterations: 1
+    });
+    const second = await measureComposition({
+      catalog,
+      root: 'cycle-c0',
+      composition: 'cycle',
+      label: 'cycle',
+      iterations: 1
+    });
+    assert.equal(first.row.fingerprint, second.row.fingerprint);
+    assert.equal(compareCompositionRows([first.row], [second.row]).geometryChanged, false);
+    assert.equal(
+      compareCompositionRows([{ ...second.row, fingerprint: 'deadbeef' }], [first.row])
+        .geometryChanged,
+      true
+    );
+  });
 });
