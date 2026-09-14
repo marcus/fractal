@@ -66,7 +66,7 @@ Options:
   --json                         Structured output
   --element ID                   Inspect a stable element ID
   --query TEXT                   Search titles, identifiers and descriptions
-  --format svg|png|html          Export format (HTML includes the full model, or an explicit linked set with --include; PNG needs Chromium)
+  --format svg|png|html          Export format (HTML includes the full model, or a linked set with --include; a root owning links.json exports a linked document with a root-only included set by default; PNG needs Chromium)
   --include ID,ID                HTML export: embed these linked projects with the root
   --output PATH                  Write result to a file
 
