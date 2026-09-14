@@ -29,7 +29,12 @@ test('a parsed model is reused while its files are untouched', async () => {
   clearModelCache();
   try {
     const first = await loadDirectory(path);
-    assert.deepEqual(modelCacheStats(), { hits: 0, misses: 1, size: 1 });
+    const stats = modelCacheStats();
+    assert.equal(stats.hits, 0);
+    assert.equal(stats.misses, 1);
+    assert.equal(stats.entries, 1);
+    assert.equal(stats.evictions, 0);
+    assert.ok(stats.bytes > 0, 'a settled parse carries its estimated snapshot bytes');
     const second = await loadDirectory(path);
     assert.equal(modelCacheStats().misses, 1, 'a warm call must not parse again');
     assert.equal(modelCacheStats().hits, 1);
@@ -95,7 +100,7 @@ test('the parsed-model cache is keyed per directory', async () => {
     const first = await loadDirectory(path);
     const second = await loadDirectory(copy);
     assert.equal(modelCacheStats().misses, 2, 'a second directory is its own entry');
-    assert.equal(modelCacheStats().size, 2);
+    assert.equal(modelCacheStats().entries, 2);
     assert.notEqual(second, first);
     assert.equal(second.revision, first.revision, 'identical files still hash the same');
     await loadDirectory(path);
@@ -172,7 +177,12 @@ test('an identical view is laid out once and returned as its own value', async (
   assert.deepEqual(second, first, 'a hit is the same diagram');
   assert.notEqual(second, first, 'a hit is a private copy, safe to mutate');
   assert.notEqual(second.nodes, first.nodes);
-  assert.deepEqual(renderCacheStats(), { hits: 1, misses: 1, size: 1 });
+  const stats = renderCacheStats();
+  assert.equal(stats.hits, 1);
+  assert.equal(stats.misses, 1);
+  assert.equal(stats.entries, 1);
+  assert.equal(stats.evictions, 0);
+  assert.ok(stats.bytes > 0, 'a layout carries its estimated geometry bytes');
 
   second.nodes[0].x = -9999;
   const third = await renderDiagram(loaded, { ...STATE, expanded: ['root'] });
@@ -233,7 +243,10 @@ test('the engine is part of a rendered view, so two flows never share one entry'
   assert.equal(down.state.layout, 'elk-layered-down');
   await renderDiagram(loaded, { ...STATE, expanded: ['root'], layout: 'elk-layered-down' });
   await renderDiagram(loaded, { ...STATE, expanded: ['root'] });
-  assert.deepEqual(renderCacheStats(), { hits: 2, misses: 2, size: 2 });
+  const both = renderCacheStats();
+  assert.equal(both.hits, 2);
+  assert.equal(both.misses, 2);
+  assert.equal(both.entries, 2);
 });
 
 test('the layout cache evicts the least recently used view', async () => {
@@ -244,7 +257,7 @@ test('the layout cache evicts the least recently used view', async () => {
   const view = (index: number) => ({ ...STATE, expanded: [`leaf-${index}`] });
   const first = await renderDiagram(loaded, view(0));
   for (let index = 1; index <= 64; index += 1) await renderDiagram(loaded, view(index));
-  assert.equal(renderCacheStats().size, 64, 'the cache stays bounded');
+  assert.equal(renderCacheStats().entries, 64, 'the cache stays bounded');
   assert.equal(renderCacheStats().hits, 0);
 
   await renderDiagram(loaded, view(64));

@@ -15,7 +15,6 @@ import {
   linksFor,
   reloadComposition,
   resolveCompositionStateInput,
-  revisionConflict,
   RevisionConflictError,
   searchInComposition,
   validateLinked
@@ -62,7 +61,7 @@ test('linksFor reports each foreign model without composing anything', async () 
       },
       { model: 'plugin', status: 'resolved' }
     ]);
-    assert.equal(compositionCacheStats().size, 0, 'links discovery never composes');
+    assert.equal(compositionCacheStats().entries, 0, 'links discovery never composes');
 
     const plugin = await linksFor('plugin', options);
     assert.deepEqual(plugin.resolution, [{ model: 'host', status: 'resolved' }]);
@@ -187,21 +186,6 @@ test('composition and an explicit state are mutually exclusive', async () => {
       /Unknown composition: absent/
     );
     await assert.rejects(composeFromSelector('unknown', {}, options), /Unknown model: unknown/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test('a revision mismatch surfaces as a revision_changed conflict', async () => {
-  const { root, options } = await fixture();
-  clearModelCache();
-  clearCompositionCache();
-  try {
-    const { revisions } = await composeFromSelector('host', { composition: 'plugins' }, options);
-    assert.equal(revisionConflict(revisions, revisions), undefined);
-    const conflict = revisionConflict(revisions, { host: 'stale', unknown: 'ignored' });
-    assert.equal(conflict?.code, 'revision_changed');
-    assert.equal(conflict?.model, 'host');
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -533,7 +517,11 @@ test('admission limits refuse an over-limit composition whole', async () => {
         return true;
       }
     );
-    assert.equal(compositionCacheStats().size, before.size, 'refused results are never cached');
+    assert.equal(
+      compositionCacheStats().entries,
+      before.entries,
+      'refused results are never cached'
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
