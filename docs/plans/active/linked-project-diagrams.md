@@ -386,7 +386,12 @@ proposed/current visibility (including mismatched owner/endpoint switches and re
 Only scope exclusion yields outside-scope ports; proposal exclusion hides the claim. Complete CLI/HTTP parity and keyboard/touch access. Do not claim full
 link support after a two-project rendering demo alone.
 
-### 3. Bound work and prove scale
+### 3. Bound work and prove scale — complete
+
+Evidence and phase 4 handoff: [phase 3 record](linked-project-diagrams/phase-3.md). The
+composition fixture matrix, the real three-project steel thread, the browser journey and the gates
+table are recorded there; the [sanitized baseline](linked-project-diagrams/phase-3-baseline.json)
+and [browser journey](linked-project-diagrams/phase-3-browser.json) carry the raw measurements.
 
 Add targeted invalidation, queue/cancellation ownership, byte bounds, culling and low-zoom detail.
 Extend benchmarks and run the fixture matrix. Address failures within the existing engine/renderer

@@ -33,6 +33,7 @@ Options:
                    cold startup with zero foreign fetches, open a link, expand the target,
                    pan/zoom, then --cycles open/close cycles with retained heap growth
   --cycles N       Open/close cycles in the composition journey (default 50)
+  --warmup-cycles N  Cycles excluded from the retained-heap gate (default 10)
   --pan-ms N       Pan/zoom sampling window in milliseconds (default 3000)
   -h, --help       Show this text`;
 
@@ -403,6 +404,8 @@ interface CompositionJourneyOptions {
   model: string;
   scene: string;
   cycles: number;
+  /** Cycles excluded from the retained-heap gate, measured from the warm-up boundary. */
+  warmupCycles: number;
   panMs: number;
 }
 
@@ -475,9 +478,18 @@ async function compositionJourney(
   const heapBefore = await readHeap(page);
   const tasksBeforeCycles = (await page.evaluate('window.__bench.longTasks.length')) as number;
   const cyclesStarted = Date.now();
+  let heapWarmup: HeapReading | null = null;
   for (let i = 0; i < options.cycles; i++) {
     await closeLinked(page);
     await openLinked(page);
+    // Early growth is mostly V8 JIT and Chromium's performance timeline. The plan's gate is
+    // retained heap after warm-up, so take a reading at the boundary when there is room for one.
+    if (
+      options.warmupCycles > 0 &&
+      i + 1 === options.warmupCycles &&
+      options.cycles > options.warmupCycles
+    )
+      heapWarmup = await readHeap(page);
   }
   const cyclesWallMs = Date.now() - cyclesStarted;
   const cycleLongTasks = (await page.evaluate(
@@ -488,17 +500,22 @@ async function compositionJourney(
   const longTasksOver50 = [...open.longTasks, ...expand.longTasks, ...panZoom.longTasks].filter(
     (task) => task.durationMs > 50
   );
+  const growthPercent = (from: number, to: number): number | null =>
+    from > 0 ? round(((to - from) / from) * 100) : null;
   const heap =
     heapBefore && heapAfter
       ? {
           supported: true,
           beforeBytes: heapBefore.used,
+          // Bytes after the excluded warm-up cycles; null when the run is too short to exclude any.
+          warmupBytes: heapWarmup?.used ?? null,
           afterBytes: heapAfter.used,
           growthBytes: heapAfter.used - heapBefore.used,
-          growthPercent:
-            heapBefore.used > 0
-              ? round(((heapAfter.used - heapBefore.used) / heapBefore.used) * 100)
-              : null,
+          growthPercent: growthPercent(heapBefore.used, heapAfter.used),
+          warmupCycles: options.warmupCycles,
+          warmupExcludedGrowthBytes: heapWarmup === null ? null : heapAfter.used - heapWarmup.used,
+          warmupExcludedGrowthPercent:
+            heapWarmup === null ? null : growthPercent(heapWarmup.used, heapAfter.used),
           cycles: options.cycles
         }
       : { supported: false, cycles: options.cycles };
@@ -528,7 +545,10 @@ async function compositionJourney(
       frameP99Ms: panZoom.frames.p99,
       longTasksOver50Ms: longTasksOver50.length,
       foreignModelRequestsBeforeOpen: foreignBeforeOpen.length,
-      retainedHeapGrowthPercent: heap.supported ? heap.growthPercent : null
+      retainedHeapGrowthPercent: heap.supported ? heap.growthPercent : null,
+      retainedHeapGrowthWarmupExcludedPercent: heap.supported
+        ? heap.warmupExcludedGrowthPercent
+        : null
     },
     longTasksOver50
   };
@@ -544,11 +564,15 @@ async function runCompositionMode(values: {
   model?: string;
   'skip-build'?: boolean;
   cycles: string;
+  'warmup-cycles': string;
   'pan-ms': string;
 }): Promise<void> {
   const cycles = Number(values.cycles);
   if (!Number.isInteger(cycles) || cycles < 1)
     throw new Error('--cycles must be a whole number of at least 1');
+  const warmupCycles = Number(values['warmup-cycles']);
+  if (!Number.isInteger(warmupCycles) || warmupCycles < 0)
+    throw new Error('--warmup-cycles must be a whole number of at least 0');
   const panMs = Number(values['pan-ms']);
   if (!Number.isFinite(panMs) || panMs < 100)
     throw new Error('--pan-ms must be a whole number of at least 100');
@@ -605,9 +629,12 @@ async function runCompositionMode(values: {
     });
     const journey = await compositionJourney(
       url,
-      { model: values.model ?? 'host', scene: COMPOSITION_SCENE, cycles, panMs },
+      { model: values.model ?? 'host', scene: COMPOSITION_SCENE, cycles, warmupCycles, panMs },
       browser
     );
+    // Server-side cache bounds after the cycles, so the retained-heap gate and the byte/count
+    // bounds are read from the same run.
+    const stats = await (await fetch(`${url}/api/composition/stats`)).json();
     console.log(
       JSON.stringify(
         {
@@ -619,6 +646,7 @@ async function runCompositionMode(values: {
           url,
           startedServer: true,
           catalog,
+          stats,
           browser: {
             name: 'Chromium',
             version: browser.version(),
@@ -648,6 +676,7 @@ async function main(): Promise<void> {
       'keep-portable': { type: 'boolean' },
       composition: { type: 'boolean' },
       cycles: { type: 'string', default: '50' },
+      'warmup-cycles': { type: 'string', default: '10' },
       'pan-ms': { type: 'string', default: '3000' },
       help: { type: 'boolean', short: 'h' }
     }

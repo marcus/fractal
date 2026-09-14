@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "mode": "composition",
+  "timestamp": "2026-09-14T08:11:41.490Z",
+  "model": "host",
+  "scene": "overview",
+  "url": "http://127.0.0.1:<ephemeral>",
+  "startedServer": true,
+  "catalog": "<private temporary catalog>",
+  "stats": {
+    "version": 1,
+    "limits": {
+      "projects": 20,
+      "loadedElements": 10000,
+      "relationships": 20000,
+      "visibleNodes": 500,
+      "visibleEdges": 1000,
+      "sourceBytesPerProject": 5242880,
+      "cacheBytes": 134217728
+    },
+    "caches": {
+      "models": {
+        "hits": 8,
+        "misses": 2,
+        "evictions": 0,
+        "entries": 2,
+        "bytes": 4588,
+        "size": 2
+      },
+      "layouts": {
+        "hits": 0,
+        "misses": 2,
+        "evictions": 0,
+        "entries": 2,
+        "bytes": 2729,
+        "size": 2
+      },
+      "composed": {
+        "hits": 0,
+        "misses": 2,
+        "evictions": 0,
+        "entries": 2,
+        "bytes": 11187,
+        "size": 2
+      }
+    },
+    "queue": {
+      "active": 0,
+      "queued": 0,
+      "completed": 2,
+      "coalesced": 0
+    },
+    "rejected": {
+      "stale": 0,
+      "overLimit": 0
+    }
+  },
+  "browser": {
+    "name": "Chromium",
+    "version": "153.0.8010.12",
+    "viewport": {
+      "width": 1512,
+      "height": 982
+    },
+    "reducedMotion": "reduce"
+  },
+  "journey": {
+    "coldStartupMs": 353,
+    "startupRequests": [
+      {
+        "name": "/api/models/host",
+        "startMs": 55,
+        "durationMs": 121.4
+      },
+      {
+        "name": "/api/models",
+        "startMs": 55.1,
+        "durationMs": 3.5
+      },
+      {
+        "name": "/api/render",
+        "startMs": 178.2,
+        "durationMs": 79.4
+      }
+    ],
+    "foreignModelRequestsBeforeOpen": [],
+    "foreignModelRequestsAfterOpen": ["/api/models/plugin"],
+    "open": {
+      "target": "open Beacon plugin",
+      "latencyMs": 12.8,
+      "frames": {
+        "p50": 16.7,
+        "p99": 18.7,
+        "count": 25
+      },
+      "longTasks": [],
+      "longTaskTotalMs": 0,
+      "dom": {
+        "nodes": 10,
+        "edges": 3,
+        "elements": 227
+      }
+    },
+    "expand": {
+      "target": "expand Beacon plugin",
+      "latencyMs": 30.8,
+      "frames": {
+        "p50": 16.7,
+        "p99": 17.2,
+        "count": 25
+      },
+      "longTasks": [],
+      "longTaskTotalMs": 0,
+      "dom": {
+        "nodes": 12,
+        "edges": 3,
+        "elements": 261
+      }
+    },
+    "dom": {
+      "atOpen": {
+        "nodes": 10,
+        "edges": 3,
+        "elements": 227
+      },
+      "afterExpand": {
+        "nodes": 12,
+        "edges": 3,
+        "elements": 261
+      }
+    },
+    "panZoom": {
+      "target": "pan/zoom",
+      "latencyMs": null,
+      "frames": {
+        "p50": 16.7,
+        "p99": 17.4,
+        "count": 181
+      },
+      "longTasks": [],
+      "longTaskTotalMs": 0
+    },
+    "cycles": {
+      "count": 50,
+      "wallMs": 6660,
+      "longTasks": [],
+      "heap": {
+        "supported": true,
+        "beforeBytes": 4815042,
+        "warmupBytes": 5432752,
+        "afterBytes": 5689264,
+        "growthBytes": 874222,
+        "growthPercent": 18.16,
+        "warmupCycles": 10,
+        "warmupExcludedGrowthBytes": 256512,
+        "warmupExcludedGrowthPercent": 4.72,
+        "cycles": 50
+      }
+    },
+    "errors": []
+  },
+  "headline": {
+    "coldStartupMs": 353,
+    "openMs": 12.8,
+    "expandMs": 30.8,
+    "frameP99Ms": 17.4,
+    "longTasksOver50Ms": 0,
+    "foreignModelRequestsBeforeOpen": 0,
+    "retainedHeapGrowthPercent": 18.16,
+    "retainedHeapGrowthWarmupExcludedPercent": 4.72
+  },
+  "longTasksOver50": [],
+  "commit": "95adfb8fa3899089e322aaea9a96b6876b91c1b3",
+  "environment": {
+    "machine": "Apple M4 Pro, 14 logical CPUs, 64 GiB RAM",
+    "os": "macOS 26.6.2 (Darwin 25.6.0), arm64",
+    "node": "v26.5.1",
+    "layoutEngine": "elk-layered",
+    "commit": "95adfb8fa3899089e322aaea9a96b6876b91c1b3",
+    "chromium": "153.0.8010.12",
+    "viewport": "1512x982",
+    "reducedMotion": "reduce",
+    "state": "Fresh server over a private temporary catalog; one discarded warm-up cycle; heap read after forced GC before the cycles, at the warm-up boundary (cycle 10) and after cycle 50. Server cache bounds are reported after the run."
+  }
+}
