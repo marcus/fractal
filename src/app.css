@@ -538,6 +538,10 @@ h1 {
   visibility: hidden;
   pointer-events: none;
 }
+.canvas-layer.layer-closed {
+  /* Closed composition: drop from layout so close/open cycles do not record paint entries. */
+  display: none;
+}
 .revision-banner {
   position: absolute;
   z-index: 5;

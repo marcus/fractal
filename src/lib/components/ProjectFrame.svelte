@@ -11,11 +11,13 @@
   let {
     project,
     menuOpen = false,
+    dormant = false,
     onmenu,
     onrevealport
   }: {
     project: ComposedProject;
     menuOpen?: boolean;
+    dormant?: boolean;
     onmenu: (model: string) => void;
     onrevealport?: (port: ComposedPort) => void;
   } = $props();
@@ -42,8 +44,8 @@
 
 <g
   class="project-frame"
-  data-project-frame={project.model}
-  data-project-mode={project.mode}
+  data-project-frame={dormant ? undefined : project.model}
+  data-project-mode={dormant ? undefined : project.mode}
   aria-labelledby={titleId}
 >
   <rect

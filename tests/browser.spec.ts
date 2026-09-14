@@ -2016,6 +2016,50 @@ test('a linked project opens beside its host with two frames and one bridge', as
       .toBe(true);
     await page.screenshot({ path: 'artifacts/linked-project-phase1/composition-fit.png' });
 
+    await mkdir('artifacts/linked-project-phase3', { recursive: true });
+    const nodesAtFit = await page.locator('.composition-canvas [data-node-id]').count();
+    expect(nodesAtFit).toBeGreaterThan(0);
+    const rendersAtFit = await page.locator('.diagram-area').getAttribute('data-render-count');
+    expect(rendersAtFit).toBeTruthy();
+    const area = (await page.locator('.composition-canvas svg').boundingBox())!;
+    await page.mouse.move(area.x + area.width * 0.55, area.y + area.height * 0.4);
+    await page.mouse.down();
+    await page.mouse.move(area.x + area.width * 0.55 + area.width * 3, area.y + area.height * 0.4, {
+      steps: 12
+    });
+    await page.mouse.up();
+    await expect
+      .poll(async () => page.locator('.composition-canvas [data-node-id]').count())
+      .toBeLessThan(nodesAtFit);
+    await expect(page.locator('[data-project-frame]')).toHaveCount(2);
+    await expect(page.locator('.diagram-area')).toHaveAttribute('data-render-count', rendersAtFit!);
+    await page.screenshot({ path: 'artifacts/linked-project-phase3/culled-far-pan.png' });
+
+    await page.locator('.composition-canvas svg').focus();
+    for (const key of ['=', '-', '=', '-'] as const) await page.keyboard.press(key);
+    await page.mouse.move(area.x + area.width * 0.55, area.y + area.height * 0.4);
+    await page.mouse.wheel(0, -180);
+    await expect(page.locator('.diagram-area')).toHaveAttribute('data-render-count', rendersAtFit!);
+
+    await page.keyboard.press('0');
+    for (let i = 0; i < 8; i++) {
+      if ((await page.locator('.composition-canvas').getAttribute('data-low-zoom')) === 'false')
+        break;
+      await page.keyboard.press('=');
+    }
+    await expect(page.locator('.composition-canvas')).toHaveAttribute('data-low-zoom', 'false');
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press('-');
+      if ((await page.locator('.composition-canvas').getAttribute('data-low-zoom')) === 'true')
+        break;
+    }
+    await expect(page.locator('.composition-canvas')).toHaveAttribute('data-low-zoom', 'true');
+    await expect(page.locator('.composition-canvas .node-title').first()).toBeVisible();
+    await page.screenshot({ path: 'artifacts/linked-project-phase3/low-zoom.png' });
+    await page.keyboard.press('0');
+    await expect(page.locator('[data-node-id="plugin:core"]')).toBeVisible();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('data-render-count', rendersAtFit!);
+
     // Repeated activation of the same link pans to the existing frame instead of opening again.
     await page.locator('[data-node-id="host:cli"]').click();
     await page.locator('[data-open-link="plugin"]').click();
@@ -2073,6 +2117,15 @@ test('a linked project opens beside its host with two frames and one bridge', as
     await page.getByRole('menuitem', { name: 'Close' }).click();
     await expect(page.locator('[data-project-frame]')).toHaveCount(0);
     await expect(page.locator('[data-node-id="core"]')).toBeVisible();
+    const retain = await page.evaluate(() =>
+      (
+        window as Window & {
+          __fractalRetain?: () => { composition: boolean; pending: boolean };
+        }
+      ).__fractalRetain?.()
+    );
+    expect(retain?.composition).toBe(false);
+    expect(retain?.pending).toBe(false);
     await expect
       .poll(async () => (await titleAt(page, '[data-node-id="core"]')).x)
       .toBeCloseTo(before.x, 0);
