@@ -107,6 +107,43 @@ using `--proposed` when inspecting planned components so their eligible relation
 then check the projected relationships and layout for each deliverable scene. Treat missing or
 unexpected rolled-up connections as a modeling issue, even when the files compile.
 
+## Link to other projects
+
+When the architecture spans repositories, each project keeps its own model directory and
+declares the cross-project claims in an optional `links.json` beside `model.c4` and
+`fractal.json`. Author from inspected integration evidence — an actual plugin call, an
+embedded component, a monitored service — and keep local relationships in LikeC4; only
+cross-model claims belong here. The [model format
+guide](../../docs/guides/active/model-format.md#linking-to-other-projects) gives the
+authoring shape; the [contract](../../docs/guides/active/linked-project-contract.md) is
+the frozen field reference.
+
+The rules that most often bite: `from` and every connection endpoint must carry an
+explicit `uid` in its own `model.c4` (generated fallback IDs are rejected here); at
+least one connection endpoint must belong to the authoring model; every foreign model
+must be declared by a link; evidence paths are inert repository-relative text. Author
+one directed connection per real integration, each owned by the project that makes the
+claim — do not merge distinct integrations to reduce clutter, and do not invent an
+endpoint for a project that has no model yet. An optional `compositions` entry names the
+set that opens together for the studio, CLI and exports.
+
+```sh
+"$FRACTAL_ROOT/bin/fractal" links --model harbor --catalog /absolute/path/to/catalog.json --json
+"$FRACTAL_ROOT/bin/fractal" validate --model harbor --catalog /absolute/path/to/catalog.json --linked --json
+"$FRACTAL_ROOT/bin/fractal" layout --model harbor --catalog /absolute/path/to/catalog.json --composition plugins --json
+"$FRACTAL_ROOT/bin/fractal" export --model harbor --catalog /absolute/path/to/catalog.json \
+  --composition plugins --output /absolute/path/to/artifacts/plugins.svg
+```
+
+`--composition ID` also works on `project`, `inspect` (with a qualified `--selection`)
+and `search`; `--composition-state FILE|v1.…` supplies an explicit versioned state or a
+permalink value instead. `validate --linked` exits nonzero with structured diagnostics
+for unresolved claims. For portable HTML, `--include` names the linked projects to embed;
+a root owning `links.json` exported without `--include` is a linked document with a
+root-only included set, not a single-model document. Keep actual repository diagrams out
+of public fixtures and examples; prove cross-project work against small fictional models
+or a temporary catalog.
+
 ## Export and review the rendered result
 
 Export SVG for scalable proposal documents and slide tools that accept vector artwork. Export PNG
