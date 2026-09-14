@@ -1,0 +1,327 @@
+{
+  "version": 2,
+  "mode": "phase-3-gates",
+  "timestamp": "2026-09-14T08:39:58.289Z",
+  "environment": {
+    "machine": "Apple M4 Pro, 14 logical CPUs, 64 GiB RAM",
+    "os": "macOS 26.6.2 (Darwin 25.6.0), arm64",
+    "node": "v26.5.1",
+    "chromium": "153.0.8010.12",
+    "viewport": "1512x982",
+    "reducedMotion": "reduce",
+    "layoutEngine": "elk-layered",
+    "applicationCommit": "95adfb8fa3899089e322aaea9a96b6876b91c1b3",
+    "state": "Real catalog restored from URL on a private temporary copy of the Sidecar/td/Recall directories; generated fixture catalogs for scale and paint. Reduced motion. Heap after forced GC before, at cycle 10 and after cycle 50."
+  },
+  "real": {
+    "version": 1,
+    "mode": "composition-real",
+    "timestamp": "2026-09-14T08:37:10.480Z",
+    "model": "sidecar",
+    "composition": "plugins",
+    "catalog": "<private temporary catalog>",
+    "browser": {
+      "name": "Chromium",
+      "version": "153.0.8010.12",
+      "viewport": {
+        "width": 1512,
+        "height": 982
+      },
+      "reducedMotion": "reduce"
+    },
+    "reveals": {
+      "count": 5,
+      "latency": {
+        "p50": 27.6,
+        "p95": 249.1,
+        "samples": 5
+      },
+      "badge": {
+        "p50": null,
+        "p95": null,
+        "samples": 0
+      },
+      "samples": [
+        {
+          "latencyMs": 249.1,
+          "badgeMs": null,
+          "frames": {
+            "p50": 16.6,
+            "p99": 18.7,
+            "count": 15
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 25,
+            "edges": 75,
+            "elements": 682
+          }
+        },
+        {
+          "latencyMs": 27.3,
+          "badgeMs": null,
+          "frames": {
+            "p50": 16.7,
+            "p99": 19,
+            "count": 13
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 25,
+            "edges": 75,
+            "elements": 682
+          }
+        },
+        {
+          "latencyMs": 26.9,
+          "badgeMs": null,
+          "frames": {
+            "p50": 16.6,
+            "p99": 18.5,
+            "count": 13
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 25,
+            "edges": 75,
+            "elements": 682
+          }
+        },
+        {
+          "latencyMs": 28.4,
+          "badgeMs": null,
+          "frames": {
+            "p50": 16.7,
+            "p99": 18.2,
+            "count": 13
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 25,
+            "edges": 75,
+            "elements": 682
+          }
+        },
+        {
+          "latencyMs": 27.6,
+          "badgeMs": null,
+          "frames": {
+            "p50": 16.7,
+            "p99": 18.1,
+            "count": 13
+          },
+          "longTasks": [],
+          "longTaskTotalMs": 0,
+          "dom": {
+            "nodes": 25,
+            "edges": 75,
+            "elements": 682
+          }
+        }
+      ]
+    },
+    "busyFeedback": {
+      "latencyMs": 435,
+      "badgeMs": 166.4,
+      "longTasks": []
+    },
+    "main": {
+      "coldStartupMs": 642,
+      "startupRequests": [
+        {
+          "name": "/api/models/sidecar",
+          "atMs": 43
+        },
+        {
+          "name": "/api/models",
+          "atMs": 43
+        },
+        {
+          "name": "/api/render",
+          "atMs": 65
+        },
+        {
+          "name": "/api/composition/links?model=sidecar",
+          "atMs": 70
+        },
+        {
+          "name": "/api/models/td",
+          "atMs": 73
+        },
+        {
+          "name": "/api/composition/links?model=td",
+          "atMs": 85
+        },
+        {
+          "name": "/api/models/recall",
+          "atMs": 87
+        },
+        {
+          "name": "/api/composition/links?model=recall",
+          "atMs": 190
+        },
+        {
+          "name": "/api/composition/render",
+          "atMs": 194
+        }
+      ],
+      "panZoom": {
+        "target": "pan/zoom",
+        "latencyMs": null,
+        "frames": {
+          "p50": 16.7,
+          "p99": 18.5,
+          "count": 181
+        },
+        "longTasks": [],
+        "longTaskTotalMs": 0
+      },
+      "toggles": {
+        "target": "the toggled target component",
+        "latency": {
+          "p50": 31.1,
+          "p95": 33.2,
+          "samples": 40
+        },
+        "samplesMs": [
+          31.1, 30.9, 31, 31.1, 31.2, 31.2, 30.9, 31.1, 30.9, 31.1, 30.8, 30.9, 31.1, 31.3, 31.4,
+          31.2, 31.2, 31.1, 31.2, 30.2, 33.4, 30.5, 33.2, 31.4, 33.2, 30.4, 33.2, 31.3, 31.3, 31.8,
+          29.3, 31.5, 32.6, 29.7, 30.9, 32.5, 31.1, 32.8, 32.4, 30.3
+        ],
+        "layoutMissesDelta": 0,
+        "composedMissesDelta": 0
+      },
+      "cycles": {
+        "count": 50,
+        "wallMs": 13320,
+        "longTasks": [],
+        "longTasksOver50": 0,
+        "heap": {
+          "supported": true,
+          "cycles": 50,
+          "beforeBytes": 7126535,
+          "warmupBytes": 7627090,
+          "afterBytes": 7850671,
+          "growthBytes": 724136,
+          "growthPercent": 10.16,
+          "warmupCycles": 10,
+          "warmupExcludedGrowthBytes": 223581,
+          "warmupExcludedGrowthPercent": 2.93
+        }
+      },
+      "stats": {
+        "version": 1,
+        "limits": {
+          "projects": 20,
+          "loadedElements": 10000,
+          "relationships": 20000,
+          "visibleNodes": 500,
+          "visibleEdges": 1000,
+          "sourceBytesPerProject": 5242880,
+          "cacheBytes": 134217728
+        },
+        "caches": {
+          "models": {
+            "hits": 428,
+            "misses": 3,
+            "evictions": 0,
+            "entries": 3,
+            "bytes": 113939,
+            "size": 3
+          },
+          "layouts": {
+            "hits": 11,
+            "misses": 2,
+            "evictions": 0,
+            "entries": 0,
+            "bytes": 0,
+            "size": 0
+          },
+          "composed": {
+            "hits": 144,
+            "misses": 5,
+            "evictions": 0,
+            "entries": 4,
+            "bytes": 209515,
+            "size": 4
+          }
+        },
+        "queue": {
+          "active": 0,
+          "queued": 0,
+          "completed": 149,
+          "coalesced": 0
+        },
+        "rejected": {
+          "stale": 0,
+          "overLimit": 0
+        }
+      },
+      "errors": [],
+      "dom": {
+        "nodes": 23,
+        "edges": 83,
+        "elements": 683
+      }
+    }
+  },
+  "scale": {
+    "version": 1,
+    "mode": "scale",
+    "timestamp": "2026-09-14T08:37:44.060Z",
+    "digest": "f9a9d8ac5062ddd11560ac24379d70fcb535a6fa2d30b091037636a7abf02c86",
+    "fixture": "scale",
+    "root": "scale-root",
+    "composition": "scale-open",
+    "panMs": 3000,
+    "browser": {
+      "name": "Chromium",
+      "version": "153.0.8010.12",
+      "viewport": {
+        "width": 1512,
+        "height": 982
+      },
+      "reducedMotion": "reduce"
+    },
+    "panZoom": {
+      "target": "pan/zoom",
+      "latencyMs": null,
+      "frames": {
+        "p50": 16.7,
+        "p99": 19.7,
+        "count": 181
+      },
+      "longTasks": [],
+      "longTaskTotalMs": 0
+    },
+    "dom": {
+      "nodes": 300,
+      "edges": 573,
+      "elements": 4786
+    },
+    "longTasksOver50": [],
+    "errors": []
+  },
+  "paint": {
+    "version": 1,
+    "mode": "paint",
+    "timestamp": "2026-09-14T08:37:58.524Z",
+    "digest": "b0dabe557e72febb4b4a4d13fab65c77a968112632be00ee91d17e75da50c720",
+    "samples": 7,
+    "roots": {
+      "links": "paint-hub",
+      "plain": "paint-plain"
+    },
+    "linksMs": [337, 69, 118, 68, 69, 70, 68],
+    "plainMs": [222, 68, 68, 69, 68, 68, 67],
+    "medians": {
+      "links": 69,
+      "plain": 68
+    },
+    "ratio": 1.01
+  }
+}

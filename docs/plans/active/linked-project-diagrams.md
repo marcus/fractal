@@ -377,7 +377,9 @@ Prove open td from Sidecar, expand td, inspect actual endpoints and return to Si
 scale. Preserve local model fingerprints; no synthetic structural parents. Use temporary copies
 until source-owned model changes are ready in their own repositories.
 
-### 2. Complete meaning and failure behavior
+### 2. Complete meaning and failure behavior — complete
+
+Evidence: [phase 2 record](linked-project-diagrams/phase-2.md).
 
 Add project collapse/reveal, scene/scope changes, qualified search/selection/permalinks, omitted
 endpoint ports, claim aggregation and revision conflict/reload behavior. Test cycle/diamond reuse,
@@ -386,7 +388,12 @@ proposed/current visibility (including mismatched owner/endpoint switches and re
 Only scope exclusion yields outside-scope ports; proposal exclusion hides the claim. Complete CLI/HTTP parity and keyboard/touch access. Do not claim full
 link support after a two-project rendering demo alone.
 
-### 3. Bound work and prove scale
+### 3. Bound work and prove scale — complete
+
+Evidence and phase 4 handoff: [phase 3 record](linked-project-diagrams/phase-3.md). The
+composition fixture matrix, the real three-project steel thread, the browser journey and the gates
+table are recorded there; the [sanitized baseline](linked-project-diagrams/phase-3-baseline.json)
+and [browser journey](linked-project-diagrams/phase-3-browser.json) carry the raw measurements.
 
 Add targeted invalidation, queue/cancellation ownership, byte bounds, culling and low-zoom detail.
 Extend benchmarks and run the fixture matrix. Address failures within the existing engine/renderer
@@ -394,7 +401,9 @@ seams; rerun only affected checks and the release gates. Include the real cold s
 A target edit invalidates that target and
 bridge composition, while healthy unrelated local layout cache entries survive.
 
-### 4. Exports and portability
+### 4. Exports and portability — complete
+
+Evidence: [phase 4 record](linked-project-diagrams/phase-4.md).
 
 Implement combined SVG/PNG and explicit-set portable HTML snapshots, manifest/error behavior and
 shared-state replay. Verify exported artwork includes offscreen content and omission claims, stable
