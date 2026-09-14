@@ -16,8 +16,9 @@ import {
 } from '../src/lib/composition/state';
 import type { ProjectSnapshot } from '../src/lib/composition/snapshot';
 import { staticResolver } from '../src/lib/composition/snapshot';
-import type { CompositionState, IdentityOrigins } from '../src/lib/composition/types';
+import type { CompositionState, Frame, IdentityOrigins } from '../src/lib/composition/types';
 import { layout } from '../src/lib/core/layout';
+import type { Point } from '../src/lib/core/types';
 
 const fixture = (path: string) =>
   readFile(new URL(`./fixtures/linked-projects/${path}`, import.meta.url), 'utf8');
@@ -60,6 +61,32 @@ const openState = (): CompositionState =>
     { model: 'host', scene: 'overview', mode: 'open', view: view() },
     { model: 'plugin', scene: 'overview', mode: 'open', view: view() }
   ]);
+
+const titleBand = (project: { frame: Frame; titleHeight: number }): Frame => ({
+  x: project.frame.x,
+  y: project.frame.y,
+  width: project.frame.width,
+  height: project.titleHeight
+});
+
+/** True when an orthogonal segment overlaps the interior of a rectangle (a touch is not a cross). */
+function crossesRect(a: Point, b: Point, rect: Frame): boolean {
+  if (a.x === b.x)
+    return (
+      a.x > rect.x &&
+      a.x < rect.x + rect.width &&
+      Math.max(a.y, b.y) > rect.y &&
+      Math.min(a.y, b.y) < rect.y + rect.height
+    );
+  if (a.y === b.y)
+    return (
+      a.y > rect.y &&
+      a.y < rect.y + rect.height &&
+      Math.max(a.x, b.x) > rect.x &&
+      Math.min(a.x, b.x) < rect.x + rect.width
+    );
+  return false;
+}
 
 test('host and plugin compose as two frames with both owned bridges and a not_loaded stub', async () => {
   const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
@@ -421,4 +448,59 @@ test('elk-layered-down places later frames below, left-aligned', async () => {
     composed.projects[1].frame.y,
     composed.projects[0].frame.y + composed.projects[0].frame.height + COMPOSITION_METRICS.gap
   );
+});
+
+test('bridge crossings and labels stay in the inter-frame corridor, clear of every title band', async () => {
+  const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
+  for (const engine of ['elk-layered', 'elk-layered-down'] as const) {
+    for (const collapsedModel of ['host', 'plugin'] as const) {
+      const state = stateOf(
+        [
+          {
+            model: 'host',
+            scene: 'detail',
+            mode: collapsedModel === 'host' ? 'collapsed' : 'open',
+            view: view(['core'])
+          },
+          {
+            model: 'plugin',
+            scene: 'detail',
+            mode: collapsedModel === 'plugin' ? 'collapsed' : 'open',
+            view: view(['core'])
+          }
+        ],
+        engine
+      );
+      const composed = await compose(staticResolver([host, plugin]), state);
+      const projects = new Map(composed.projects.map((project) => [project.model, project]));
+      assert.ok(composed.bridges.length >= 1, `${engine}/${collapsedModel} has bridges`);
+      for (const bridge of composed.bridges) {
+        const label = `${engine}/${collapsedModel} ${bridge.owner}/${bridge.id}`;
+        for (const project of composed.projects)
+          for (let index = 1; index < bridge.points.length; index++)
+            assert.equal(
+              crossesRect(bridge.points[index - 1], bridge.points[index], titleBand(project)),
+              false,
+              `${label} segment ${index} crosses the ${project.model} title band`
+            );
+        const source = projects.get(bridge.source.model)!;
+        const target = projects.get(bridge.target.model)!;
+        if (engine === 'elk-layered') {
+          const [left, right] =
+            source.frame.x <= target.frame.x ? [source, target] : [target, source];
+          assert.ok(
+            bridge.label.x > left.frame.x + left.frame.width && bridge.label.x < right.frame.x,
+            `${label} label x ${bridge.label.x} is outside the corridor`
+          );
+        } else {
+          const [top, bottom] =
+            source.frame.y <= target.frame.y ? [source, target] : [target, source];
+          assert.ok(
+            bridge.label.y > top.frame.y + top.frame.height && bridge.label.y < bottom.frame.y,
+            `${label} label y ${bridge.label.y} is outside the corridor`
+          );
+        }
+      }
+    }
+  }
 });
