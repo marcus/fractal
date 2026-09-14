@@ -181,7 +181,7 @@
         "longTaskTotalMs": 0
       },
       "toggles": {
-        "target": "td CLI",
+        "target": "the toggled target component",
         "latency": {
           "p50": 31.1,
           "p95": 33.2,
