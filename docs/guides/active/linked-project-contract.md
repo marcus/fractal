@@ -73,8 +73,8 @@ owning projects can coincide.
 
 Model IDs use the existing catalog's lowercase slug syntax. Local references are opaque nonempty
 strings with no surrounding whitespace or control characters. Their existence and adapter-specific
-validity are checked against resolved snapshots in phase 1; this parser never guesses by title or
-source spelling. Unknown fields fail, including fields nested in targets and project entries.
+validity are checked against resolved snapshots at load and validation time; this parser never
+guesses by title or source spelling. Unknown fields fail, including fields nested in targets and project entries.
 
 ## Identity and ownership
 
@@ -87,8 +87,9 @@ both owners. Source model hierarchy and trust membership remain untouched.
 is `["element","beacon","cli"]`, while a host-owned bridge key is
 `["connection","harbor","invoke-beacon"]`. Consumers treat keys as opaque strings, never split
 on delimiters. Evidence may carry its owner's entity ID and evidence path as separate tuple
-members. This function is an internal identity key, **not** a safe SVG/DOM ID encoder; phase 1 and
-export work must namespace and escape element IDs and every fragment reference separately.
+members. This function is an internal identity key, **not** a safe SVG/DOM ID encoder; the
+canvas and export renderers namespace and escape element IDs and every fragment reference
+separately.
 
 `IdentityOrigins` defines explicit/fallback maps for elements and relationships. The LikeC4
 adapter produces it at load time (`parseModelWithOrigins`), recording whether every element and
@@ -130,28 +131,29 @@ fallback identities at real loads; single-model imports without explicit UIDs re
 ```
 
 Version, root, projects, shared theme and shared layout are required. Projects must be nonempty,
-distinct and root-first. The root cannot be omitted; it may be collapsed. Closing the root is a
-future application action returning to ordinary root view, not a state with no root. Entry order
-is significant for deterministic placement. Scene and authored composition IDs are optional
+distinct and root-first. The root cannot be omitted; it may be collapsed. There is no
+rootless state: the title-band menu offers Close on non-root frames only, and the toolbar's
+Close linked view control closes the whole composition and returns to the ordinary root view.
+Entry order is significant for deterministic placement. Scene and authored composition IDs are optional
 provenance/intent; the required explicit view is authoritative when replaying state.
 
 Each project retains `expanded`, `proposed`, `lens` and optional `scope` from ordinary ViewState.
 Expanded IDs are distinct; proposed is a boolean and lens is `structure` or `trust`. The shared
 theme is `grove`, `graphite` or `midnight`; shared layout is the existing `elk-layered` or
 `elk-layered-down` engine. Flow direction remains an engine property. Per-project theme/layout
-fields are rejected, avoiding competing presentation defaults. A later scene-to-state resolver
+fields are rejected, avoiding competing presentation defaults. A scene-to-state resolver
 fills these semantic fields from scenes before applying explicit saved overrides; parsing does
 not load scenes or merge defaults.
 
 Selection is one tagged object: `project` with model; `element`, `relationship`, `boundary` or
 `scene` with model plus the named ID; or `connection` with ownerModel and connectionId. Its owner
 must participate, as must focusedProject when present. Selection may refer to a hidden element
-inside a participating project; future inspection/reveal validates its existence. A connection
-may point at an unopened target while its owning project still participates.
+inside a participating project; inspection and reveal validate its existence when selected.
+A connection may point at an unopened target while its owning project still participates.
 
 Input exceeding 65,536 UTF-8 bytes of decoded JSON is rejected as `budget_exceeded`; this is a
-state payload bound, not a change to model/project/cache admission limits. The future URL codec
-must also bound input before decoding. State accepts no filesystem paths, DOM state, camera
+state payload bound, not a change to model/project/cache admission limits. The URL codec
+bounds input before decoding and rejects oversized values the same way. State accepts no filesystem paths, DOM state, camera
 coordinates, loader handles, resource-limit overrides or revision locks. It returns fresh records
 and arrays; malformed input is never partially applied.
 
@@ -162,7 +164,7 @@ are `invalid_contract`, `unsupported_version`, and `budget_exceeded`. Paths use 
 array indexes, or bracket-quoted names for unknown fields, so even unusual field names remain
 unambiguous. This is distinct from a runtime target failure.
 
-`parseCompositionDiagnostic(input)` verifies the future transport-neutral runtime envelope:
+`parseCompositionDiagnostic(input)` verifies the transport-neutral runtime envelope:
 
 ```json
 {
@@ -181,14 +183,17 @@ structured target are optional when relevant; target contains a model and option
 Codes are `model_unavailable`, `model_invalid`, `unsupported_version`, `scene_missing`,
 `endpoint_missing`, `identity_not_explicit`, `revision_changed`, `source_changing`, and
 `budget_exceeded`. Recovery is one of `register`, `retry`, `repair`, `upgrade`, `reload`, or
-`reduce`; the future producer chooses the appropriate action for the actual failure.
+`reduce`; the producer chooses the appropriate action for the actual failure.
 
 Budget-exceeded diagnostics require `budget: { resource, actual, limit }`, with finite nonnegative
 counts; other codes reject budget fields. `not_loaded` is an ordinary reference state, not a
-failure diagnostic: a link whose target was never opened renders a reference stub ("diagram not
-opened") and stays an intentional omission in exports, never an error. Only a participating
-project that fails to resolve is `unavailable` or `invalid`, and only that fails a strict
-validation or a default export.
+failure diagnostic — but it is scoped to live compositions and exports. `validate --linked`
+fails for any unresolved claim in the declared closure, including a declared target that was
+never opened: an unregistered or unreachable link target is a `model_unavailable` diagnostic
+and makes the closure invalid. Compositions and exports treat the same unopened link as an
+intentional omission instead: it renders a reference stub ("diagram not opened"), is listed in
+the manifest, and never fails the export. Only a participating project that fails to resolve
+is `unavailable` or `invalid` at compose time, and only that fails a default export.
 
 ## Contract proof and remaining implementation
 

@@ -235,10 +235,11 @@ bin/fractal validate --model harbor --catalog /path/to/catalog.json --json
 bin/fractal validate --model harbor --catalog /path/to/catalog.json --linked --json
 ```
 
-Plain validation compiles the file with the model; `--linked` resolves the declared link
-closure across catalogs and exits nonzero with structured diagnostics for unresolved
-claims. Unknown fields fail with precise JSON paths, so a typo cannot silently become a
-missing claim.
+Plain validation compiles the file with the model and checks its structure, ownership,
+evidence paths and duplicate IDs; `--linked` additionally verifies that every `from` and
+endpoint exists with an explicit `uid` and resolves the declared link closure across
+catalogs, exiting nonzero with structured diagnostics for unresolved claims. Unknown
+fields fail with precise JSON paths, so a typo cannot silently become a missing claim.
 
 ## Language dependency
 

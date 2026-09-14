@@ -58,7 +58,8 @@ bin/fractal projects --catalog /path/to/catalog.json --json
 An unavailable entry carries a `diagnostic` naming the problem; a healthy entry carries
 its title and description. Full compilation happens only when a model is opened or
 explicitly validated. The studio's project switcher reads the same listing, so it opens
-with titles immediately and reports per-entry problems in place.
+with titles immediately; an unhealthy entry appears under its ID, and its diagnostic
+surfaces when the project is selected and fails to load.
 
 ## Validating linked projects
 
@@ -67,10 +68,11 @@ bin/fractal validate --model harbor --catalog /path/to/catalog.json --json
 bin/fractal validate --model harbor --catalog /path/to/catalog.json --linked --json
 ```
 
-Plain validation compiles the model with its `links.json` and checks local references.
-`--linked` additionally resolves the declared link closure across the catalog with
-visited-set deduplication and a 20-model traversal budget, then exits nonzero with
-structured diagnostics for unresolved claims:
+Plain validation compiles the model with its `links.json` and checks the file's structure,
+ownership, evidence paths and duplicate IDs. Only `--linked` verifies that every `from`
+and endpoint exists with an explicit `uid` and resolves the declared link closure —
+including declared-but-unopened targets — exiting nonzero with structured diagnostics
+for unresolved claims:
 
 ```json
 {

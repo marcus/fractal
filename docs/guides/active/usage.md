@@ -10,11 +10,11 @@ contract](linked-project-contract.md) is the frozen reference.
 
 ## Open a linked diagram
 
-A linked target opens from its source element's inspector section or its outline action,
-or with **Mod+Shift+L** anywhere in the studio. The target frame appears beside the
-source at the current scale, with the source title unmoved and still visible. Opening
-the same link again reveals the existing frame rather than adding another: one visible
-instance per project.
+A linked target opens from the **Open linked diagram** button in its source element's
+inspector, from a link result in jump search (**Cmd/Ctrl+K**), or with **Mod+Shift+L**
+anywhere in the studio. The target frame appears beside the source at the current scale,
+with the source title unmoved and still visible. Opening the same link again reveals the
+existing frame rather than adding another: one visible instance per project.
 
 A project that cannot resolve renders an honest card in place of a frame — unregistered,
 invalid or incompatible — with the recovery step attached. It never invents a component.
@@ -30,10 +30,14 @@ Every title band carries a menu for its project:
 - **Focus** — focus a component within the project, or clear the focus.
 - **Collapse / Reopen** — fold the project to a titled summary that keeps its
   connection anchors; reopening restores its last view.
-- **Fit project** — frame this project; **Fit** (or **0**) still frames everything.
-- **Close** — remove the frame from the composition; the authored link stays available
-  at the source. Closing the root returns to the ordinary single-project view.
+- **Fit project** — frame this project; **Fit composition** (or **0**) still frames
+  everything.
+- **Close** — on non-root frames only; remove the frame from the composition. The
+  authored link stays available at the source.
 - **Open standalone** — leave the composition for that project's own diagram.
+
+Closing the whole composition, root included, is the toolbar's **Close linked view**
+control. It returns to the ordinary single-project view.
 
 Expanding or collapsing inside a frame follows the toggled title at the current scale,
 as single-project expansion does. Nothing else moves and the camera never rescales on

@@ -189,9 +189,9 @@ never reused to mean "another repository". Project identity stays visible in the
 ordinary Structure view.
 
 Bridges run in the theme edge color from the visible representative of each endpoint,
-with the arrow direction retained at every detail level and a halo that separates the
-line from the ground beneath it, like canvas text. Current bridges are solid; proposed
-bridges are dashed and say so in the inspector. Bundles carry a `×N` count rather than
+with the arrow direction retained at every detail level. The bridge label sits on a halo
+that separates the text from the ground beneath it, like canvas text. Current bridges
+are solid; proposed bridges are dashed and say so in the inspector. Bundles carry a `×N` count rather than
 merging unrelated claims. Endpoints outside a project's scene scope land on labeled
 perimeter ports with an outside-scope count and a reveal action — ports are clearly not
 components. A collapsed project keeps a titled summary with its connection anchors, and
