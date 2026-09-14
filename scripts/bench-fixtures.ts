@@ -106,6 +106,12 @@ interface ModelShape {
   relationships: number;
   longTitles?: boolean;
   trust?: boolean;
+  /**
+   * When set, emit this many deterministic edge families instead of the legacy relationship
+   * sequence. Each family gives every child one outgoing edge, so a model can exceed the
+   * one-edge-per-child ceiling the legacy generator imposes. Legacy shapes leave it unset.
+   */
+  relationshipFamilies?: number;
 }
 
 const provenance =
@@ -137,21 +143,40 @@ function modelSource(shape: ModelShape): FixtureModel {
   }
   const total = shape.groups * shape.perGroup;
   const seen = new Set<string>();
-  for (let i = 0; i < shape.relationships && total > 1; i++) {
-    const a = (i * 3) % total;
-    let b = (i * 7 + 1) % total;
-    if (a === b) b = (b + 1) % total;
-    if (a === b) continue;
-    const pair = `${a}->${b}`;
-    if (seen.has(pair)) continue;
-    seen.add(pair);
+  const pushRelationship = (a: number, b: number, index: number): void => {
     const ga = Math.floor(a / shape.perGroup);
     const ca = a % shape.perGroup;
     const gb = Math.floor(b / shape.perGroup);
     const cb = b % shape.perGroup;
     lines.push(
-      `  g${ga}.c${ca} -[calls]-> g${gb}.c${cb} 'Calls ${i + 1}' { metadata { uid 'r${i}' } }`
+      `  g${ga}.c${ca} -[calls]-> g${gb}.c${cb} 'Calls ${index + 1}' { metadata { uid 'r${index}' } }`
     );
+  };
+  if (shape.relationshipFamilies !== undefined) {
+    // Deterministic dense edges: family `f` gives every child one edge to `a * (7 + 4f) + 1`.
+    let index = 0;
+    for (let family = 0; family < shape.relationshipFamilies && total > 1; family++) {
+      const step = 7 + family * 4;
+      for (let a = 0; a < total; a++) {
+        const b = (a * step + 1) % total;
+        if (a === b) continue;
+        const pair = `${a}->${b}`;
+        if (seen.has(pair)) continue;
+        seen.add(pair);
+        pushRelationship(a, b, index++);
+      }
+    }
+  } else {
+    for (let i = 0; i < shape.relationships && total > 1; i++) {
+      const a = (i * 3) % total;
+      let b = (i * 7 + 1) % total;
+      if (a === b) b = (b + 1) % total;
+      if (a === b) continue;
+      const pair = `${a}->${b}`;
+      if (seen.has(pair)) continue;
+      seen.add(pair);
+      pushRelationship(a, b, i);
+    }
   }
   lines.push('}');
   const groups = Array.from({ length: shape.groups }, (_value, g) => `g${g}`);
@@ -673,6 +698,51 @@ function labelsFixture(): GeneratedFixtureSources {
   });
 }
 
+/** Two open projects sized for the pan/zoom gate: about 300 visible nodes and 600 visible edges. */
+function scaleFixture(): GeneratedFixtureSources {
+  const root = 'scale-root';
+  const foreign = 'scale-alpha';
+  const shape: ModelShape = {
+    id: foreign,
+    title: 'Scale alpha',
+    description: 'Eight containers and 288 children with two dense relationship families.',
+    groups: 8,
+    perGroup: 36,
+    relationships: 0,
+    relationshipFamilies: 2
+  };
+  return {
+    fixtures: [
+      {
+        id: 'scale',
+        title: 'Two-project 300-node, 600-edge composition',
+        description: 'An open two-project composition sized for the pan/zoom gate.',
+        root,
+        composition: 'scale-open'
+      }
+    ],
+    models: [
+      rootModel(
+        root,
+        'Scale root',
+        linksFile(
+          [link('link-alpha', foreign, 'g0')],
+          [connection('to-alpha', root, 'g0', foreign, 'g0', 'Calls scale alpha')],
+          [
+            {
+              id: 'scale-open',
+              title: 'Scale open pair',
+              rootScene: 'overview',
+              projects: [{ model: foreign, scene: 'overview', mode: 'open' }]
+            }
+          ]
+        )
+      ),
+      { ...modelSource(shape), links: linksFile([link('link-root', root, 'g0')]) }
+    ]
+  };
+}
+
 const FIXTURE_BUILDERS: Record<string, () => GeneratedFixtureSources> = {
   unopened: unopenedFixture,
   visible: visibleFixture,
@@ -681,10 +751,25 @@ const FIXTURE_BUILDERS: Record<string, () => GeneratedFixtureSources> = {
   chain: chainFixture,
   cycle: cycleFixture,
   diamond: diamondFixture,
-  labels: labelsFixture
+  labels: labelsFixture,
+  scale: scaleFixture
 };
 
-export const FIXTURE_IDS = Object.keys(FIXTURE_BUILDERS);
+/**
+ * The fixtures the default matrix measures. `scale` is a registered builder but not part of the
+ * default matrix: it is large and exists for the browser pan/zoom journey, so it is requested by
+ * name. Keeping it out of the default set keeps the matrix digest stable.
+ */
+export const FIXTURE_IDS = [
+  'unopened',
+  'visible',
+  'loaded',
+  'bridges',
+  'chain',
+  'cycle',
+  'diamond',
+  'labels'
+];
 
 /** Build the requested fixtures (all by default). Model IDs are fixture-specific, so any subset works. */
 export function generateFixtures(ids?: readonly string[]): GeneratedFixtureSources {
@@ -693,7 +778,10 @@ export function generateFixtures(ids?: readonly string[]): GeneratedFixtureSourc
   const byId = new Map<string, FixtureModel>();
   for (const fixture of wanted) {
     const build = FIXTURE_BUILDERS[fixture];
-    if (!build) throw new Error(`Unknown fixture: ${fixture} (known: ${FIXTURE_IDS.join(', ')})`);
+    if (!build)
+      throw new Error(
+        `Unknown fixture: ${fixture} (known: ${Object.keys(FIXTURE_BUILDERS).join(', ')})`
+      );
     const generated = build();
     fixtures.push(...generated.fixtures);
     for (const model of generated.models) {
@@ -705,6 +793,60 @@ export function generateFixtures(ids?: readonly string[]): GeneratedFixtureSourc
     fixtures,
     models: [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   };
+}
+
+/**
+ * Two structurally identical roots for the first-paint A/B: `paint-hub` authors 20 links that
+ * are never opened, `paint-plain` authors none. Both keep a root-only composition, so the only
+ * difference a browser sees is whether the root lists links. The 20 targets exist so link listing
+ * reports real availability rather than failures.
+ */
+export const PAINT_ROOTS = { links: 'paint-hub', plain: 'paint-plain' } as const;
+
+export function paintSources(): GeneratedFixtureSources {
+  const targets = Array.from(
+    { length: 20 },
+    (_value, index) => `paint-target-${String(index).padStart(2, '0')}`
+  );
+  const rootOnly: CompositionEntry[] = [
+    { id: 'root-only', title: 'Root only', rootScene: 'overview', projects: [] }
+  ];
+  const models: FixtureModel[] = [
+    {
+      ...modelSource({
+        id: PAINT_ROOTS.links,
+        title: 'Paint hub',
+        description: 'Twenty authored links that are never opened.',
+        ...ROOT_SHAPE
+      }),
+      links: linksFile(
+        targets.map((target, index) => link(`paint-link-${index}`, target, 'g0')),
+        [],
+        rootOnly
+      )
+    },
+    {
+      ...modelSource({
+        id: PAINT_ROOTS.plain,
+        title: 'Paint plain',
+        description: 'No authored links.',
+        ...ROOT_SHAPE
+      }),
+      links: linksFile([], [], rootOnly)
+    }
+  ];
+  for (const target of targets)
+    models.push(
+      modelSource({
+        id: target,
+        title: target,
+        description: 'First-paint link target.',
+        groups: 1,
+        perGroup: 1,
+        relationships: 0
+      })
+    );
+  return { fixtures: [], models };
 }
 
 /**

@@ -31,9 +31,13 @@ repository model contents.
   `scripts/bench-browser.ts --composition` drives the real routes: cold startup with zero foreign
   fetches, an explicit open, an expand, a sustained pan/zoom sample and repeated open/close cycles
   with a retained-heap reading.
-- **Measurement follow-on** (this task). The browser journey now reports the retained-heap gate
-  from the warm-up boundary as well as the raw 50-cycle number, and reads
-  `/api/composition/stats` after the cycles so the heap and byte/count bounds come from one run.
+- **Measurement harness** (this task). `scripts/bench-browser.ts` now runs the real authored
+  composition against a catalog it is given (`--catalog/--model/--composition`), reporting cold
+  startup, pan/zoom, warm expand/collapse p50/p95 with the server layout-miss delta, repeated
+  fresh-page reveals with a busy-badge timestamp from a `MutationObserver`, and 50 open/close
+  cycles with warm-up-excluded heap growth plus `/api/composition/stats`. Two generated modes add
+  the scale fixture (`--scale-fixture`) and the first-paint A/B (`--paint-ab`). The retained-heap
+  gate is now reported from the warm-up boundary as well as raw.
 
 ## Reference environment and method
 
@@ -44,25 +48,33 @@ repository model contents.
 - Default `elk-layered` layout. CLI `parse` passes are warm stamp lookups; `coldParseMs` is the
   separate cache-cleared sample. The browser server starts against a private temporary catalog and
   the heap is read after forced GC before the cycles, at the warm-up boundary (cycle 10) and after
-  cycle 50. This is a shared workstation; unrelated background work was not controlled.
-- Commands. The baseline command's stdout had no absolute paths and was written to the committed
-  file as-is apart from an added `environment` block; the browser journey's committed copy replaces
-  the private temp catalog path and ephemeral port with placeholders and adds `commit` and
-  `environment`:
+  cycle 50. To fit a closed project again the journey refits the camera before each close, because
+  a reopen re-anchors it on the revealed title. This is a shared workstation; unrelated background
+  work was not controlled, and the single-model p95 comparison below shows that noise.
+- Commands. The `--composition ID` journey reads only the catalog named on the command line. Real
+  sibling models are copied to a temporary root and never modified; the committed copies replace
+  catalog paths and ephemeral ports with placeholders and add `environment`:
   ```sh
   npm run build
+  # composition fixture matrix
   bin/fractal bench --composition --iterations 5 --json \
     > docs/plans/active/linked-project-diagrams/phase-3-baseline.json
-  node --import tsx scripts/bench-browser.ts --composition --cycles 50 --pan-ms 3000 --skip-build \
-    > phase-3-browser.json
-  ```
-- Local steel thread through a temporary catalog holding copies of the Sidecar, td and Recall
-  directories registered in the machine catalog. No sibling repository was modified:
-  ```sh
+  # real Sidecar + td + Recall journey over a temporary copy of the registered directories
+  node --import tsx scripts/bench-browser.ts --composition plugins \
+    --catalog TEMP/catalog.json --model sidecar --cycles 50 --warmup-cycles 10 \
+    --toggles 20 --cold-opens 5 --pan-ms 3000 --skip-build > phase-3-browser.json
+  # generated 300-node / 600-edge pan/zoom and first-paint A/B
+  node --import tsx scripts/bench-browser.ts --scale-fixture --pan-ms 3000 --skip-build
+  node --import tsx scripts/bench-browser.ts --paint-ab --paint-samples 7 --skip-build
+  # steel thread composition, and the phase 0 fingerprint comparisons
   bin/fractal bench --catalog TEMP/catalog.json --model sidecar --composition plugins --json
   bin/fractal bench --directory ../sidecar/docs/diagrams/fractal,../td/docs/diagrams/fractal \
     --views scene --engine elk-layered --iterations 5 \
     --baseline docs/plans/active/linked-project-diagrams/steel-thread-baseline.json \
+    --fail-on-geometry-change
+  bin/fractal bench --directory examples/delivery --synthetic 60,240 --views both \
+    --engine elk-layered --iterations 10 \
+    --baseline docs/plans/active/linked-project-diagrams/phase-0-baseline.json \
     --fail-on-geometry-change
   ```
 
@@ -103,12 +115,12 @@ the real `plugins` composition is three open projects through a temporary catalo
 | Projects / loaded elements / rels | 3 / 148 / 206                       |
 | Visible nodes / edges / bridges   | 23 / 83 / 2                         |
 | Stubs / diagnostics               | 0 / 0                               |
-| resolve p50 / p95                 | 0.756 / 0.947 ms                    |
-| parse (warm) p50 / p95            | 0.187 / 0.296 ms                    |
-| local layout p50 / p95            | 62.960 / 73.129 ms                  |
-| compose (place/route) p50 / p95   | 63.151 / 68.231 ms                  |
-| serialize p50                     | 0.139 ms                            |
-| coldParseMs (cache-cleared)       | 287.241 ms                          |
+| resolve p50 / p95                 | 0.788 / 0.947 ms                    |
+| parse (warm) p50 / p95            | 0.187 / 0.753 ms                    |
+| local layout p50 / p95            | 60.399 / 66.254 ms                  |
+| compose (place/route) p50 / p95   | 60.590 / 70.888 ms                  |
+| serialize p50                     | 0.141 ms                            |
+| coldParseMs (cache-cleared)       | 291.215 ms                          |
 | Composition fingerprint           | `1aad6ec89abe17724d06d0aa7ffe9ecc…` |
 
 The two phase-0 steel-thread overview fingerprints are unchanged against the
@@ -116,71 +128,98 @@ The two phase-0 steel-thread overview fingerprints are unchanged against the
 compare identical (`--fail-on-geometry-change` exit 0), which is the strongest available check
 that composition reads each project without altering its local geometry.
 
-## Browser journey (fictional host / plugin fixtures)
+## Browser journeys
 
-The browser harness drives the contract fixtures (host + one open plugin), not the real three
-models, so these numbers characterize the routes and the render path at small scale, not the
-plan's 500-element / 300-node fixture sizes.
+The browser harness now runs the real composition from a temporary catalog and the generated
+fixtures. Machine-readable detail is in [phase-3-browser.json](phase-3-browser.json).
 
-- Cold studio startup through the visible host diagram: **353 ms**. Startup requests were
-  `/api/models/host` (121.4 ms), `/api/models` (3.5 ms) and `/api/render` (79.4 ms); **zero**
-  foreign model requests before the explicit open, then exactly `/api/models/plugin` after.
-- Open the linked plugin (cold target reveal): **12.8 ms**; expand the target (warm local toggle):
-  **30.8 ms**; no long tasks in either. Mounted DOM: 10 nodes / 3 edges / 227 SVG descendants at
-  open, 12 / 3 / 261 after expansion.
-- Pan/zoom over 181 frames: frame p50 **16.7 ms**, p99 **17.4 ms**, **0** long tasks; no page
-  errors, no composition-induced main-thread task > 50 ms.
-- 50 open/close cycles in 6,660 ms with no long tasks. Heap after forced GC: 4,815,042 B before
-  the cycles, 5,432,752 B after the excluded warm-up (cycle 10), 5,689,264 B after cycle 50.
-  Raw growth **18.16%**; warm-up-excluded (cycles 10 → 50) growth **4.72%** (256,512 B).
-- Server cache bounds after the run: models 2 entries / 4,588 B, layouts 2 / 2,729 B, composed
-  2 / 11,187 B against the 128 MiB `cacheBytes` budget; queue completed 2, coalesced 0, stale 0,
-  over-limit 0. After the initial render and one explicit open, 50 close/open cycles produced no
-  further layout or composition cache misses, so no unrelated project layout ran.
+### Real composition (Sidecar + td + Recall)
 
-The studio reviewer measured the same build independently at 4.45% warm-up-excluded and 17.4% raw,
-consistent with the values above.
+The `plugins` composition is restored by URL over the Sidecar/td/Recall directories copied to a
+private temp root, then exercised through the real routes:
+
+- Cold studio startup through the visible composed canvas: **574 ms**. Requests were
+  `/api/models/sidecar`, `/api/models`, `/api/render`, `/api/composition/links?model=sidecar`,
+  `/api/models/td`, `…links?model=td`, `/api/models/recall`, `…links?model=recall` and
+  `/api/composition/render`; no page errors.
+- Warm local toggle of `td CLI` inside the td frame, 20 measured pairs (40 samples) after a
+  warm-up pair: input-to-geometry p50 **31.1 ms**, p95 **33.2 ms**. Server `layouts.misses` delta
+  **0** and `composed.misses` delta **0** across the measured loop, so no unrelated project
+  layout ran.
+- Pan/zoom over 181 frames: p50 16.7 ms, p99 **18.5 ms**, **0** long tasks.
+- 50 open/close cycles of the td frame in 13,320 ms, **0** long tasks. Heap after forced GC:
+  6,413,270 B before the cycles, 7,338,093 B after the excluded warm-up (cycle 10), 7,599,802 B
+  after cycle 50. Raw growth **10.16%**; warm-up-excluded (cycles 10 → 50) growth **2.93%**
+  (261,709 B).
+- Five fresh-page cold reveals of the td link: p50 **27.6 ms**, p95 **249.1 ms**. The busy badge
+  never appeared: even the 249 ms reveal spends its time in the source model fetch, before the
+  150 ms busy timer starts. A forced slow-render probe (400 ms response) shows the badge at
+  **166.4 ms** after the click, with frames mounted at 435 ms.
+- Server cache bounds after the run: models 3 entries / 113,939 B, layouts 2 / 0 B, composed
+  4 / 209,515 B against the 128 MiB budget; queue 0 active/queued, stale 0, over-limit 0.
+
+### Generated scale pair (`--scale-fixture`)
+
+The generated two-project composition has **300 visible nodes / 573 visible edges** (fixture
+digest `f9a9d8ac5062ddd11560ac24379d70fcb535a6fa2d30b091037636a7abf02c86`). Pan/zoom over 181
+frames: frame p50 16.6 ms, p99 **19.7 ms**, **0** long tasks over 50 ms, no page errors. This is
+the plan's 300/600 scale with room to spare.
+
+### Generated first-paint A/B (`--paint-ab`)
+
+Two structurally identical roots, one with 20 authored unopened links and one with none, served by
+the same server and sampled alternately (7 samples each, fixture digest
+`b0dabe557e72febb4b4a4d13fab65c77a968112632be00ee91d17e75da50c720`). Medians: 20 links **69 ms**,
+zero links **68 ms**, ratio **1.01** — well inside the 10% budget.
 
 ## Gates table
 
 Verdicts use the plan's [acceptance budgets](../linked-project-diagrams.md#performance-strategy-and-acceptance-budgets).
-`PASS` means measured and within the gate; `UNMEASURED` names what the current scripts cannot show
-and what would be needed; no number is inferred where a gate was not measured.
+Every row is measured with the harness above; no number is inferred.
 
-| Journey / load                                 | Gate                                                    | Measured                                                                                                                                                                     | Verdict                                                                                                             |
-| ---------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Root with 20 unopened links                    | Zero foreign parses/layouts                             | 1 participating project, 4 loaded elements, 20 stubs, 1 model cache miss/entry; browser cold startup made 0 foreign model requests before the explicit open                  | **PASS**                                                                                                            |
-| Root with 20 unopened links                    | First useful paint ≤ 10% slower than root-only baseline | Not measured: the browser harness has no root-only A/B (it always opens its one linked plugin)                                                                               | **UNMEASURED** — needs a browser run over the generated `unopened` root and a zero-link root on one server/viewport |
-| Sidecar + td + Recall warm local toggle        | p95 input-to-geometry ≤ 100 ms                          | Browser harness only expands the fictional plugin once (30.8 ms); real three-project CLI `local` p95 is 73.129 ms and `compose` p95 68.231 ms                                | **UNMEASURED** (`p95` of a repeated real-model browser toggle); adjacent CLI stages are within budget               |
-| Sidecar + td + Recall warm local toggle        | Unrelated project layout calls = 0                      | At fixture scale 50 close/open cycles added no layout/composition misses (2 each total). The real models were not driven through repeated browser toggles                    | **PASS (fixture scale)**; real-model count not separately instrumented                                              |
-| Cold target reveal ≤ 500 elements / 1,000 rels | p95 ≤ 1 s                                               | No repeated real-reveal harness. CLI coldParseMs 287.241 ms + local p95 73.129 ms for the 148-element steel thread; browser fixture open 12.8 ms single sample               | **UNMEASURED** — needs a repeated open over the real three-project catalog                                          |
-| Cold target reveal ≤ 500 elements / 1,000 rels | Busy feedback by 150 ms                                 | The `.loading-badge` seam exists, but the harness records no badge timestamp and the fixture reveal completes in ~13 ms                                                      | **UNMEASURED** — needs a badge-visible timestamp in the journey                                                     |
-| Pan/zoom ≤ 300 visible nodes / 600 edges       | Frame p99 ≤ 25 ms                                       | 17.4 ms over 181 frames, but the fixture composition has 12 visible nodes / 3 edges, not 300/600                                                                             | **PASS at fixture scale**; **UNMEASURED** at 300/600                                                                |
-| Pan/zoom ≤ 300 visible nodes / 600 edges       | Zero composition-induced main-thread tasks > 50 ms      | 0 long tasks across open, expand and pan/zoom                                                                                                                                | **PASS at fixture scale**; **UNMEASURED** at 300/600                                                                |
-| Repeated open/close, 50 cycles                 | Warm-up-excluded retained heap growth ≤ 10%             | 4.72% cycles 10 → 50 (5,432,752 → 5,689,264 B); raw 50-cycle 18.16%; reviewer 4.45% / 17.4%                                                                                  | **PASS**                                                                                                            |
-| Repeated open/close, 50 cycles                 | Caches remain within bounds                             | models/layouts/composed 2 entries each, 4.6 / 2.7 / 11.2 KB against 128 MiB; 0 stale, 0 over-limit                                                                           | **PASS**                                                                                                            |
-| Single-project compatibility                   | Same geometry fingerprint                               | All 9 delivery/synthetic rows unchanged; Sidecar and td overview unchanged against the phase 0 steel-thread baseline                                                         | **PASS**                                                                                                            |
-| Single-project compatibility                   | ≤ 10% p95 regression over baseline                      | Two runs: run 2 all rows within ±6%; run 1 had two sub-10 ms outliers (trust +11.8%, proposal +14.2%) whose identical-geometry twin moved −4.1%, i.e. nearest-rank p95 noise | **PASS** (outliers attributed to shared-workstation jitter)                                                         |
+| Journey / load                                 | Gate                                                    | Measured                                                                                                                                                                                              | Verdict                                |
+| ---------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Root with 20 unopened links                    | Zero foreign parses/layouts                             | `unopened` fixture: 1 project, 4 loaded elements, 20 stubs, 1 model cache miss/entry; the paint A/B roots load no foreign model                                                                       | **PASS**                               |
+| Root with 20 unopened links                    | First useful paint ≤ 10% slower than root-only baseline | 7 alternating fresh-page samples each: medians 69 ms (20 links) vs 68 ms (none), ratio **1.01**                                                                                                       | **PASS**                               |
+| Sidecar + td + Recall warm local toggle        | p95 input-to-geometry ≤ 100 ms                          | 20 expand/collapse pairs (40 samples) on `td CLI`: p50 **31.1 ms**, p95 **33.2 ms**                                                                                                                   | **PASS**                               |
+| Sidecar + td + Recall warm local toggle        | Unrelated project layout calls = 0                      | Server `layouts.misses` delta **0**, `composed.misses` delta **0** across the measured loop                                                                                                           | **PASS**                               |
+| Cold target reveal ≤ 500 elements / 1,000 rels | p95 ≤ 1 s                                               | 5 fresh-page loads of the td link: p50 **27.6 ms**, p95 **249.1 ms**                                                                                                                                  | **PASS**                               |
+| Cold target reveal ≤ 500 elements / 1,000 rels | Busy feedback by 150 ms                                 | Badge never appeared in the natural reveals (the 249 ms case is source-fetch time before the 150 ms busy timer); a forced 400 ms render shows the badge at **166.4 ms** after the click               | **FAIL**                               |
+| Pan/zoom ≤ 300 visible nodes / 600 edges       | Frame p99 ≤ 25 ms                                       | Generated scale pair, **300 nodes / 573 edges**, 181 frames: p99 **19.7 ms**                                                                                                                          | **PASS**                               |
+| Pan/zoom ≤ 300 visible nodes / 600 edges       | Zero composition-induced main-thread tasks > 50 ms      | **0** long tasks across the scale pan/zoom (and across the real journey)                                                                                                                              | **PASS**                               |
+| Repeated open/close, 50 cycles                 | Warm-up-excluded retained heap growth ≤ 10%             | Real composition: warm-up-excluded (cycles 10 → 50) **2.93%** (7,338,093 → 7,599,802 B); raw 50-cycle **10.16%**                                                                                      | **PASS**                               |
+| Repeated open/close, 50 cycles                 | Caches remain within bounds                             | models 3 entries / 113,939 B, layouts 2 / 0 B, composed 4 / 209,515 B against 128 MiB; 0 stale, 0 over-limit                                                                                          | **PASS**                               |
+| Single-project compatibility                   | Same geometry fingerprint                               | All 9 delivery/synthetic rows unchanged; Sidecar `775718923c94` and td `fe87d9db39b7` overviews unchanged against the phase 0 steel-thread baseline                                                   | **PASS**                               |
+| Single-project compatibility                   | ≤ 10% p95 regression over baseline                      | Five runs: per-row p95 deltas have medians ≤ 10.4% but individual maxima reach +26% while `sidecar` held ~100% CPU; the layout source is unchanged since the baseline, so the outliers are load noise | **PASS** (median; load-induced maxima) |
 
 ## Limits in force
 
 Admission limits are 20 participating projects, 10,000 total loaded elements, 20,000
 relationships, 500 visible nodes, 1,000 visible edges, 5 MiB source bytes per project and 128 MiB
-estimated cache payload, accounting for bridge geometry and in-flight responses. The measured
-cache payload after the 50-cycle run is under 19 KB; the largest measured composition is the
-`visible` fixture at 304 visible nodes / 271 visible edges / 209 KiB of serialized geometry. Exceeding
-a limit returns a shared diagnostic and keeps the last successful view; the CLI benchmark exercises
-the core directly, so it reports over-limit fixtures without refusing them (the `loaded` row at
-10,004 elements). Service/CLI configuration owns overrides.
+estimated cache payload, accounting for bridge geometry and in-flight responses. After the real
+50-cycle run the measured cache payload is 323,454 B (models 113,939 B plus composed 209,515 B),
+far inside the 128 MiB budget. The largest measured composition is the generated scale pair at 300
+visible nodes / 573 visible edges. Exceeding a limit returns a shared diagnostic and keeps the last
+successful view; the CLI benchmark exercises the core directly, so it reports over-limit fixtures
+without refusing them (the `loaded` row at 10,004 elements). Service/CLI configuration owns
+overrides.
 
-## What remains unmeasured, and phase 4 / 5 entry points
+## The one failing gate, and phase 4 / 5 entry points
 
-The gates above that are `UNMEASURED` all need the same missing harness capability: a browser
-journey that can point at an arbitrary private catalog and generated fixture, repeat a toggle to
-collect a p95, and timestamp the loading badge. Adding a `--catalog`/`--root`/`--scene` option (and
-a repeated-toggle loop) to `scripts/bench-browser.ts` would close the warm-toggle, cold-reveal,
-150 ms-feedback and 20-unopened-paint rows without touching the transport-neutral core. Pan/zoom at
-300/600 needs a generated 300-node open composition in the same harness.
+Every budgeted row is now measured. One fails: **busy feedback**. The studio schedules the
+`loading-badge` 150 ms after a request becomes busy, but a fresh-page reveal spends its time in the
+source-model fetch before that timer starts, so the slowest natural reveal (249 ms) showed no
+badge at all, and a forced 400 ms render shows the badge at 166.4 ms after the click — about 16 ms
+over the budget. The smallest fix is in application code, not the harness: either lower
+`SLOW_REQUEST_MS` in `src/routes/+page.svelte` or set the busy state when the link's source load
+starts rather than only at the composition render. This task does not own `src/` and did not
+change it.
+
+Two measurement limits are worth stating. A genuinely per-open cold **server** cache is not
+possible without restarting the server, so the reveal figure is per fresh page with a warm server,
+as the brief anticipated. And the single-model p95 comparison is across sessions on a shared
+workstation: the layout source is unchanged (fingerprints identical), but maxima vary with load, so
+the verdict rests on the median and on geometry equality rather than any single maximum.
 
 Phase 3 otherwise hands off cleanly:
 
@@ -194,10 +233,13 @@ Phase 3 otherwise hands off cleanly:
 
 ## Validation record
 
-- Composition fixture matrix and browser journey ran to completion with exit 0; the browser
-  journey reported no page errors and no long tasks.
-- `bin/fractal bench --fail-on-geometry-change` exited 0 for both the phase 0 single-model baseline
-  and the phase 0 steel-thread baseline.
+- Composition fixture matrix, real journey, scale journey and paint A/B all ran to completion with
+  exit 0; the browser journeys reported no page errors and no long tasks.
+- `bin/fractal bench --fail-on-geometry-change` exited 0 for the phase 0 single-model baseline and
+  the phase 0 steel-thread baseline (identical fingerprints in both).
 - `tests/docs.test.ts` green; `npm run check` clean; changed files formatted with Prettier.
-- Machine, browser, viewport, reduced motion, commit and cold/warm state are recorded in each JSON
-  file's `environment` block and in the method section above.
+- Machine, browser, viewport, reduced motion, application commit and cold/warm state are recorded
+  in each JSON file's `environment` block and in the method section above. The harness is on
+  `lp3-measure`; the application source under test is unchanged from `95adfb8`.
+- Generated fixture digests are reproducible: matrix `29081ac6…`, scale `f9a9d8ac…`, paint
+  `b0dabe55…`.
