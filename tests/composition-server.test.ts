@@ -66,6 +66,50 @@ test('linksFor reports each foreign model without composing anything', async () 
   }
 });
 
+test('links reports catalog availability without compiling a malformed foreign model', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'fractal-composition-links-'));
+  const models = join(root, 'models');
+  await mkdir(models);
+  await cp(join(FIXTURES, 'host'), join(models, 'host'), { recursive: true });
+  await cp(join(FIXTURES, 'plugin'), join(models, 'plugin'), { recursive: true });
+  await writeFile(join(models, 'plugin', 'model.c4'), 'this is not a LikeC4 model');
+  const catalog = join(root, 'catalog.json');
+  await writeFile(
+    catalog,
+    JSON.stringify({
+      version: 1,
+      projects: [
+        { id: 'host', directory: join(models, 'host') },
+        { id: 'plugin', directory: join(models, 'plugin') },
+        { id: 'missing-plugin', directory: join(root, 'missing-plugin') }
+      ]
+    })
+  );
+  const options = { catalog, env: {}, home: join(root, 'home'), cwd: root };
+  clearModelCache();
+  clearCompositionCache();
+  try {
+    const links = await linksFor('host', options);
+    assert.deepEqual(links.resolution, [
+      {
+        model: 'missing-plugin',
+        status: 'unavailable',
+        message: `Model directory missing: ${join(root, 'missing-plugin')}`
+      },
+      { model: 'plugin', status: 'resolved' }
+    ]);
+
+    // Full validation is what loads the target and notices the broken source.
+    const validation = await validateLinked('host', options);
+    assert.equal(validation.valid, false);
+    const invalid = validation.diagnostics.find((entry) => entry.code === 'model_invalid');
+    assert.ok(invalid, 'validateLinked reports the malformed plugin');
+    assert.equal(invalid.target?.model, 'plugin');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('validateLinked resolves the closure and reports only the unresolved claim', async () => {
   const { root, options } = await fixture();
   clearModelCache();

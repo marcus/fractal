@@ -214,7 +214,13 @@ keeps `--directory` as an explicit local entry point whose links resolve through
 
 - `linksFor(model, options)` returns the parsed links, the root revision and one
   `{ model, status, message? }` entry per distinct foreign model named by links or connections,
-  resolved and validated individually without composing. Unknown roots throw.
+  checked for catalog availability individually without composing. Availability means the catalog
+  entry is registered, its directory exists, and its `fractal.json` is readable and (in an explicit
+  catalog) id-matching with a `model.c4` present; the target model is **not** compiled. A malformed
+  foreign `model.c4` is therefore not detected here — it is detected when that project is opened or
+  by `fractal validate --model X --linked`, which perform the full parse. Status stays `resolved`,
+  `unavailable` or `invalid`, so a missing entry is `unavailable` and a broken companion is
+  `invalid`. Unknown roots throw.
 - `validateLinked(model, options)` runs local `from`/endpoint existence and explicit-UID checks,
   then resolves the declared link closure with a visited set (a target's own links are followed
   only when it resolves) and a 20-model traversal budget (`budget_exceeded`, recovery `reduce`).

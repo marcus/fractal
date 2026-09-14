@@ -70,7 +70,7 @@
     composed: ComposedDiagram;
     revisions: Record<string, string>;
   }
-  type ProjectAction = 'collapse' | 'reopen' | 'close' | 'standalone';
+  type ProjectAction = 'collapse' | 'reopen' | 'close' | 'standalone' | 'fit';
 
   let catalog = $state<{ id: string; title: string; description: string }[]>([]);
   let catalogError = $state('');
@@ -151,6 +151,8 @@
     }) => void;
     revealProject: (model: string) => void;
     revealElement: (model: string, id: string) => void;
+    fit: () => void;
+    fitProject: (model: string) => void;
     dismissMenu: () => boolean;
   }>();
   let authoredLinks = $state<LinksResult | null>(null);
@@ -169,13 +171,19 @@
       : model
   );
   const inspectorDiagram = $derived.by(() => {
-    if (!inComposition || compositionSelection?.kind !== 'element' || !selectedCompositionModel)
+    if (!inComposition || !selectedCompositionModel) return diagram;
+    if (compositionSelection?.kind !== 'element' && compositionSelection?.kind !== 'relationship')
       return diagram;
     return (
       composition?.composed.projects.find((entry) => entry.model === selectedCompositionModel)
         ?.diagram ?? null
     );
   });
+  const inspectorComposition = $derived(
+    composition
+      ? { state: composition.state, composed: composition.composed, models: compositionModels }
+      : null
+  );
   const inspectorView = $derived.by(() => {
     if (!inComposition || !selectedCompositionModel || !composition) return view;
     const entry = composition.state.projects.find(
@@ -197,13 +205,12 @@
     }
     return selected ?? '';
   });
-  const inspectorSelectedType = $derived(
-    inComposition && compositionSelection?.kind === 'connection'
-      ? ('connection' as const)
-      : inComposition && compositionSelection
-        ? ('element' as const)
-        : selectedType
-  );
+  const inspectorSelectedType = $derived.by(() => {
+    if (!inComposition || !compositionSelection) return selectedType;
+    if (compositionSelection.kind === 'connection') return 'connection' as const;
+    if (compositionSelection.kind === 'relationship') return 'relationship' as const;
+    return 'element' as const;
+  });
   const inspectorActive = $derived(
     inComposition ? compositionSelection !== null : selected !== null
   );
@@ -621,6 +628,10 @@
       window.location.href = `/?model=${encodeURIComponent(target)}`;
       return;
     }
+    if (action === 'fit') {
+      composedCanvas?.fitProject(target);
+      return;
+    }
     try {
       if (action === 'close') {
         const state = closeProject(composition.state, target);
@@ -956,7 +967,8 @@
         canvas?.zoom(-1);
         break;
       case 'fit':
-        canvas?.fit();
+        if (composition) composedCanvas?.fit();
+        else canvas?.fit();
         break;
       case 'previous-scene':
         advance(-1);
@@ -1012,7 +1024,8 @@
       editable,
       interactive,
       modal: !!modal,
-      canvas: !!target.closest('.canvas > svg') || target === document.body
+      canvas:
+        !!target.closest('.canvas > svg, .composition-canvas > svg') || target === document.body
     });
     if (!command) return;
     e.preventDefault();
@@ -1347,7 +1360,7 @@
         selected={inspectorSelected}
         selectedType={inspectorSelectedType}
         view={inspectorView}
-        {composition}
+        composition={inspectorComposition}
         {compositionSelection}
         links={inspectorModel?.id === modelId ? authoredLinks : null}
         {toggle}

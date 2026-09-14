@@ -39,7 +39,11 @@
     selected: string;
     selectedType: 'element' | 'relationship' | 'outside' | 'connection';
     view: ViewState;
-    composition?: { state: CompositionState; composed: ComposedDiagram } | null;
+    composition?: {
+      state: CompositionState;
+      composed: ComposedDiagram;
+      models: Record<string, Model>;
+    } | null;
     compositionSelection?: QualifiedSelection | null;
     links?: AuthoredLinks | null;
     toggle: (id: string) => void;
@@ -64,7 +68,7 @@
   const name = (id: string) => model.elements.find((e) => e.id === id)?.title ?? id;
   const connection = $derived(
     composition && compositionSelection?.kind === 'connection'
-      ? inspectConnection(composition.composed, {
+      ? inspectConnection(composition.composed, (model) => composition.models[model], {
           ownerModel: compositionSelection.ownerModel,
           connectionId: compositionSelection.connectionId
         })
@@ -148,6 +152,10 @@
               <dd>{connection.claim.title}</dd>
               <dt>Kind</dt>
               <dd>{connection.claim.kind}</dd>
+              {#if connection.representatives.source.title}<dt>Drawn at source</dt>
+                <dd>{connection.representatives.source.title}</dd>{/if}
+              {#if connection.representatives.target.title}<dt>Drawn at target</dt>
+                <dd>{connection.representatives.target.title}</dd>{/if}
               {#if compositionSelection?.kind === 'connection'}<dt>Stable ID</dt>
                 <dd><code>{compositionSelection.connectionId}</code></dd>{/if}
             </dl>

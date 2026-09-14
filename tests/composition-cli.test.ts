@@ -82,6 +82,30 @@ test('validate --linked exits 1 with diagnostics and 0 without --linked', async 
   }
 });
 
+test('links reports catalog availability; validate --linked detects a malformed target', async () => {
+  const { root, run, models } = await fixture();
+  try {
+    await writeFile(join(models, 'plugin', 'model.c4'), 'this is not a LikeC4 model');
+    const links = JSON.parse(run(['links', '--model', 'host', '--json']).stdout);
+    const plugin = links.resolution.find((entry: { model: string }) => entry.model === 'plugin');
+    assert.equal(plugin.status, 'resolved', 'links does not compile the foreign model');
+
+    const validated = run(['validate', '--model', 'host', '--linked', '--json']);
+    assert.equal(validated.status, 1);
+    const json = JSON.parse(validated.stdout);
+    assert.equal(json.valid, false);
+    assert.ok(
+      json.diagnostics.some(
+        (entry: { code: string; target?: { model?: string } }) =>
+          entry.code === 'model_invalid' && entry.target?.model === 'plugin'
+      ),
+      'validate --linked compiles the target and reports it invalid'
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('layout --composition prints a composed diagram and project omits local geometry', async () => {
   const { root, run } = await fixture();
   try {

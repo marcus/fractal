@@ -361,14 +361,19 @@ test('rootState derives a root-only open composition from scene and options', as
   assert.throws(() => rootState(host, { scene: 'nope' }), /Unknown scene/);
 });
 
-test('inspectConnection reports readable routes and exact endpoints; unknown IDs throw', async () => {
+test('inspectConnection names exact endpoint titles and reports representatives separately', async () => {
   const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
+  const lookup = (model: string) =>
+    model === 'host' ? host.model : model === 'plugin' ? plugin.model : undefined;
   const state = stateOf([
     { model: 'host', scene: 'detail', mode: 'open', view: view(['core']) },
     { model: 'plugin', scene: 'detail', mode: 'open', view: view(['core']) }
   ]);
   const composed = await compose(staticResolver([host, plugin]), state);
-  const inspection = inspectConnection(composed, { ownerModel: 'host', connectionId: 'call' });
+  const inspection = inspectConnection(composed, lookup, {
+    ownerModel: 'host',
+    connectionId: 'call'
+  });
 
   assert.equal(inspection.owner, 'host');
   assert.deepEqual(inspection.route.source, {
@@ -383,12 +388,47 @@ test('inspectConnection reports readable routes and exact endpoints; unknown IDs
     source: { model: 'host', element: 'cli' },
     target: { model: 'plugin', element: 'cli' }
   });
+  assert.deepEqual(inspection.representatives, {
+    source: {
+      model: 'host',
+      element: 'cli',
+      representative: { kind: 'node', id: 'cli' },
+      title: 'Plugin adapter'
+    },
+    target: {
+      model: 'plugin',
+      element: 'cli',
+      representative: { kind: 'node', id: 'cli' },
+      title: 'Plugin CLI'
+    }
+  });
   assert.deepEqual(inspection.claim.evidence, ['src/plugins/beacon.ts']);
   assert.equal(inspection.claim.status, 'current');
   assert.throws(
-    () => inspectConnection(composed, { ownerModel: 'host', connectionId: 'absent' }),
+    () => inspectConnection(composed, lookup, { ownerModel: 'host', connectionId: 'absent' }),
     /Unknown connection/
   );
+
+  // With the endpoint hidden, the drawn representative is an ancestor: the readable route still
+  // names the exact endpoint, while representatives report the titled stand-in.
+  const collapsed = await compose(
+    staticResolver([host, plugin]),
+    stateOf([
+      { model: 'host', scene: 'overview', mode: 'open', view: view() },
+      { model: 'plugin', scene: 'overview', mode: 'open', view: view() }
+    ])
+  );
+  const hidden = inspectConnection(collapsed, lookup, {
+    ownerModel: 'host',
+    connectionId: 'call'
+  });
+  assert.deepEqual(hidden.route.source, { project: 'Harbor host', component: 'Plugin adapter' });
+  assert.deepEqual(hidden.representatives.source, {
+    model: 'host',
+    element: 'cli',
+    representative: { kind: 'node', id: 'core' },
+    title: 'Harbor host'
+  });
 });
 
 test('inspectQualified handles project, element and connection and rejects phase 2 kinds', async () => {

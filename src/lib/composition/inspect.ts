@@ -1,5 +1,5 @@
 import { inspectComponent } from '../core/inspect';
-import type { Status } from '../core/types';
+import type { Model, Status } from '../core/types';
 import type { ProjectSnapshot } from './snapshot';
 import type {
   BridgeRepresentative,
@@ -10,8 +10,20 @@ import type {
 
 interface RouteLeg {
   project: string;
+  /** The exact authored endpoint element title, never its drawn representative. */
   component: string | null;
 }
+
+/** Where a bridge actually meets the canvas: the visible stand-in for an endpoint. */
+export interface InspectedRepresentative {
+  model: string;
+  element: string;
+  representative: BridgeRepresentative;
+  title: string | null;
+}
+
+/** Resolve a participating project's model so a route leg can name the exact endpoint title. */
+export type ModelLookup = (model: string) => Model | undefined;
 
 export interface InspectedConnection {
   kind: 'connection';
@@ -25,7 +37,7 @@ export interface InspectedConnection {
     evidence: string[];
   };
   endpoints: { source: ElementReference; target: ElementReference };
-  representatives: { source: BridgeRepresentative; target: BridgeRepresentative };
+  representatives: { source: InspectedRepresentative; target: InspectedRepresentative };
 }
 
 export type InspectedElement = ReturnType<typeof inspectComponent> & {
@@ -52,20 +64,33 @@ function projectTitle(composed: ComposedDiagram, model: string, fallback: string
 /** Qualified inspection of one bridge. Exact authored endpoints stay separate from their stand-ins. */
 export function inspectConnection(
   composed: ComposedDiagram,
+  lookup: ModelLookup,
   ref: { ownerModel: string; connectionId: string }
 ): InspectedConnection {
   const bridge = composed.bridges.find(
     (candidate) => candidate.owner === ref.ownerModel && candidate.id === ref.connectionId
   );
   if (!bridge) throw new Error(`Unknown connection: ${ref.ownerModel}/${ref.connectionId}`);
-  const component = (endpoint: {
+  const endpointTitle = (model: string, element: string): string | null =>
+    lookup(model)?.elements.find((candidate) => candidate.id === element)?.title ?? null;
+  const representative = (endpoint: {
     model: string;
+    element: string;
     representative: BridgeRepresentative;
-  }): string | null => {
+  }): InspectedRepresentative => {
     const rep = endpoint.representative;
-    if (rep.kind !== 'node') return null;
-    const project = composed.projects.find((candidate) => candidate.model === endpoint.model);
-    return project?.diagram?.nodes.find((node) => node.id === rep.id)?.title ?? null;
+    const title =
+      rep.kind === 'node'
+        ? (composed.projects
+            .find((candidate) => candidate.model === endpoint.model)
+            ?.diagram?.nodes.find((node) => node.id === rep.id)?.title ?? null)
+        : null;
+    return {
+      model: endpoint.model,
+      element: endpoint.element,
+      representative: rep,
+      title
+    };
   };
   return {
     kind: 'connection',
@@ -73,11 +98,11 @@ export function inspectConnection(
     route: {
       source: {
         project: projectTitle(composed, bridge.source.model, bridge.source.model),
-        component: component(bridge.source)
+        component: endpointTitle(bridge.source.model, bridge.source.element)
       },
       target: {
         project: projectTitle(composed, bridge.target.model, bridge.target.model),
-        component: component(bridge.target)
+        component: endpointTitle(bridge.target.model, bridge.target.element)
       }
     },
     claim: {
@@ -92,8 +117,8 @@ export function inspectConnection(
       target: { model: bridge.target.model, element: bridge.target.element }
     },
     representatives: {
-      source: bridge.source.representative,
-      target: bridge.target.representative
+      source: representative(bridge.source),
+      target: representative(bridge.target)
     }
   };
 }
@@ -105,7 +130,7 @@ export function inspectQualified(
   selection: QualifiedSelection
 ): QualifiedInspection {
   if (selection.kind === 'connection')
-    return inspectConnection(composed, {
+    return inspectConnection(composed, (model) => snapshots.get(model)?.model, {
       ownerModel: selection.ownerModel,
       connectionId: selection.connectionId
     });

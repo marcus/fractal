@@ -15,7 +15,13 @@ import type {
 import type { LayoutEngineId, Model, Status, ThemeId } from '../core/types';
 import { searchModel } from '../core/search';
 import { createCache } from './cache';
-import { catalogResolver, loadModel, snapshotOf, type CatalogOptions } from './models';
+import {
+  catalogResolver,
+  loadModel,
+  resolveProject,
+  snapshotOf,
+  type CatalogOptions
+} from './models';
 
 /**
  * The application boundary for linked composition: the CLI and HTTP routes both call these small
@@ -168,24 +174,45 @@ function foreignModels(owner: string, links: ProjectLinks | null): string[] {
   return [...models].sort(compare);
 }
 
+/** The catalog slug syntax a link target must use before any catalog lookup. */
+const catalogSlug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 /**
- * Resolution status for every foreign model a project names, without composing anything: each
- * target is loaded and validated on its own, so one bad target never hides a healthy one.
+ * The availability of one declared target from catalog metadata alone: registered, directory
+ * present, companion readable and id-matching, `model.c4` present. This deliberately does not
+ * compile the model, so listing links never parses a foreign project; opening it or
+ * `validate --linked` performs the full load and reports a malformed source as `model_invalid`.
+ */
+async function availability(model: string, options: CatalogOptions): Promise<LinkResolution> {
+  if (!catalogSlug.test(model))
+    return {
+      model,
+      status: 'unavailable',
+      message: `Model ${model} is not a valid catalog identifier.`
+    };
+  try {
+    await resolveProject(model, options);
+    return { model, status: 'resolved' };
+  } catch (error) {
+    const message = (error as Error).message;
+    if (message.startsWith('Unknown model:') || message.startsWith('Model directory missing:'))
+      return { model, status: 'unavailable', message };
+    return { model, status: 'invalid', message };
+  }
+}
+
+/**
+ * Availability status for every foreign model a project names, without composing or compiling
+ * anything: each target is checked from entry metadata on its own, so one bad target never hides
+ * a healthy one and the root's links list stays cheap.
  */
 export async function linksForLocated(
   loaded: LocatedProject,
   options: CatalogOptions = {}
 ): Promise<LinksResult> {
-  const resolver = catalogResolver(options);
   const resolution: LinkResolution[] = [];
-  for (const model of foreignModels(loaded.model.id, loaded.links)) {
-    const outcome = await resolver.resolve(model);
-    resolution.push({
-      model,
-      status: outcome.status,
-      ...(outcome.status === 'resolved' ? {} : { message: outcome.message })
-    });
-  }
+  for (const model of foreignModels(loaded.model.id, loaded.links))
+    resolution.push(await availability(model, options));
   return { model: loaded.model.id, revision: loaded.revision, links: loaded.links, resolution };
 }
 

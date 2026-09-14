@@ -9,11 +9,16 @@
   import { getTheme } from '$lib/core/themes';
   import { ARCHITECTURE_NODE_METRICS as METRICS } from '$lib/core/node-metrics';
   import { kindHint, kindIcon } from '$lib/core/kind-icons';
-  import type { ComposedBridge, ComposedDiagram, QualifiedSelection } from '$lib/composition/types';
+  import type {
+    ComposedBridge,
+    ComposedDiagram,
+    CompositionDiagnostic,
+    QualifiedSelection
+  } from '$lib/composition/types';
   import type { LayoutNode, Model, Point } from '$lib/core/types';
 
   type Insets = { left: number; right: number; bottom: number; top: number };
-  type ProjectAction = 'collapse' | 'reopen' | 'close' | 'standalone';
+  type ProjectAction = 'collapse' | 'reopen' | 'close' | 'standalone' | 'fit';
 
   /**
    * The shared camera over a composed diagram. It holds one absolute transform (screen = origin +
@@ -64,7 +69,7 @@
   }
   const menuProject = $derived(menuModel ? project(menuModel) : null);
 
-  function fit() {
+  export function fit() {
     menuModel = null;
     fitInsets = measureInsets();
     const width = Math.max(240, size.width - fitInsets.left - fitInsets.right);
@@ -106,6 +111,22 @@
     if (top < minY) dy = minY - top;
     else if (top + rect.height * scale > maxY) dy = maxY - (top + rect.height * scale);
     if (dx || dy) transform = { ...transform, x: transform.x + dx, y: transform.y + dy };
+  }
+
+  /** Fit one project's frame to the canvas without touching the other frames. */
+  export function fitProject(model: string) {
+    const target = project(model);
+    if (!target) return;
+    menuModel = null;
+    fitInsets = measureInsets();
+    const width = Math.max(240, size.width - fitInsets.left - fitInsets.right);
+    const height = Math.max(240, size.height - fitInsets.top - fitInsets.bottom);
+    const scale = Math.min(width / (target.frame.width + 96), height / (target.frame.height + 96));
+    transform = {
+      scale,
+      x: fitInsets.left + (width - target.frame.width * scale) / 2 - target.frame.x * scale,
+      y: fitInsets.top + (height - target.frame.height * scale) / 2 - target.frame.y * scale
+    };
   }
 
   export function revealProject(model: string) {
@@ -152,14 +173,38 @@
     const frame = owner?.frame ?? composed.projects[0].frame;
     return { x: frame.x + frame.width - 236, y: frame.y + frame.height + 16 };
   }
-  function stubMessage(stub: ComposedDiagram['stubs'][number]): string {
-    return (
-      composed.diagnostics.find(
-        (diagnostic) =>
-          (stub.linkId !== undefined && diagnostic.linkId === stub.linkId) ||
-          (stub.connectionId !== undefined && diagnostic.connectionId === stub.connectionId)
-      )?.message ?? 'This diagram is not available.'
+  function stubDiagnostic(stub: ComposedDiagram['stubs'][number]) {
+    return composed.diagnostics.find(
+      (diagnostic) =>
+        (stub.linkId !== undefined && diagnostic.linkId === stub.linkId) ||
+        (stub.connectionId !== undefined && diagnostic.connectionId === stub.connectionId)
     );
+  }
+  const RECOVERY_GUIDANCE: Record<CompositionDiagnostic['recovery'], string> = {
+    register: 'Register the project in the catalog, then retry.',
+    retry: 'Retry once the source stops changing.',
+    repair: 'Repair the authored reference.',
+    upgrade: 'Upgrade the reader or the model version.',
+    reload: 'Reload the changed source.',
+    reduce: 'Reduce the composition to fit its budget.'
+  };
+  /** A not_loaded stub names its authored target; a failed one explains and guides recovery. */
+  function stubDetail(stub: ComposedDiagram['stubs'][number]): string {
+    if (stub.state === 'not_loaded') return stub.target.model;
+    return stubDiagnostic(stub)?.message ?? `${stub.title} could not be resolved.`;
+  }
+  function stubGuidance(stub: ComposedDiagram['stubs'][number]): string | null {
+    if (stub.state === 'not_loaded') return null;
+    const recovery = stubDiagnostic(stub)?.recovery;
+    return recovery ? RECOVERY_GUIDANCE[recovery] : null;
+  }
+  function stubFailed(stub: ComposedDiagram['stubs'][number]): boolean {
+    return stub.state !== 'not_loaded';
+  }
+  function stubAria(stub: ComposedDiagram['stubs'][number]): string {
+    if (stub.state === 'not_loaded')
+      return `${stub.title}: diagram not opened. Target ${stub.target.model}.`;
+    return `${stub.title}: ${stub.state === 'invalid' ? 'invalid' : 'unavailable'}. ${stubDetail(stub)}`;
   }
 
   function down(event: PointerEvent) {
@@ -217,6 +262,13 @@
   }
   function selectedElement(model: string, id: string): boolean {
     return selection?.kind === 'element' && selection.model === model && selection.element === id;
+  }
+  function selectedRelationship(model: string, id: string): boolean {
+    return (
+      selection?.kind === 'relationship' &&
+      selection.model === model &&
+      selection.relationship === id
+    );
   }
   function selectedBridge(bridge: ComposedBridge): boolean {
     return (
@@ -330,13 +382,18 @@
                   }
                 }}
                 class="local-edge"
+                class:selected={selectedRelationship(entry.model, edge.id)}
               >
                 <path d={path} fill="none" stroke="transparent" stroke-width="16" />
                 <path
                   d={path}
                   fill="none"
-                  stroke={edge.status === 'proposed' ? theme.proposed : theme.edge}
-                  stroke-width="1.5"
+                  stroke={selectedRelationship(entry.model, edge.id)
+                    ? theme.accent
+                    : edge.status === 'proposed'
+                      ? theme.proposed
+                      : theme.edge}
+                  stroke-width={selectedRelationship(entry.model, edge.id) ? 2.5 : 1.5}
                   stroke-dasharray={edge.status === 'proposed' ? '6 5' : undefined}
                 />
               </g>
@@ -463,24 +520,35 @@
       {/each}
       {#each composed.stubs as stub (`${stub.owner}/${stub.linkId ?? stub.connectionId ?? ''}`)}
         {@const position = stubPosition(stub.anchor)}
+        {@const guidance = stubGuidance(stub)}
         <g
           class="reference-stub"
           data-stub-owner={stub.owner}
           data-stub-target={stub.target.model}
+          data-stub-state={stub.state}
           transform={`translate(${position.x} ${position.y})`}
           role="group"
-          aria-label={`${stub.title}: ${stub.state === 'unavailable' ? 'unavailable' : stub.state === 'invalid' ? 'invalid' : 'diagram not opened'}`}
+          aria-label={stubAria(stub)}
         >
-          <rect width="236" height="86" rx="12" fill={theme.card} stroke={theme.border} />
-          <text x="16" y="28" class="stub-title">{stub.title}</text>
-          <text x="16" y="48" class="stub-state">
+          <rect
+            width="236"
+            height={stubFailed(stub) ? 104 : 68}
+            rx="12"
+            fill={theme.card}
+            stroke={theme.border}
+          />
+          <text x="16" y="26" class="stub-title">{stub.title}</text>
+          <text x="16" y="46" class="stub-state">
             {stub.state === 'unavailable'
               ? 'Diagram unavailable'
               : stub.state === 'invalid'
                 ? 'Diagram invalid'
                 : 'Diagram not opened'}
           </text>
-          <text x="16" y="68" class="stub-message">{stubMessage(stub)}</text>
+          <text x="16" y="66" class="stub-message" data-stub-detail>{stubDetail(stub)}</text>
+          {#if guidance}<text x="16" y="84" class="stub-guidance" data-stub-guidance
+              >{guidance}</text
+            >{/if}
         </g>
       {/each}
     </g>
@@ -504,6 +572,7 @@
       {:else}
         <button role="menuitem" onclick={() => menuAction('collapse')}>Collapse</button>
       {/if}
+      <button role="menuitem" onclick={() => menuAction('fit')}>Fit project</button>
       <button role="menuitem" onclick={() => menuAction('standalone')}>Open standalone</button>
       {#if menuProject.model !== composed.state.root}
         <button role="menuitem" onclick={() => menuAction('close')}>Close</button>
@@ -576,6 +645,15 @@
   .stub-message {
     font-size: 10px;
     fill: var(--muted, #69766f);
+  }
+  .stub-guidance {
+    font-size: 10px;
+    font-style: italic;
+    fill: var(--muted, #69766f);
+  }
+  .local-edge.selected > path {
+    stroke: var(--accent, #267566);
+    stroke-width: 2.5;
   }
   .project-menu {
     position: absolute;

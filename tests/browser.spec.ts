@@ -1943,6 +1943,12 @@ test('a linked project opens beside its host with two frames and one bridge', as
     await waitForServer(`${base}/api/models`);
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
+    // Which foreign model documents the browser fetches over HTTP; residency is only ever an
+    // explicit open, never a side effect of listing links.
+    const modelRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/api/models/')) modelRequests.push(request.url());
+    });
     await page.goto(`${base}/?model=host&scene=overview`);
     await ready(page);
 
@@ -1954,12 +1960,16 @@ test('a linked project opens beside its host with two frames and one bridge', as
     await expect(page.locator('[data-link-id="plugin"]')).toContainText('Beacon architecture');
     await expect(page.locator('[data-link-id="plugin"]')).toContainText('Not opened');
     await expect(page.locator('[data-link-id="unavailable"]')).toContainText('Unavailable');
+    expect(
+      modelRequests.some((url) => /\/api\/models\/(plugin|missing-plugin)(\?|$)/.test(url))
+    ).toBe(false);
 
-    // An unavailable link renders an honest stub card, never a fabricated node.
+    // An unavailable link renders an honest card: the diagnostic's message and recovery guidance.
     await page.locator('[data-open-link="unavailable"]').click();
-    await expect(page.locator('[data-stub-target="missing-plugin"]')).toContainText(
-      'Diagram unavailable'
-    );
+    const unavailableStub = page.locator('[data-stub-target="missing-plugin"]');
+    await expect(unavailableStub).toContainText('Diagram unavailable');
+    await expect(unavailableStub).toContainText('Unknown model: missing-plugin');
+    await expect(unavailableStub).toContainText('Register the project in the catalog');
     await page.getByRole('button', { name: 'Close linked view' }).click();
     await expect(page.locator('[data-stub-target="missing-plugin"]')).toHaveCount(0);
     await expect(page.locator('[data-node-id="core"]')).toBeVisible();
@@ -1978,6 +1988,30 @@ test('a linked project opens beside its host with two frames and one bridge', as
     expect(opened.scale).toBeCloseTo(before.scale, 3);
     await page.screenshot({ path: 'artifacts/linked-project-phase1/composition-open.png' });
 
+    // An unopened link's stub names its authored target and never asserts availability.
+    const unopenedStub = page.locator('[data-stub-target="missing-plugin"]');
+    await expect(unopenedStub).toHaveAttribute('data-stub-state', 'not_loaded');
+    await expect(unopenedStub).toContainText('Diagram not opened');
+    await expect(unopenedStub).toContainText('missing-plugin');
+    await expect(unopenedStub).not.toContainText('not available');
+
+    // Fit fits the whole composition, not the hidden single-model canvas.
+    await page.locator('.composition-canvas svg').focus();
+    await page.keyboard.press('0');
+    await expect
+      .poll(async () => {
+        const area = (await page.locator('.diagram-area').boundingBox())!;
+        const frame = (await page.locator('[data-project-frame="plugin"]').boundingBox())!;
+        return (
+          frame.x >= area.x - 1 &&
+          frame.y >= area.y - 1 &&
+          frame.x + frame.width <= area.x + area.width + 1 &&
+          frame.y + frame.height <= area.y + area.height + 1
+        );
+      })
+      .toBe(true);
+    await page.screenshot({ path: 'artifacts/linked-project-phase1/composition-fit.png' });
+
     // Repeated activation of the same link pans to the existing frame instead of opening again.
     await page.locator('[data-node-id="host:cli"]').click();
     await page.locator('[data-open-link="plugin"]').click();
@@ -1991,14 +2025,30 @@ test('a linked project opens beside its host with two frames and one bridge', as
     expect(Math.abs(expanded.x - beforeExpand.x)).toBeLessThan(1.5);
     expect(Math.abs(expanded.y - beforeExpand.y)).toBeLessThan(1.5);
 
+    // A local edge inside a composed frame is inspectable, not renamed to an empty Connection.
+    await page
+      .locator('[data-edge-id="plugin:call"]')
+      .evaluate((element) => (element as SVGGElement).focus());
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.inspector h2')).toHaveText('Reads plugin state');
+
     // Select the bridge and read its readable route and exact endpoints.
-    await page.locator('[data-connection-owner="host"][data-connection-id="call"]').click();
+    await page
+      .locator('[data-connection-owner="host"][data-connection-id="call"]')
+      .evaluate((element) => (element as SVGGElement).focus());
+    await page.keyboard.press('Enter');
     await expect(page.locator('.inspector h2')).toHaveText('Invokes plugin CLI');
     await expect(page.locator('.inspector')).toContainText('Harbor host / Plugin adapter');
     await expect(page.locator('.inspector')).toContainText('Beacon plugin / Plugin CLI');
     await expect(page.locator('.inspector')).toContainText('host / cli');
     await expect(page.locator('.inspector')).toContainText('plugin / cli');
     await page.screenshot({ path: 'artifacts/linked-project-phase1/bridge-selected.png' });
+
+    // The title-band menu offers fitting one project on its own.
+    await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Fit project' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menuitem', { name: 'Fit project' })).toHaveCount(0);
 
     // Collapse and reopen the plugin from its title-band menu.
     await page.getByRole('button', { name: 'Project options: Beacon plugin' }).click();
