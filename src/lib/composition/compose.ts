@@ -756,9 +756,9 @@ export async function compose(
     }
     for (const bridge of bridges) {
       bridge.label.y += dy;
-      bridge.source.point.y += dy;
-      bridge.target.point.y += dy;
       for (const point of bridge.points) point.y += dy;
+      bridge.source.point = bridge.points[0];
+      bridge.target.point = bridge.points[bridge.points.length - 1];
     }
   }
 

@@ -798,6 +798,24 @@ function assertBridgesAvoidNonEndpoints(
       `${label} ${project.model} title band fits in its frame`
     );
   for (const bridge of composed.bridges) {
+    assert.deepEqual(
+      bridge.points[0],
+      bridge.source.point,
+      `${label} ${bridge.owner}/${bridge.id} starts at source.point`
+    );
+    assert.deepEqual(
+      bridge.points[bridge.points.length - 1],
+      bridge.target.point,
+      `${label} ${bridge.owner}/${bridge.id} ends at target.point`
+    );
+    for (let index = 1; index < bridge.points.length; index++) {
+      const from = bridge.points[index - 1];
+      const to = bridge.points[index];
+      assert.ok(
+        from.x === to.x || from.y === to.y,
+        `${label} ${bridge.owner}/${bridge.id} segment ${index} is not axis-aligned (${from.x},${from.y})→(${to.x},${to.y})`
+      );
+    }
     const others = composed.projects.filter(
       (project) => project.model !== bridge.source.model && project.model !== bridge.target.model
     );
