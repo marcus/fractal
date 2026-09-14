@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { existsSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -2463,6 +2464,248 @@ test('portable HTML linked composition works offline from a file', async ({ page
     expect(blocked).toEqual([]);
     expect(errors).toEqual([]);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+/** Read a composed bridge's stroke from the exported SVG, with its dash and target-end marker. */
+function exportedBridge(svgText: string, id: string) {
+  const group = svgText.split(`data-connection-id="${id}"`)[1].split('</g>')[0];
+  return {
+    stroke: group.match(/stroke="([^"]+)"/)![1],
+    dashed: group.includes('stroke-dasharray="6 5"'),
+    marker: group.match(/marker-end="([^"]+)"/)![1]
+  };
+}
+
+/** The live bridge stroke with CSS variables resolved to hex, for canvas/export comparison. */
+function liveBridgeStroke(page: Page, owner: string, id: string) {
+  return page
+    .locator(`[data-connection-owner="${owner}"][data-connection-id="${id}"] > path:nth-of-type(2)`)
+    .evaluate((element) => {
+      const stroke = getComputedStyle(element as SVGPathElement).stroke;
+      const parts = stroke
+        .match(/[\d.]+/g)!
+        .map(Number)
+        .slice(0, 3);
+      return `#${parts.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
+    });
+}
+
+test('composition export dialog writes SVG, PNG and HTML in every theme', async ({ page }) => {
+  test.setTimeout(240000);
+  const root = await mkdtemp(join(tmpdir(), 'fractal-export-dialog-'));
+  await cp(join('tests', 'fixtures', 'linked-projects', 'host'), join(root, 'host'), {
+    recursive: true
+  });
+  await cp(join('tests', 'fixtures', 'linked-projects', 'plugin'), join(root, 'plugin'), {
+    recursive: true
+  });
+  // A proposed claim beside the current one, so the spec proves the canvas draws proposed
+  // bridges dashed in the proposed colour exactly like the composed export.
+  const hostLinksPath = join(root, 'host', 'links.json');
+  const hostLinks = JSON.parse(await readFile(hostLinksPath, 'utf8')) as {
+    connections: {
+      id: string;
+      source: { model: string; element: string };
+      target: { model: string; element: string };
+      title: string;
+      kind: string;
+      status: string;
+      description: string;
+      evidence: string[];
+    }[];
+  };
+  hostLinks.connections.push({
+    id: 'future-call',
+    source: { model: 'host', element: 'cli' },
+    target: { model: 'plugin', element: 'cli' },
+    title: 'Future plugin call',
+    kind: 'previews',
+    status: 'proposed',
+    description: 'A proposed host-owned integration claim for export proof.',
+    evidence: []
+  });
+  await writeFile(hostLinksPath, JSON.stringify(hostLinks, null, 2));
+  await mkdir('artifacts/linked-project-phase4', { recursive: true });
+  // The dev server reads its HTML reader from build output; a direct `vite dev` spawn skips
+  // the `predev` step that `npm run dev` performs, so build it here when it is missing.
+  if (!existsSync(join('build', 'portable.json'))) {
+    await mkdir(join('build'), { recursive: true });
+    await writeFile(join('build', 'portable.json'), JSON.stringify(await buildPortableAssets()));
+  }
+  const port = await freePort();
+  const server = spawn(
+    'npx',
+    ['vite', 'dev', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        FRACTAL_CATALOG: '',
+        FRACTAL_MODELS_DIR: root,
+        HOST: '127.0.0.1',
+        PORT: String(port)
+      },
+      stdio: ['ignore', 'ignore', 'ignore']
+    }
+  );
+  const base = `http://127.0.0.1:${port}`;
+  const proposedStroke: Record<string, string> = {
+    grove: '#a98243',
+    graphite: '#956c35',
+    midnight: '#ddb466'
+  };
+  try {
+    await waitForServer(`${base}/api/models`);
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${base}/?model=host&scene=overview`);
+    await ready(page);
+
+    // Open host → plugin from the inspector link.
+    await page.locator('[data-node-id="core"]').click();
+    await page.getByRole('button', { name: 'Plugin adapter', exact: true }).click();
+    await ready(page);
+    await page.locator('[data-open-link="plugin"]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-project-frame]')).toHaveCount(2);
+    await expect(
+      page.locator('[data-connection-owner="host"][data-connection-id="call"]')
+    ).toBeVisible();
+    await page.locator('.composition-canvas svg').focus();
+    await page.keyboard.press('0');
+
+    // Show the proposed bridge: select the host project, then switch its proposed view on.
+    await page.locator('[data-node-id="host:core"]').click();
+    await page.getByRole('checkbox', { name: 'Proposed' }).check();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    const proposedBridge = page.locator(
+      '[data-connection-owner="host"][data-connection-id="future-call"]'
+    );
+    await expect(proposedBridge).toBeVisible();
+
+    for (const themeName of ['Grove', 'Graphite', 'Midnight'] as const) {
+      const slug = themeName.toLowerCase();
+      await chooseTheme(page, themeName);
+      await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+      await expect(page.locator('.theme-root')).toHaveAttribute('data-theme', slug);
+
+      await page.getByRole('button', { name: 'Export', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Export perspective' });
+      await expect(dialog).toBeVisible();
+      await expect(page.locator('.export-preview img')).toBeVisible();
+
+      // The scope reports from the server manifest before anything is written; the HTML
+      // included set defaults to the root alone and the linked project is selectable.
+      const scope = page.locator('[data-export-scope]');
+      await expect(scope).toContainText('Includes: host');
+      await expect(dialog.getByRole('checkbox', { name: /Harbor host/ })).toBeDisabled();
+      await dialog.getByRole('checkbox', { name: 'Beacon plugin' }).check();
+      await expect(scope).toContainText('Includes: host, plugin');
+      await expect(scope).toContainText('excluded links: unavailable → missing-plugin');
+      const manifest = page.locator('[data-export-manifest]');
+      await expect(manifest).toContainText('Projects:');
+      await expect(manifest).toContainText('host');
+      await expect(manifest).toContainText('plugin');
+
+      const svgPending = page.waitForEvent('download');
+      await dialog.getByRole('button', { name: /Vector SVG/ }).click();
+      const svgFile = await svgPending;
+      const svgPath = `artifacts/linked-project-phase4/composition-${slug}.svg`;
+      await svgFile.saveAs(svgPath);
+      const svg = await readFile(svgPath, 'utf8');
+      expect(svg).toContain('data-project-frame="host"');
+      expect(svg).toContain('data-project-frame="plugin"');
+      expect(svg).toContain('data-connection-id="call"');
+      expect(svg).toContain('data-connection-id="future-call"');
+      const current = exportedBridge(svg, 'call');
+      const proposed = exportedBridge(svg, 'future-call');
+      expect(current.marker).toBe('url(#cmp-arrow)');
+      expect(current.dashed).toBe(false);
+      expect(proposed.marker).toBe('url(#cmp-arrow-proposed)');
+      expect(proposed.dashed).toBe(true);
+      expect(proposed.stroke).toBe(proposedStroke[slug]);
+      // The canvas matches the export: live strokes equal the exported ones.
+      expect(await liveBridgeStroke(page, 'host', 'call')).toBe(current.stroke);
+      expect(await liveBridgeStroke(page, 'host', 'future-call')).toBe(proposed.stroke);
+      await expect(
+        page.locator(
+          '[data-connection-owner="host"][data-connection-id="future-call"] > path:nth-of-type(2)'
+        )
+      ).toHaveAttribute('stroke-dasharray', '6 5');
+      const ids = [...svg.matchAll(/ id="([^"]+)"/g)].map((match) => match[1]);
+      expect(new Set(ids).size).toBe(ids.length);
+      // The dialog stays open with the manifest summary after the export.
+      await expect(dialog).toBeVisible();
+      await expect(manifest).toContainText('Omitted links:');
+      await expect(manifest).toContainText('unavailable → missing-plugin');
+
+      const pngPending = page.waitForEvent('download');
+      await dialog.getByRole('button', { name: /High-resolution PNG/ }).click();
+      const pngFile = await pngPending;
+      const pngPath = `artifacts/linked-project-phase4/composition-${slug}.png`;
+      await pngFile.saveAs(pngPath);
+      const png = await readFile(pngPath);
+      expect(png.length).toBeGreaterThan(5000);
+      expect(png.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+      const htmlPending = page.waitForEvent('download');
+      await dialog.getByRole('button', { name: /Interactive HTML/ }).click();
+      const htmlFile = await htmlPending;
+      const htmlPath = join(root, `composition-${slug}.html`);
+      await htmlFile.saveAs(htmlPath);
+      await dialog.getByRole('button', { name: 'Close dialog' }).click();
+      await expect(dialog).toHaveCount(0);
+
+      // The downloaded HTML opens offline with both projects expandable.
+      const offline = await page.context().newPage();
+      const blocked: string[] = [];
+      await offline.route('**', (route) => {
+        const url = route.request().url();
+        if (url.startsWith('file:') || url.startsWith('blob:')) return route.continue();
+        blocked.push(url);
+        return route.abort();
+      });
+      const offlineErrors: string[] = [];
+      offline.on('pageerror', (error) => offlineErrors.push(error.message));
+      await offline.goto(pathToFileURL(htmlPath).href);
+      await expect(offline.locator('[data-linked-contract="1"]')).toBeVisible();
+      await expect(offline.locator('[data-project-frame]')).toHaveCount(2);
+      await offline.getByRole('button', { name: 'Expand Harbor host', exact: true }).click();
+      await expect(offline.locator('[data-node-id="host:cli"]')).toBeVisible({ timeout: 30000 });
+      await offline.getByRole('button', { name: 'Expand Beacon plugin', exact: true }).click();
+      await expect(offline.locator('[data-node-id="plugin:cli"]')).toBeVisible({
+        timeout: 30000
+      });
+      expect(blocked).toEqual([]);
+      expect(offlineErrors).toEqual([]);
+      await offline.close();
+    }
+
+    // An unresolved participating target shows the diagnostic with the explicit recovery.
+    await page.locator('[data-node-id="host:core"]').click();
+    await page.locator('[data-open-link="unavailable"]').click();
+    await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-stub-target="missing-plugin"]')).toContainText(
+      'Diagram unavailable'
+    );
+    await page.getByRole('button', { name: 'Export', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Export perspective' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('alert')).toContainText('missing-plugin');
+    await expect(page.locator('.export-preview img')).toHaveCount(0);
+    await dialog.getByRole('checkbox', { name: /unavailable cards/ }).check();
+    await expect(page.locator('.export-preview img')).toBeVisible();
+    await expect(page.locator('[data-export-manifest]')).toContainText('Unavailable:');
+    const unresolvedPending = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: /Vector SVG/ }).click();
+    await unresolvedPending;
+    await expect(dialog).toBeVisible();
+
+    expect(errors).toEqual([]);
+  } finally {
+    server.kill('SIGTERM');
     await rm(root, { recursive: true, force: true });
   }
 });

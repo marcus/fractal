@@ -137,6 +137,39 @@
   let modal = $state<'source' | 'export' | 'jump' | 'projects' | 'shortcuts' | null>(null);
   let diagramKey = $state<{ close: () => boolean; toggle: () => void }>();
   let exporting = $state(false);
+  /**
+   * Composition export dialog state. The server manifest behind the preview reports the
+   * included scope before anything is written; the HTML included set is the root plus the
+   * checked open linked projects (root only by default). Single-model mode never reads
+   * these; its dialog is unchanged.
+   */
+  interface CompositionExportManifest {
+    version: 1;
+    format: 'svg' | 'png';
+    root: string;
+    composition?: string;
+    state: CompositionState;
+    projects: { model: string; revision: string; scene?: string; mode: 'open' | 'collapsed' }[];
+    omitted: {
+      owner: string;
+      linkId?: string;
+      connectionId?: string;
+      target: { model: string; element?: string; scene?: string };
+      title: string;
+    }[];
+    unresolved: {
+      code: string;
+      ownerModel: string;
+      message: string;
+      target?: { model: string; element?: string; scene?: string };
+      recovery: string;
+    }[];
+    output?: string;
+  }
+  let exportManifest = $state<CompositionExportManifest | null>(null);
+  let exportInclude = $state<string[]>([]);
+  let exportAllowUnresolved = $state(false);
+  let exportNeedsAllow = $state(false);
   let menuOpen = $state(false);
   let sidebarCollapsed = $state(sidebarCollapsedPreference());
   const measureInsets = () =>
@@ -1428,7 +1461,7 @@
         if (diagram) togglePresentation();
         break;
       case 'export':
-        if (diagram && !busy) modal = 'export';
+        if ((diagram || composition) && !busy) modal = 'export';
         break;
       case 'copy-link':
         copyLink();
@@ -1566,6 +1599,153 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  const compositionRoot = $derived(composition?.state.root ?? modelId);
+  /** Open linked projects after the root, in composed order, for the HTML included set. */
+  const compositionLinkedOpen = $derived.by(() => {
+    const session = composition;
+    if (!session) return [];
+    return session.state.projects
+      .filter((project) => project.model !== session.state.root && project.mode === 'open')
+      .map((project) => project.model);
+  });
+  function compositionProjectTitle(id: string): string {
+    return (
+      compositionModels[id]?.title ??
+      composition?.composed.projects.find((project) => project.model === id)?.title ??
+      id
+    );
+  }
+  function exportLinksOf(owner: string) {
+    return (
+      compositionLinks[owner]?.links?.links ??
+      (owner === modelId ? (authoredLinks?.links?.links ?? []) : [])
+    );
+  }
+  /**
+   * The scope line the dialog reports before writing, grounded in the server manifest:
+   * the included set, then the authored links it leaves out. Omitted unopened links come
+   * from the manifest; links to open but unselected projects come from the authored link
+   * lists, which the manifest never needs to omit.
+   */
+  const exportScope = $derived.by(() => {
+    if (!composition) return '';
+    const root = composition.state.root;
+    const selected = [
+      root,
+      ...exportInclude.filter((id) => id !== root && compositionLinkedOpen.includes(id))
+    ];
+    const seen = new Set<string>();
+    const excluded: string[] = [];
+    const note = (key: string, text: string) => {
+      if (!seen.has(key)) {
+        seen.add(key);
+        excluded.push(text);
+      }
+    };
+    for (const owner of selected)
+      for (const link of exportLinksOf(owner))
+        if (!selected.includes(link.target.model))
+          note(`link:${link.id}`, `${link.id} → ${link.target.model}`);
+    for (const omission of exportManifest?.omitted ?? []) {
+      if (!selected.includes(omission.owner) || selected.includes(omission.target.model)) continue;
+      const id = omission.linkId ?? omission.connectionId ?? omission.target.model;
+      note(`omitted:${id}`, `${id} → ${omission.target.model}`);
+    }
+    return `Includes: ${selected.join(', ')}${excluded.length ? `; excluded links: ${excluded.join(', ')}` : ''}`;
+  });
+  /** Read the JSON export report from the `x-fractal-export-manifest` response header. */
+  function decodeExportManifest(response: Response): CompositionExportManifest | null {
+    const header = response.headers.get('x-fractal-export-manifest');
+    if (!header) return null;
+    try {
+      const base64 = header.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+      const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes)) as CompositionExportManifest;
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Throw the server message for a failed composition export, remembering an
+   * unresolved-participant failure so the dialog can offer the explicit
+   * "Export with unavailable cards" recovery.
+   */
+  async function throwExportError(response: Response): Promise<never> {
+    let message = `Request failed (${response.status})`;
+    try {
+      const payload = await response.json();
+      exportNeedsAllow = payload?.code === 'export_unresolved';
+      if (typeof payload?.error === 'string' && payload.error) message = payload.error;
+    } catch {
+      exportNeedsAllow = false;
+    }
+    throw new Error(message);
+  }
+  function toggleExportInclude(id: string, checked: boolean) {
+    exportInclude = checked
+      ? [...exportInclude.filter((entry) => entry !== id), id]
+      : exportInclude.filter((entry) => entry !== id);
+  }
+  /**
+   * Composition export: SVG/PNG use the current composition state, HTML writes the
+   * included set through the linked HTML path. The dialog stays open with the manifest
+   * summary; errors show the server message.
+   */
+  async function exportCompositionDiagram(format: 'svg' | 'png' | 'html') {
+    if (!composition) return;
+    exporting = true;
+    previewError = '';
+    try {
+      const root = composition.state.root;
+      if (format === 'html') {
+        const rootEntry = composition.state.projects[0];
+        const include = exportInclude.filter(
+          (id) => id !== root && compositionLinkedOpen.includes(id)
+        );
+        const response = await fetch('/api/export', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: root,
+            format: 'html',
+            state: {
+              ...rootEntry.view,
+              theme: composition.state.theme,
+              layout: composition.state.layout
+            } satisfies ViewState,
+            ...(rootEntry.scene === undefined ? {} : { scene: rootEntry.scene }),
+            include
+          })
+        });
+        if (!response.ok) await throwExportError(response);
+        exportNeedsAllow = false;
+        download(await response.blob(), `${root}-composition.html`);
+        announce('HTML exported');
+        return;
+      }
+      const response = await fetch('/api/export', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: root,
+          compositionState: composition.state,
+          revisions: composition.revisions,
+          format,
+          ...(exportAllowUnresolved ? { allowUnresolved: true } : {})
+        })
+      });
+      if (!response.ok) await throwExportError(response);
+      exportNeedsAllow = false;
+      exportManifest = decodeExportManifest(response);
+      download(await response.blob(), `${root}-composition.${format}`);
+      announce(`${format.toUpperCase()} exported`);
+    } catch (e) {
+      previewError = e instanceof Error ? e.message : String(e);
+    } finally {
+      exporting = false;
+    }
+  }
   async function exportDiagram(format: 'svg' | 'png' | 'html') {
     exporting = true;
     error = '';
@@ -1639,7 +1819,51 @@
   $effect(() => {
     if (modal !== 'export') {
       exportPreview = '';
+      if (exportManifest !== null) exportManifest = null;
+      if (exportInclude.length > 0) exportInclude = [];
+      if (exportAllowUnresolved) exportAllowUnresolved = false;
+      if (exportNeedsAllow) exportNeedsAllow = false;
       return;
+    }
+    if (composition) {
+      // Composition mode previews the composed SVG and reads the manifest header, so the
+      // dialog reports the included scope before anything is written.
+      let cancelled = false;
+      let url = '';
+      previewError = '';
+      exportManifest = null;
+      const allowUnresolved = exportAllowUnresolved;
+      const body = JSON.stringify({
+        model: composition.state.root,
+        compositionState: composition.state,
+        revisions: composition.revisions,
+        format: 'svg',
+        ...(allowUnresolved ? { allowUnresolved: true } : {})
+      });
+      fetch('/api/export', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body
+      })
+        .then(async (r) => {
+          if (!r.ok) await throwExportError(r);
+          if (!cancelled) exportManifest = decodeExportManifest(r);
+          return r.blob();
+        })
+        .then((blob) => {
+          if (!cancelled) {
+            exportNeedsAllow = false;
+            url = URL.createObjectURL(blob);
+            exportPreview = url;
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) previewError = e instanceof Error ? e.message : String(e);
+        });
+      return () => {
+        cancelled = true;
+        if (url) URL.revokeObjectURL(url);
+      };
     }
     let cancelled = false;
     let url = '';
@@ -1733,7 +1957,7 @@
             class="icon-button"
             title="Export"
             aria-label="Export"
-            disabled={!diagram || busy}
+            disabled={(!diagram && !composition) || busy}
             onclick={() => (modal = 'export')}><Download size={17} /></button
           >
           <button
@@ -2057,6 +2281,95 @@
                 changeModel(modelId, sceneId);
               }}>Reload model</button
             >
+          </div>
+        {:else if composition}<p>
+            A clean composition of <strong>{compositionProjectTitle(compositionRoot)}</strong> with every
+            open project frame, bridge and omission note. Typography, relationships and project identities
+            travel with it.
+          </p>
+          <div class="export-preview">
+            {#if exportPreview}<img
+                src={exportPreview}
+                alt={`Export preview of ${compositionProjectTitle(compositionRoot)} linked composition`}
+              />{:else}<span
+                >{previewError ? 'Preview unavailable' : 'Composing export preview…'}</span
+              >{/if}
+          </div>
+          {#if exportManifest}<p data-export-scope>{exportScope}</p>{/if}
+          <fieldset>
+            <legend>HTML includes the root plus the selected linked projects</legend>
+            <label
+              ><input type="checkbox" checked disabled />{compositionProjectTitle(compositionRoot)} (root)</label
+            >
+            {#each compositionLinkedOpen as id (id)}<label
+                ><input
+                  type="checkbox"
+                  checked={exportInclude.includes(id)}
+                  disabled={exporting}
+                  onchange={(event) => toggleExportInclude(id, event.currentTarget.checked)}
+                />{compositionProjectTitle(id)}</label
+              >{/each}
+          </fieldset>
+          {#if exportNeedsAllow}<label
+              ><input
+                type="checkbox"
+                checked={exportAllowUnresolved}
+                disabled={exporting}
+                onchange={(event) => {
+                  exportAllowUnresolved = event.currentTarget.checked;
+                }}
+              />Export with unavailable cards</label
+            >{/if}
+          <div class="export-options">
+            <button disabled={exporting} onclick={() => exportCompositionDiagram('html')}
+              ><div>
+                <strong>Interactive HTML</strong><span
+                  >One offline file · {exportInclude.length
+                    ? 'the root plus the projects selected above'
+                    : 'the root on its own'}</span
+                >
+              </div>
+              <Download size={18} /></button
+            >
+            <button disabled={exporting} onclick={() => exportCompositionDiagram('svg')}
+              ><div>
+                <strong>Vector SVG</strong><span>Composed artwork for proposals and slides</span>
+              </div>
+              <Download size={18} /></button
+            ><button disabled={exporting} onclick={() => exportCompositionDiagram('png')}
+              ><div>
+                <strong>High-resolution PNG</strong><span
+                  >Rendered from the composed artwork · ready to drop into a deck</span
+                >
+              </div>
+              <Download size={18} /></button
+            >
+          </div>
+          {#if previewError}<p class="dialog-error" role="alert">{previewError}</p>{/if}
+          {#if exportManifest}<div data-export-manifest>
+              <p>
+                Projects: {exportManifest.projects
+                  .map((project) => `${project.model} ${project.revision}`)
+                  .join(', ')}
+              </p>
+              {#if exportManifest.omitted.length}<p>
+                  Omitted links: {exportManifest.omitted
+                    .map(
+                      (omission) =>
+                        `${omission.linkId ?? omission.connectionId ?? omission.target.model} → ${omission.target.model}`
+                    )
+                    .join(', ')}
+                </p>{/if}
+              {#if exportManifest.unresolved.length}<p>
+                  Unavailable: {exportManifest.unresolved
+                    .map((diagnostic) => diagnostic.message)
+                    .join('; ')}
+                </p>{/if}
+            </div>{/if}
+          <div class="modal-footer">
+            {exporting
+              ? 'Preparing your export…'
+              : 'Editor controls are excluded from the exported artwork.'}
           </div>
         {:else}<p>
             A clean 16:9 composition of <strong>{title}</strong>. Typography, relationships, and
