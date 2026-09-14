@@ -6,7 +6,8 @@ import { parseModel } from '../src/lib/adapters/likec4';
 import { compose } from '../src/lib/composition/compose';
 import { inspectConnection, inspectQualified } from '../src/lib/composition/inspect';
 import { parseCompositionState, parseLinks } from '../src/lib/composition/parse';
-import { COMPOSITION_METRICS } from '../src/lib/composition/place';
+import { COMPOSITION_METRICS, placeFrames } from '../src/lib/composition/place';
+import { searchComposition } from '../src/lib/composition/search';
 import {
   closeProject,
   openProject,
@@ -24,7 +25,7 @@ const fixture = (path: string) =>
   readFile(new URL(`./fixtures/linked-projects/${path}`, import.meta.url), 'utf8');
 const json = async (path: string) => JSON.parse(await fixture(path));
 
-async function snapshot(id: 'host' | 'plugin'): Promise<ProjectSnapshot> {
+async function snapshot(id: 'host' | 'plugin' | 'third'): Promise<ProjectSnapshot> {
   const source = await fixture(`${id}/model.c4`);
   const model = await parseModel(source, await json(`${id}/fractal.json`));
   assert.equal(model.id, id);
@@ -151,6 +152,7 @@ test('a collapsed project routes to its summary card at the fixed summary size',
   assert.equal(project.diagram, null);
   assert.equal(project.frame.width, COMPOSITION_METRICS.summary.width);
   assert.equal(project.frame.height, COMPOSITION_METRICS.summary.height);
+  assert.ok(project.titleHeight <= project.frame.height);
   assert.equal(project.content.width, 0);
   assert.equal(project.content.height, 0);
 
@@ -431,7 +433,7 @@ test('inspectConnection names exact endpoint titles and reports representatives 
   });
 });
 
-test('inspectQualified handles project, element and connection and rejects phase 2 kinds', async () => {
+test('inspectQualified handles project, element, connection, relationship, boundary and scene', async () => {
   const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
   const state = openState();
   const composed = await compose(staticResolver([host, plugin]), state);
@@ -464,11 +466,62 @@ test('inspectQualified handles project, element and connection and rejects phase
   if (connection.kind !== 'connection') throw new Error('expected connection inspection');
   assert.equal(connection.owner, 'host');
 
-  assert.throws(
-    () =>
-      inspectQualified(composed, snapshots, { kind: 'scene', model: 'host', scene: 'overview' }),
-    /not supported in phase 1/
-  );
+  const relationship = inspectQualified(composed, snapshots, {
+    kind: 'relationship',
+    model: 'host',
+    relationship: 'call'
+  });
+  if (relationship.kind !== 'relationship') throw new Error('expected relationship inspection');
+  assert.equal(relationship.relationship.id, 'call');
+  assert.deepEqual(relationship.endpoints.source, { id: 'cli', title: 'Plugin adapter' });
+
+  const boundary = inspectQualified(composed, snapshots, {
+    kind: 'boundary',
+    model: 'host',
+    boundary: 'trust'
+  });
+  if (boundary.kind !== 'boundary') throw new Error('expected boundary inspection');
+  assert.equal(boundary.boundary.id, 'trust');
+  assert.ok(boundary.members.some((member) => member.id === 'cli'));
+
+  const scene = inspectQualified(composed, snapshots, {
+    kind: 'scene',
+    model: 'host',
+    scene: 'overview'
+  });
+  if (scene.kind !== 'scene') throw new Error('expected scene inspection');
+  assert.equal(scene.scene.id, 'overview');
+});
+
+test('search → inspect round-trips every kind searchComposition can emit', async () => {
+  const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
+  const state = openState();
+  const composed = await compose(staticResolver([host, plugin]), state);
+  const snapshots = new Map([
+    ['host', host],
+    ['plugin', plugin]
+  ]);
+  const samples = [
+    searchComposition(snapshots, state, 'plugin cli').find((result) => result.kind === 'element'),
+    searchComposition(snapshots, state, 'reads state').find(
+      (result) => result.kind === 'relationship'
+    ),
+    searchComposition(snapshots, state, 'permissions').find((result) => result.kind === 'boundary'),
+    searchComposition(snapshots, state, 'overview').find((result) => result.kind === 'scene'),
+    searchComposition(snapshots, state, 'unregistered').find((result) => result.kind === 'link')
+  ];
+  for (const kind of ['element', 'relationship', 'boundary', 'scene', 'link'] as const)
+    assert.ok(
+      samples.some((result) => result?.kind === kind),
+      `search emits ${kind}`
+    );
+  for (const result of samples) {
+    assert.ok(result, 'expected a search sample');
+    const inspected = inspectQualified(composed, snapshots, result.selection);
+    if (result.kind === 'link')
+      assert.ok(inspected.kind === 'project' || inspected.kind === 'element', result.id);
+    else assert.equal(inspected.kind, result.kind, `${result.kind}:${result.id}`);
+  }
 });
 
 test('elk-layered-down places later frames below, left-aligned', async () => {
@@ -513,6 +566,11 @@ test('bridge crossings and labels stay in the inter-frame corridor, clear of eve
       );
       const composed = await compose(staticResolver([host, plugin]), state);
       const projects = new Map(composed.projects.map((project) => [project.model, project]));
+      for (const project of composed.projects)
+        assert.ok(
+          project.titleHeight <= project.frame.height,
+          `${engine}/${collapsedModel} ${project.model} title band fits in its frame`
+        );
       assert.ok(composed.bridges.length >= 1, `${engine}/${collapsedModel} has bridges`);
       for (const bridge of composed.bridges) {
         const label = `${engine}/${collapsedModel} ${bridge.owner}/${bridge.id}`;
@@ -543,4 +601,131 @@ test('bridge crossings and labels stay in the inter-frame corridor, clear of eve
       }
     }
   }
+});
+
+test('a collapsed frame grows with its measured title band', () => {
+  const title =
+    'Beacon plugin for extended downstream telemetry aggregation and reporting services group';
+  const placed = placeFrames([
+    {
+      model: 'plugin',
+      title,
+      mode: 'collapsed',
+      diagram: null,
+      engine: 'elk-layered'
+    }
+  ]);
+  const project = placed.projects[0];
+  assert.ok(project.titleLines.length >= 4, `wrapped to ${project.titleLines.length} lines`);
+  assert.ok(project.titleHeight > COMPOSITION_METRICS.summary.height);
+  assert.equal(
+    project.frame.height,
+    Math.max(
+      COMPOSITION_METRICS.summary.height,
+      project.titleHeight + COMPOSITION_METRICS.summaryBodyHeight
+    )
+  );
+  assert.ok(project.titleHeight <= project.frame.height);
+});
+
+test('a stale expanded id or scope on a target is diagnosed and the composition continues', async () => {
+  const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
+  const expanded = await compose(
+    staticResolver([host, plugin]),
+    stateOf([
+      { model: 'host', scene: 'overview', mode: 'open', view: view() },
+      { model: 'plugin', scene: 'overview', mode: 'open', view: view(['core-renamed']) }
+    ])
+  );
+  assert.deepEqual(
+    expanded.projects.map((project) => project.model),
+    ['host', 'plugin']
+  );
+  const expandedDiagnostic = expanded.diagnostics.find(
+    (entry) => entry.path === 'composition.projects[1].view.expanded'
+  )!;
+  assert.equal(expandedDiagnostic.code, 'endpoint_missing');
+  assert.equal(expandedDiagnostic.ownerModel, 'plugin');
+  assert.equal(expandedDiagnostic.recovery, 'repair');
+  assert.deepEqual(expandedDiagnostic.target, { model: 'plugin', element: 'core-renamed' });
+
+  const scoped = await compose(
+    staticResolver([host, plugin]),
+    stateOf([
+      { model: 'host', scene: 'overview', mode: 'open', view: view() },
+      {
+        model: 'plugin',
+        scene: 'overview',
+        mode: 'open',
+        view: { expanded: [], proposed: false, lens: 'structure', scope: 'does-not-exist' }
+      }
+    ])
+  );
+  const scopeDiagnostic = scoped.diagnostics.find(
+    (entry) => entry.path === 'composition.projects[1].view.scope'
+  )!;
+  assert.equal(scopeDiagnostic.code, 'endpoint_missing');
+  assert.equal(scopeDiagnostic.ownerModel, 'plugin');
+  assert.equal(scopeDiagnostic.recovery, 'repair');
+  assert.ok(scoped.projects.length === 2);
+});
+
+test('a stale expanded id or scope on the root is diagnosed and the composition continues', async () => {
+  const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
+  const expanded = await compose(
+    staticResolver([host, plugin]),
+    stateOf([
+      { model: 'host', scene: 'overview', mode: 'open', view: view(['core-renamed']) },
+      { model: 'plugin', scene: 'overview', mode: 'open', view: view() }
+    ])
+  );
+  const expandedDiagnostic = expanded.diagnostics.find(
+    (entry) => entry.path === 'composition.projects[0].view.expanded'
+  )!;
+  assert.equal(expandedDiagnostic.code, 'endpoint_missing');
+  assert.equal(expandedDiagnostic.ownerModel, 'host');
+  assert.equal(expandedDiagnostic.recovery, 'repair');
+  assert.ok(expanded.projects.some((project) => project.model === 'host'));
+
+  const scoped = await compose(
+    staticResolver([host, plugin]),
+    stateOf([
+      {
+        model: 'host',
+        scene: 'overview',
+        mode: 'open',
+        view: { expanded: [], proposed: false, lens: 'structure', scope: 'does-not-exist' }
+      },
+      { model: 'plugin', scene: 'overview', mode: 'open', view: view() }
+    ])
+  );
+  const scopeDiagnostic = scoped.diagnostics.find(
+    (entry) => entry.path === 'composition.projects[0].view.scope'
+  )!;
+  assert.equal(scopeDiagnostic.code, 'endpoint_missing');
+  assert.equal(scopeDiagnostic.ownerModel, 'host');
+  assert.ok(scoped.projects.some((project) => project.model === 'plugin'));
+});
+
+test('a proposal-hidden scope on a target is dropped with endpoint_missing', async () => {
+  const [host, third] = await Promise.all([snapshot('host'), snapshot('third')]);
+  const composed = await compose(
+    staticResolver([host, third]),
+    stateOf([
+      { model: 'host', scene: 'overview', mode: 'open', view: view() },
+      {
+        model: 'third',
+        scene: 'overview',
+        mode: 'open',
+        view: { expanded: [], proposed: false, lens: 'structure', scope: 'beta' }
+      }
+    ])
+  );
+  const diagnostic = composed.diagnostics.find(
+    (entry) => entry.path === 'composition.projects[1].view.scope'
+  )!;
+  assert.equal(diagnostic.code, 'endpoint_missing');
+  assert.equal(diagnostic.ownerModel, 'third');
+  assert.match(diagnostic.message, /proposal filter/);
+  assert.ok(composed.projects.some((project) => project.model === 'third'));
 });

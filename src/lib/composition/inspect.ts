@@ -1,5 +1,5 @@
 import { inspectComponent } from '../core/inspect';
-import type { Model, Status } from '../core/types';
+import type { Boundary, Element, Model, Relationship, Scene, Status } from '../core/types';
 import type { ProjectSnapshot } from './snapshot';
 import type {
   BridgeRepresentative,
@@ -71,7 +71,39 @@ export interface InspectedProject {
   counts: { elements: number; relationships: number; boundaries: number; scenes: number };
 }
 
-export type QualifiedInspection = InspectedElement | InspectedProject | InspectedConnection;
+export interface InspectedRelationship {
+  kind: 'relationship';
+  model: string;
+  project: string;
+  relationship: Relationship;
+  endpoints: {
+    source: { id: string; title: string };
+    target: { id: string; title: string };
+  };
+}
+
+export interface InspectedBoundary {
+  kind: 'boundary';
+  model: string;
+  project: string;
+  boundary: Boundary;
+  members: { id: string; title: string }[];
+}
+
+export interface InspectedScene {
+  kind: 'scene';
+  model: string;
+  project: string;
+  scene: Scene;
+}
+
+export type QualifiedInspection =
+  | InspectedElement
+  | InspectedProject
+  | InspectedConnection
+  | InspectedRelationship
+  | InspectedBoundary
+  | InspectedScene;
 
 function projectTitle(composed: ComposedDiagram, model: string, fallback: string): string {
   return composed.projects.find((project) => project.model === model)?.title ?? fallback;
@@ -232,5 +264,61 @@ export function inspectQualified(
       }
     };
   }
-  throw new Error(`Selection kind ${selection.kind} is not supported in phase 1`);
+  if (selection.kind === 'relationship') {
+    const snapshot = participatingSnapshot(composed, snapshots, selection.model);
+    const relationship = snapshot.model.relationships.find(
+      (entry) => entry.id === selection.relationship
+    );
+    if (!relationship) throw new Error(`Unknown relationship: ${selection.relationship}`);
+    return {
+      kind: 'relationship',
+      model: selection.model,
+      project: snapshot.model.title,
+      relationship,
+      endpoints: {
+        source: namedElement(snapshot.model, relationship.source),
+        target: namedElement(snapshot.model, relationship.target)
+      }
+    };
+  }
+  if (selection.kind === 'boundary') {
+    const snapshot = participatingSnapshot(composed, snapshots, selection.model);
+    const boundary = snapshot.model.boundaries.find((entry) => entry.id === selection.boundary);
+    if (!boundary) throw new Error(`Unknown boundary: ${selection.boundary}`);
+    return {
+      kind: 'boundary',
+      model: selection.model,
+      project: snapshot.model.title,
+      boundary,
+      members: boundary.members.map((id) => namedElement(snapshot.model, id))
+    };
+  }
+  if (selection.kind === 'scene') {
+    const snapshot = participatingSnapshot(composed, snapshots, selection.model);
+    const scene = snapshot.model.scenes.find((entry) => entry.id === selection.scene);
+    if (!scene) throw new Error(`Unknown scene: ${selection.scene}`);
+    return {
+      kind: 'scene',
+      model: selection.model,
+      project: snapshot.model.title,
+      scene
+    };
+  }
+  throw new Error(`Unknown selection kind: ${(selection as QualifiedSelection).kind}`);
+}
+
+function participatingSnapshot(
+  composed: ComposedDiagram,
+  snapshots: Map<string, ProjectSnapshot>,
+  model: string
+): ProjectSnapshot {
+  const project = composed.state.projects.find((entry) => entry.model === model);
+  const snapshot = snapshots.get(model);
+  if (!project || !snapshot) throw new Error(`Unknown project: ${model}`);
+  return snapshot;
+}
+
+function namedElement(model: Model, id: string): { id: string; title: string } {
+  const element: Element | undefined = model.elements.find((entry) => entry.id === id);
+  return { id, title: element?.title ?? id };
 }
