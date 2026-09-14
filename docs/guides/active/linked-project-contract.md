@@ -246,7 +246,7 @@ diagnostics on stderr, and is never truncated. Without the new flags every exist
 output is unchanged.
 
 HTTP additions: `GET /api/composition/links?model=X`, `POST /api/composition/validate { model }`,
-`POST /api/composition/render { root, composition?, state?, revisions?, generation?, reload? }`,
+`POST /api/composition/render { root, composition?, state?, revisions?, generation?, client?, reload? }`,
 and `GET /api/composition/search?model=X&q=…&composition=…&state=…`. Render `state` accepts a
 decoded object or an encoded `v1.` string; search takes the same selectors as URL parameters
 (`composition` for an authored ID, `state` for an encoded `v1.` permalink value, mutually
@@ -256,11 +256,15 @@ the caller composed against: a participating source whose loaded revision differ
 successfully validated snapshots contribute revisions (an unopened target adds its revision
 after validation). `generation` is a nonnegative integer echoed verbatim in the result; slow
 responses carry their generation and callers discard any response older than their latest
-dispatch — cancelled or older generations never replace newer state. `reload: true` parses
+dispatch — cancelled or older generations never replace newer state. `client` is an optional
+opaque string of at most 64 characters that scopes generation tracking per caller (a studio
+tab): an older generation than the latest for the same root+client is 200 `{ status: 'stale',
+generation, current }` with no work done. Without a `client` the server never answers stale;
+it still coalesces identical in-flight work. Invalid `client` is 400. `reload: true` parses
 every participating snapshot fresh with stamp verification (one retry for concurrent writes,
 then `source_changing` with recovery `retry`) and answers with the new revision vector.
 Invalid input (contract errors, unknown root, mutually exclusive selectors, malformed
-`revisions`/`generation`) is 400; a source changing under the read is 409 with
+`revisions`/`generation`/`client`) is 400; a source changing under the read is 409 with
 `{ error, code: 'source_changing', recovery: 'retry' }`; an over-budget state payload or an
 over-limit composition is 422 with `code: 'budget_exceeded'`; recoverable target failures stay
 200 with diagnostics in the body. Admission limits default to 20 projects, 10,000 loaded
@@ -295,9 +299,10 @@ while a first load (or an identical copy elsewhere) invalidates nothing.
 
 Resolution and layout jobs run through one bounded work queue per server: at most two
 concurrent jobs, identical in-flight requests coalesced, a bounded wait (refused with
-`server_busy`, HTTP 429, when full). A request carrying an older `generation` than the
-latest for the same root is answered `stale` without doing work; once started, a job
-runs to completion and the caller discards superseded responses by generation.
+`server_busy`, HTTP 429, when full). A request that names a `client` and carries an older
+`generation` than the latest for that root+client is answered `stale` without doing work;
+without a `client` the queue never answers stale. Once started, a job runs to completion
+and the caller discards superseded responses by generation.
 
 `GET /api/composition/stats` and `fractal composition-stats --json` report:
 

@@ -162,6 +162,12 @@
   let compositionSelection = $state<QualifiedSelection | null>(null);
   let compositionRequestId = 0;
   let compositionGeneration = 0;
+  /** Per-tab identity so this tab's generation counter never stales another tab's. */
+  let compositionClient = '';
+  function compositionClientId(): string {
+    if (!compositionClient) compositionClient = crypto.randomUUID();
+    return compositionClient;
+  }
   let compositionLinks = $state<Record<string, LinksResult>>({});
   let revisionNotice = $state<RevisionNotice | null>(null);
   let pendingComposition: CompositionState | undefined;
@@ -584,7 +590,10 @@
       );
     return composed.projects.some((project) => project.model === value.model);
   }
-  async function renderComposition(next: CompositionState, options: { reload?: boolean } = {}) {
+  async function renderComposition(
+    next: CompositionState,
+    options: { reload?: boolean; retryStale?: boolean } = {}
+  ) {
     const generation = nextGeneration(compositionGeneration);
     compositionGeneration = generation;
     const token = ++compositionRequestId;
@@ -599,11 +608,18 @@
           state: next,
           revisions: options.reload ? {} : (composition?.revisions ?? {}),
           generation,
+          client: compositionClientId(),
           ...(options.reload ? { reload: true } : {})
         })
       });
       const payload = await response.json();
       if (token !== compositionRequestId) return;
+      if (payload.status === 'stale') {
+        // Discard: keep the last coherent view and never hang on Composing view.
+        if (!composition && !options.retryStale)
+          return await renderComposition(next, { ...options, retryStale: true });
+        return;
+      }
       if (
         typeof payload.generation === 'number' &&
         isStale(payload.generation, compositionGeneration)

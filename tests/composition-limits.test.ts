@@ -347,7 +347,7 @@ test('an older generation is answered stale without doing work', async () => {
       calls += 1;
       return 'new';
     },
-    { generation: 2 }
+    { generation: 2, client: 'tab-a' }
   );
   assert.equal(ready.status, 'ready');
   const stale = await queue.submit(
@@ -357,13 +357,58 @@ test('an older generation is answered stale without doing work', async () => {
       calls += 1;
       return 'old';
     },
-    { generation: 1 }
+    { generation: 1, client: 'tab-a' }
   );
   assert.deepEqual(stale, { status: 'stale', generation: 1, current: 2 });
   assert.equal(calls, 1, 'the superseded request never runs');
   // Unrelated roots keep their own generation.
-  const other = await queue.submit('other', 'b', async () => 'other', { generation: 1 });
+  const other = await queue.submit('other', 'b', async () => 'other', {
+    generation: 1,
+    client: 'tab-a'
+  });
   assert.equal(other.status, 'ready');
+});
+
+test('without a client id the queue never answers stale', async () => {
+  const queue = createWorkQueue({ concurrency: 2 });
+  let calls = 0;
+  const first = await queue.submit(
+    'root',
+    'a',
+    async () => {
+      calls += 1;
+      return 'new';
+    },
+    { generation: 5 }
+  );
+  const second = await queue.submit(
+    'root',
+    'b',
+    async () => {
+      calls += 1;
+      return 'old';
+    },
+    { generation: 1 }
+  );
+  assert.equal(first.status, 'ready');
+  assert.equal(second.status, 'ready');
+  assert.equal(calls, 2, 'an anonymous older generation still runs');
+});
+
+test('two clients keep independent generation counters', async () => {
+  const queue = createWorkQueue({ concurrency: 2 });
+  let calls = 0;
+  const work = async () => {
+    calls += 1;
+    return 'ok';
+  };
+  const aNew = await queue.submit('root', 'a', work, { generation: 5, client: 'tab-a' });
+  const aOld = await queue.submit('root', 'b', work, { generation: 1, client: 'tab-a' });
+  const bFirst = await queue.submit('root', 'c', work, { generation: 1, client: 'tab-b' });
+  assert.equal(aNew.status, 'ready');
+  assert.deepEqual(aOld, { status: 'stale', generation: 1, current: 5 });
+  assert.equal(bFirst.status, 'ready', 'another tab is not staled by the first tab');
+  assert.equal(calls, 2);
 });
 
 test('a request superseded while queued goes stale', async () => {
@@ -381,7 +426,7 @@ test('a request superseded while queued goes stale', async () => {
       await gate;
       return 'slow';
     },
-    { generation: 5 }
+    { generation: 5, client: 'tab-a' }
   );
   const superseded = queue.submit(
     'root',
@@ -390,7 +435,7 @@ test('a request superseded while queued goes stale', async () => {
       ran.push('queued');
       return 'queued';
     },
-    { generation: 6 }
+    { generation: 6, client: 'tab-a' }
   );
   const newer = queue.submit(
     'root',
@@ -399,7 +444,7 @@ test('a request superseded while queued goes stale', async () => {
       ran.push('newer');
       return 'newer';
     },
-    { generation: 7 }
+    { generation: 7, client: 'tab-a' }
   );
   await flush();
   release();
@@ -425,7 +470,7 @@ test('a newer request coalesced onto a superseded job still runs', async () => {
       await gate;
       return 'gen1';
     },
-    { generation: 1 }
+    { generation: 1, client: 'tab-a' }
   );
   const superseded = queue.submit(
     'root',
@@ -434,7 +479,7 @@ test('a newer request coalesced onto a superseded job still runs', async () => {
       ran.push('gen2');
       return 'gen2';
     },
-    { generation: 2 }
+    { generation: 2, client: 'tab-a' }
   );
   // Same key as the queued gen2 job: coalesces instead of queueing separately.
   const newest = queue.submit(
@@ -444,7 +489,7 @@ test('a newer request coalesced onto a superseded job still runs', async () => {
       ran.push('gen3');
       return 'gen3';
     },
-    { generation: 3 }
+    { generation: 3, client: 'tab-a' }
   );
   await flush();
   release();
@@ -482,7 +527,7 @@ test('submitCompositionRender counts stale generations as rejected work', async 
     const first = await submitCompositionRender(
       'host',
       { composition: 'plugins' },
-      { ...options, generation: 5 }
+      { ...options, generation: 5, client: 'tab-a' }
     );
     assert.equal(first.status, 'ready');
     if (first.status !== 'ready') throw new Error('expected a ready render');
@@ -492,10 +537,17 @@ test('submitCompositionRender counts stale generations as rejected work', async 
     const superseded = await submitCompositionRender(
       'host',
       { composition: 'plugins' },
-      { ...options, generation: 3 }
+      { ...options, generation: 3, client: 'tab-a' }
     );
     assert.deepEqual(superseded, { status: 'stale', generation: 3, current: 5 });
     assert.equal(getCompositionStats().rejected.stale, 1);
+
+    const other = await submitCompositionRender(
+      'host',
+      { composition: 'plugins' },
+      { ...options, generation: 1, client: 'tab-b' }
+    );
+    assert.equal(other.status, 'ready', 'a second client is not staled by the first');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -19,6 +19,8 @@ interface RenderInput {
   revisions?: unknown;
   /** Client-owned generation, echoed verbatim so callers discard superseded responses. */
   generation?: unknown;
+  /** Opaque per-tab identity that scopes generation tracking; omit to skip stale answers. */
+  client?: unknown;
   /** Reload every participating snapshot fresh with stamp verification. */
   reload?: unknown;
 }
@@ -29,8 +31,9 @@ interface RenderInput {
  * loaded; the route accepts no directories or URLs. Invalid input is 400, a changed
  * participating revision or a source that is changing under the read is 409, a state
  * payload or composition over budget is 422, an older generation than the latest for the
- * same root is 200 with a `stale` envelope (no work is done), a full queue is 429, and
- * recoverable target failures stay 200 with diagnostics.
+ * same root+client is 200 with a `stale` envelope (no work is done; without a client id
+ * the queue never answers stale), a full queue is 429, and recoverable target failures
+ * stay 200 with diagnostics.
  */
 export const POST: RequestHandler = async ({ request }) => {
   let input: RenderInput;
@@ -54,6 +57,9 @@ export const POST: RequestHandler = async ({ request }) => {
       ...(input.generation === undefined || input.generation === null
         ? {}
         : { generation: input.generation as CompositionRequest['generation'] }),
+      ...(input.client === undefined || input.client === null
+        ? {}
+        : { client: input.client as CompositionRequest['client'] }),
       ...(input.reload === true ? { reload: true as const } : {})
     };
     const outcome = await submitCompositionRender(input.root, selector, options);
