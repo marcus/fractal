@@ -94,6 +94,14 @@ diagnostics in the manifest. Unopened links are intentional omissions listed in 
 manifest, never errors. Every export returns a JSON manifest with the resolved state,
 per-project revisions, omitted links and unresolved targets.
 
+PNG export needs a browser. If none is installed, the CLI (stderr) and the HTTP route (503)
+answer with a short structured error instead of Playwright's banner:
+`{"error":"png-export-needs-chromium","fix":"npx playwright install chromium-headless-shell"}`.
+To use a Chrome or Chromium already on the machine, pass `--chromium PATH` or set
+`FRACTAL_CHROMIUM_PATH` (a server started with the variable set honors it too); a path that
+does not exist is reported as `png-export-chromium-not-found`. Without a browser, export SVG
+and rasterize it: `rsvg-convert -w 3840 scene.svg -o scene.png`.
+
 Portable HTML needs an explicit included set: `--include` names the linked projects to
 embed with the root. A root owning `links.json` exported without `--include` is still a
 linked document — its included set is the root only, and every authored link is reported

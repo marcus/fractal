@@ -6,6 +6,7 @@ import { loadModel, snapshotOf } from '$lib/server/models';
 import { renderDiagram } from '$lib/server/render';
 import { exportHtml, shouldExportLinkedHtml } from '$lib/adapters/html';
 import { exportSvg } from '$lib/core/svg';
+import { PngExportError } from '$lib/adapters/png';
 import {
   BudgetExceededError,
   CompositionUsageError,
@@ -135,6 +136,9 @@ export const POST: RequestHandler = async ({ request }) => {
         }
       });
     } catch (error) {
+      // No usable browser is a server dependency problem, not a bad request: the same short
+      // structured answer the CLI prints, with the command that fixes it.
+      if (error instanceof PngExportError) return json(error.toJSON(), { status: 503 });
       if (error instanceof ExportUnresolvedError)
         return json(
           { error: error.message, code: error.code, diagnostics: error.diagnostics },

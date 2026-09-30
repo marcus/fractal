@@ -90,6 +90,15 @@ export function renderCliReference(group: HelpGroup, generator = 'scripts/docs.t
     '`scripts/service.mjs`, everything else to `scripts/fractal.ts`. Errors are JSON on stderr with',
     'a nonzero exit.',
     '',
+    'Relative `--directory`, `--output`, `--catalog`, `--composition-state` and `--chromium` paths',
+    '(and relative `FRACTAL_CATALOG`, `FRACTAL_MODELS_DIR` and `FRACTAL_CHROMIUM_PATH` values)',
+    'resolve against the directory the command was run from, not the Fractal checkout.',
+    '',
+    'PNG export needs a browser. Without one it fails with a short structured error, for example',
+    '`{"error":"png-export-needs-chromium","fix":"npx playwright install chromium-headless-shell"}`.',
+    'Point `--chromium PATH` (or `FRACTAL_CHROMIUM_PATH`) at an existing Chrome or Chromium instead,',
+    'or export SVG and rasterize it: `rsvg-convert -w 3840 scene.svg -o scene.png`.',
+    '',
     ...renderGroup(group),
     ''
   ].join('\n');

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { anchorPathEnv, fromCaller } from './caller-cwd';
 import { loadDirectory, loadModel, listProjects, snapshotOf } from '../src/lib/server/models';
 import {
   BudgetExceededError,
@@ -32,7 +32,7 @@ import { project } from '../src/lib/core/projection';
 import { showAllStructure } from '../src/lib/core/navigation';
 import { layout } from '../src/lib/core/layout';
 import { LAYOUT_ENGINES, getLayoutEngineInfo } from '../src/lib/core/layout-engines';
-import { renderPng } from '../src/lib/adapters/png';
+import { PngExportError, renderPng } from '../src/lib/adapters/png';
 import { buildPortableAssets } from './portable-assets';
 import { exportHtml, exportLinkedDocument, shouldExportLinkedHtml } from '../src/lib/adapters/html';
 import { exportSvg } from '../src/lib/core/svg';
@@ -44,6 +44,7 @@ import { layoutSequence } from '../src/lib/sequence/layout';
 import { exportSequenceSvg } from '../src/lib/sequence/svg';
 
 async function main() {
+  anchorPathEnv();
   // The benchmark iterates many models and owns its own options, so it is dispatched before the
   // single-model path parses arguments or loads anything.
   const argv = process.argv.slice(2);
@@ -74,6 +75,7 @@ async function main() {
       proposed: { type: 'boolean' },
       lens: { type: 'string' },
       output: { type: 'string' },
+      chromium: { type: 'string' },
       'allow-unresolved': { type: 'boolean' },
       json: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
@@ -90,7 +92,7 @@ async function main() {
   const command = positionals[0] ?? 'help';
   if (values.help || command === 'help') {
     console.log(
-      `Fractal · an explorable model of software\n\nUsage: npm run cli -- <command> [options]\n\nCommands:\n  service    Manage the installed local studio (bin/fractal service --help)\n  projects   List catalog projects and their resolved model metadata\n  links      List authored links and each foreign model's resolution status\n  journeys   List available sequence journeys\n  journey    Inspect one authored journey (--journey ID)\n  sequence   Lay out an explorable sequence as JSON\n  sequence-export  Export the sequence as SVG or PNG\n  validate   Compile and validate a model and its scenes (--linked for the link closure)\n  inspect    Read the normalized model, or --element ID and its relationships\n  project    Resolve a mixed-depth view with underlying relationship IDs\n  layout     Resolve vector geometry for the selected view\n  export     Write SVG, 4K PNG, or an interactive offline HTML document (--output FILE)\n  themes     List available presentation themes (use --json for tokens)\n  engines    List available layout engines (use --json for metadata)\n  bench      Time the layout pipeline and fingerprint its geometry (bin/fractal bench --help)\n  shortcuts  List keyboard commands from the shared registry\n  search     Search all components, connections and views, with resolved view state\n  composition-stats  Cache, queue and limit instrumentation (--json)\n\nOptions:\n  --model ID                     Catalog model (default delivery)\n  --catalog PATH                 Use a specific catalog.json\n  --directory PATH               Read model.c4 + fractal.json from a directory\n  --linked                       Validate the declared linked-project closure\n  --composition ID               Authored composition from the root links.json\n  --composition-state FILE|v1.… Explicit state file or encoded permalink value\n  --allow-unresolved            Export despite failed targets (unavailable cards + manifest)\n  --selection JSON               Qualified selection for inspect in a composition\n  --surface architecture|sequence|portable Shortcut surface (default architecture)\n  --journey ID                   Sequence journey identifier\n  --collapsed-phases ID,ID        Fold sequence phases\n  --collapsed-groups ID,ID        Combine participant columns\n  --hidden-participants ID,ID     Hide columns with explicit interaction summaries\n  --scope-phase ID               Focus a sequence phase\n  --visible-phases ID,ID         Show exact phases with ancestor context (empty shows none)\n  --scene ID                     Start from a saved scene\n  --expanded ID,ID                Override expanded elements (empty collapses all)\n  --show-all                     Expand all structure within the selected scope\n  --proposed                     Include proposed elements and relationships\n  --lens structure|trust         Boundary lens\n  --scope ID                     Focus one component; retain external connection inventory\n  --theme grove|graphite|midnight Presentation theme (default Grove)\n  --layout ID                    Layout engine for architecture views (see engines)\n  --edges detail|summary         Draw every claim, or one counted connection per collapsed pair\n  --json                         Structured output\n  --element ID                   Inspect a stable element ID\n  --query TEXT                   Search titles, identifiers and descriptions\n  --format svg|png|html          Export format (HTML includes the full model, or a linked set with --include; a root owning links.json exports a linked document with a root-only included set by default; PNG needs Chromium)\n  --include ID,ID                HTML export: embed these linked projects with the root\n  --output PATH                  Write result to a file\n\nExamples:\n  npm run cli -- projects --json\n  npm run cli -- links --model sidecar --json\n  npm run cli -- validate --model delivery --json\n  npm run cli -- layout --model host --composition plugins\n  npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg`
+      `Fractal · an explorable model of software\n\nUsage: npm run cli -- <command> [options]\n\nCommands:\n  service    Manage the installed local studio (bin/fractal service --help)\n  projects   List catalog projects and their resolved model metadata\n  links      List authored links and each foreign model's resolution status\n  journeys   List available sequence journeys\n  journey    Inspect one authored journey (--journey ID)\n  sequence   Lay out an explorable sequence as JSON\n  sequence-export  Export the sequence as SVG or PNG\n  validate   Compile and validate a model and its scenes (--linked for the link closure)\n  inspect    Read the normalized model, or --element ID and its relationships\n  project    Resolve a mixed-depth view with underlying relationship IDs\n  layout     Resolve vector geometry for the selected view\n  export     Write SVG, 4K PNG, or an interactive offline HTML document (--output FILE)\n  themes     List available presentation themes (use --json for tokens)\n  engines    List available layout engines (use --json for metadata)\n  bench      Time the layout pipeline and fingerprint its geometry (bin/fractal bench --help)\n  shortcuts  List keyboard commands from the shared registry\n  search     Search all components, connections and views, with resolved view state\n  composition-stats  Cache, queue and limit instrumentation (--json)\n\nOptions:\n  --model ID                     Catalog model (default delivery)\n  --catalog PATH                 Use a specific catalog.json\n  --directory PATH               Read model.c4 + fractal.json from a directory\n  --linked                       Validate the declared linked-project closure\n  --composition ID               Authored composition from the root links.json\n  --composition-state FILE|v1.… Explicit state file or encoded permalink value\n  --allow-unresolved            Export despite failed targets (unavailable cards + manifest)\n  --selection JSON               Qualified selection for inspect in a composition\n  --surface architecture|sequence|portable Shortcut surface (default architecture)\n  --journey ID                   Sequence journey identifier\n  --collapsed-phases ID,ID        Fold sequence phases\n  --collapsed-groups ID,ID        Combine participant columns\n  --hidden-participants ID,ID     Hide columns with explicit interaction summaries\n  --scope-phase ID               Focus a sequence phase\n  --visible-phases ID,ID         Show exact phases with ancestor context (empty shows none)\n  --scene ID                     Start from a saved scene\n  --expanded ID,ID                Override expanded elements (empty collapses all)\n  --show-all                     Expand all structure within the selected scope\n  --proposed                     Include proposed elements and relationships\n  --lens structure|trust         Boundary lens\n  --scope ID                     Focus one component; retain external connection inventory\n  --theme grove|graphite|midnight Presentation theme (default Grove)\n  --layout ID                    Layout engine for architecture views (see engines)\n  --edges detail|summary         Draw every claim, or one counted connection per collapsed pair\n  --json                         Structured output\n  --element ID                   Inspect a stable element ID\n  --query TEXT                   Search titles, identifiers and descriptions\n  --format svg|png|html          Export format (HTML includes the full model, or a linked set with --include; a root owning links.json exports a linked document with a root-only included set by default; PNG needs Chromium)\n  --include ID,ID                HTML export: embed these linked projects with the root\n  --chromium PATH                PNG export: use this Chrome/Chromium instead of Playwright's (or set FRACTAL_CHROMIUM_PATH)\n  --output PATH                  Write result to a file (relative paths resolve against the current directory)\n\nExamples:\n  npm run cli -- projects --json\n  npm run cli -- links --model sidecar --json\n  npm run cli -- validate --model delivery --json\n  npm run cli -- layout --model host --composition plugins\n  npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg`
     );
     return;
   }
@@ -126,12 +128,17 @@ async function main() {
       );
     return;
   }
-  const catalogOptions = { catalog: values.catalog };
+  const pngOptions = {
+    ...(values.chromium === undefined ? {} : { chromiumPath: fromCaller(values.chromium) })
+  };
+  const catalogOptions = {
+    catalog: values.catalog === undefined ? undefined : fromCaller(values.catalog)
+  };
   const printResult = async (result: unknown): Promise<void> => {
     const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
     if (values.output) {
-      await writeFile(values.output, text + '\n');
-      console.log(JSON.stringify({ output: resolve(values.output) }));
+      await writeFile(fromCaller(values.output), text + '\n');
+      console.log(JSON.stringify({ output: fromCaller(values.output) }));
     } else console.log(text);
   };
   const compositionCommands = ['project', 'layout', 'inspect', 'search', 'export'];
@@ -148,7 +155,7 @@ async function main() {
   }
   if (command === 'links') {
     const result = values.directory
-      ? await linksForLocated(await loadDirectory(resolve(values.directory)), catalogOptions)
+      ? await linksForLocated(await loadDirectory(fromCaller(values.directory)), catalogOptions)
       : await linksFor(values.model ?? 'delivery', catalogOptions);
     await printResult(result);
     return;
@@ -156,7 +163,7 @@ async function main() {
   if (command === 'validate' && values.linked) {
     const validation = values.directory
       ? await validateLinkedSnapshot(
-          snapshotOf(await loadDirectory(resolve(values.directory))),
+          snapshotOf(await loadDirectory(fromCaller(values.directory))),
           catalogOptions
         )
       : await validateLinked(values.model ?? 'delivery', catalogOptions);
@@ -192,7 +199,9 @@ async function main() {
     // A versioned `v1.` value is an encoded permalink; anything else is a state file path.
     explicitCompositionState = compositionStateInput.startsWith('v1.')
       ? resolveCompositionStateInput(compositionStateInput)
-      : parseCompositionState(JSON.parse(await readFile(resolve(compositionStateInput), 'utf8')));
+      : parseCompositionState(
+          JSON.parse(await readFile(fromCaller(compositionStateInput), 'utf8'))
+        );
     if (values.model !== undefined && values.model !== explicitCompositionState.root)
       throw new Error(
         `Composition state root ${explicitCompositionState.root} does not match --model ${values.model}`
@@ -200,7 +209,7 @@ async function main() {
   }
   const requestedModel = explicitCompositionState?.root ?? values.model ?? 'delivery';
   const loaded = values.directory
-    ? await loadDirectory(resolve(values.directory))
+    ? await loadDirectory(fromCaller(values.directory))
     : await loadModel(requestedModel, catalogOptions);
   const { model, sequences } = loaded;
   if (['journeys', 'journey', 'sequence', 'sequence-export'].includes(command)) {
@@ -254,8 +263,8 @@ async function main() {
           const svg = exportSequenceSvg(journey, diagram);
           if (values.format === 'png') {
             if (!values.output) throw new Error('PNG export requires --output');
-            await writeFile(values.output, await renderPng(svg));
-            console.log(JSON.stringify({ output: resolve(values.output), format: 'png' }));
+            await writeFile(fromCaller(values.output), await renderPng(svg, pngOptions));
+            console.log(JSON.stringify({ output: fromCaller(values.output), format: 'png' }));
             return;
           }
           result = svg;
@@ -264,8 +273,8 @@ async function main() {
     }
     const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
     if (values.output) {
-      await writeFile(values.output, text + '\n');
-      console.log(JSON.stringify({ output: resolve(values.output) }));
+      await writeFile(fromCaller(values.output), text + '\n');
+      console.log(JSON.stringify({ output: fromCaller(values.output) }));
     } else console.log(text);
     return;
   }
@@ -289,20 +298,21 @@ async function main() {
       if (format === 'png' && !values.output) throw new Error('PNG export requires --output');
       const exported = await exportComposition(root, selector, {
         ...catalogOptions,
+        ...pngOptions,
         format: format as CompositionExportFormat,
         ...(values['allow-unresolved'] === true ? { allowUnresolved: true } : {})
       });
       const report = {
         ...exported.manifest,
-        ...(values.output ? { output: resolve(values.output) } : {})
+        ...(values.output ? { output: fromCaller(values.output) } : {})
       };
       if (format === 'png') {
-        await writeFile(values.output!, exported.png!);
+        await writeFile(fromCaller(values.output!), exported.png!);
         console.log(JSON.stringify(report, null, 2));
         return;
       }
       if (values.output) {
-        await writeFile(values.output, `${exported.svg}\n`);
+        await writeFile(fromCaller(values.output), `${exported.svg}\n`);
         console.log(JSON.stringify(report, null, 2));
         return;
       }
@@ -431,12 +441,12 @@ async function main() {
             sequencesByModel,
             limits: effectiveLimits({})
           });
-          await writeFile(values.output, html);
-          console.log(JSON.stringify({ output: resolve(values.output), ...report }));
+          await writeFile(fromCaller(values.output), html);
+          console.log(JSON.stringify({ output: fromCaller(values.output), ...report }));
           return;
         }
         await writeFile(
-          values.output,
+          fromCaller(values.output),
           await exportHtml(model, {
             state,
             scene: scene.id,
@@ -446,7 +456,7 @@ async function main() {
         );
         console.log(
           JSON.stringify({
-            output: resolve(values.output),
+            output: fromCaller(values.output),
             format: 'html',
             model: model.id,
             scene: scene.id
@@ -462,8 +472,8 @@ async function main() {
       });
       if (values.format === 'png') {
         if (!values.output) throw new Error('PNG export requires --output');
-        await writeFile(values.output, await renderPng(svg));
-        console.log(JSON.stringify({ output: resolve(values.output), format: 'png' }));
+        await writeFile(fromCaller(values.output), await renderPng(svg, pngOptions));
+        console.log(JSON.stringify({ output: fromCaller(values.output), format: 'png' }));
         return;
       }
       result = svg;
@@ -474,14 +484,15 @@ async function main() {
   }
   const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
   if (values.output) {
-    await writeFile(values.output, text + '\n');
-    console.log(JSON.stringify({ output: resolve(values.output) }));
+    await writeFile(fromCaller(values.output), text + '\n');
+    console.log(JSON.stringify({ output: fromCaller(values.output) }));
   } else console.log(text);
 }
 main().catch((error) => {
   // Boundary failures carry their code and diagnostics; every other error keeps the exact
   // historical `{ error }` shape single-model callers rely on.
-  if (error instanceof ExportUnresolvedError)
+  if (error instanceof PngExportError) console.error(JSON.stringify(error.toJSON()));
+  else if (error instanceof ExportUnresolvedError)
     console.error(
       JSON.stringify({
         error: error.message,

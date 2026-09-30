@@ -130,6 +130,8 @@ export interface CompositionExportOptions extends CompositionRequest {
    * their diagnostics travel in the manifest. Without it the export fails instead.
    */
   allowUnresolved?: boolean;
+  /** PNG only: an existing Chrome or Chromium executable (default `FRACTAL_CHROMIUM_PATH`). */
+  chromiumPath?: string;
 }
 
 export interface CompositionExport {
@@ -162,7 +164,13 @@ export async function exportComposition(
     if (outcome.status === 'resolved') models[project.model] = outcome.snapshot.model;
   }
   const svg = exportCompositionSvg(composed, models);
-  const png = format === 'png' ? await renderPng(svg, { fullPage: true }) : undefined;
+  const png =
+    format === 'png'
+      ? await renderPng(svg, {
+          fullPage: true,
+          ...(options.chromiumPath === undefined ? {} : { chromiumPath: options.chromiumPath })
+        })
+      : undefined;
   return {
     svg,
     ...(png === undefined ? {} : { png }),

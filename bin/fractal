@@ -5,5 +5,9 @@ if [ "${1:-}" = "service" ]; then
   shift
   exec node "$FRACTAL_ROOT/scripts/service.mjs" "$@"
 fi
+# Run from the checkout so bundled examples and assets resolve, but remember where the caller
+# was: scripts/caller-cwd.ts resolves relative --directory, --output, --catalog and friends there.
+FRACTAL_CALLER_CWD=$(pwd)
+export FRACTAL_CALLER_CWD
 cd "$FRACTAL_ROOT"
 exec node --import tsx scripts/fractal.ts "$@"

@@ -34,6 +34,7 @@ import {
   type CompositionComparison,
   type CompositionRow
 } from './bench-fixtures';
+import { fromCaller } from './caller-cwd';
 import { showAllStructure } from '../src/lib/core/navigation';
 import { getCompositionStats } from '../src/lib/server/composition';
 import { loadDirectory, resolveCatalog } from '../src/lib/server/models';
@@ -153,13 +154,17 @@ async function resolveSources(values: {
   if (sizes.length && !narrowed) return synthetic;
 
   const ids = list(values.model);
-  const explicit = list(values.directory).map((path) => resolve(path));
+  const explicit = list(values.directory).map((path) => fromCaller(path));
   const candidates = explicit.length
     ? explicit.map((directory) => ({ id: null, directory }))
     : [
-        ...(await resolveCatalog({ catalog: values.catalog })).projects.map((project) => ({
+        ...(
+          await resolveCatalog({
+            catalog: values.catalog === undefined ? undefined : fromCaller(values.catalog)
+          })
+        ).projects.map((project) => ({
           id: project.id as string | null,
-          directory: resolve(project.directory)
+          directory: fromCaller(project.directory)
         })),
         ...(await bundledExamples()).map((directory) => ({
           id: basename(directory) as string | null,
@@ -462,14 +467,14 @@ async function finishComposition(
   let comparison: CompositionComparison | undefined;
   let baselinePath: string | undefined;
   if (values.baseline !== undefined) {
-    baselinePath = resolve(values.baseline);
+    baselinePath = fromCaller(values.baseline);
     const baseline = parseBenchRows(
       await readFile(baselinePath, 'utf8')
     ) as unknown as CompositionRow[];
     comparison = compareCompositionRows(rows, baseline);
   }
   if (values.output !== undefined) {
-    const path = resolve(values.output);
+    const path = fromCaller(values.output);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
   }
@@ -487,7 +492,7 @@ async function finishComposition(
           // The server bounds seam: retained cache bytes, jobs and rejected work after the run.
           stats: getCompositionStats(),
           ...(comparison ? { baseline: { path: baselinePath, ...comparison } } : {}),
-          ...(values.output !== undefined ? { output: resolve(values.output) } : {})
+          ...(values.output !== undefined ? { output: fromCaller(values.output) } : {})
         },
         null,
         2
@@ -499,7 +504,7 @@ async function finishComposition(
       `\n${rows.length} composition rows · ${iterations} iterations after one warm-up${commit ? ` · commit ${commit.slice(0, 7)}` : ''}`
     );
     if (comparison) console.log(`\n${renderCompositionComparison(comparison, baselinePath!)}`);
-    if (values.output !== undefined) console.log(`\nWrote ${resolve(values.output)}`);
+    if (values.output !== undefined) console.log(`\nWrote ${fromCaller(values.output)}`);
   }
   if (values['fail-on-geometry-change'] && comparison?.geometryChanged) {
     console.error(JSON.stringify({ error: 'Geometry fingerprint changed against the baseline' }));
@@ -570,7 +575,7 @@ async function runSteelThread(
   const commit = gitCommit();
   const timestamp = new Date().toISOString();
   const { row } = await measureComposition({
-    catalog: values.catalog,
+    catalog: fromCaller(values.catalog),
     root: values.model,
     composition,
     label: `steel-thread:${values.model}`,
@@ -583,7 +588,7 @@ async function runSteelThread(
       steelThread: {
         root: values.model,
         composition,
-        catalog: resolve(values.catalog)
+        catalog: fromCaller(values.catalog)
       }
     },
     iterations,
@@ -680,11 +685,11 @@ export async function runBench(argv: string[]): Promise<void> {
 
   let comparison: BaselineComparison | undefined;
   if (values.baseline !== undefined) {
-    const baseline = parseBenchRows(await readFile(resolve(values.baseline), 'utf8'));
+    const baseline = parseBenchRows(await readFile(fromCaller(values.baseline), 'utf8'));
     comparison = compareToBaseline(rows, baseline);
   }
   if (values.output !== undefined) {
-    const path = resolve(values.output);
+    const path = fromCaller(values.output);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
   }
@@ -699,8 +704,10 @@ export async function runBench(argv: string[]): Promise<void> {
           engines,
           views: values.views,
           rows,
-          ...(comparison ? { baseline: { path: resolve(values.baseline!), ...comparison } } : {}),
-          ...(values.output !== undefined ? { output: resolve(values.output) } : {})
+          ...(comparison
+            ? { baseline: { path: fromCaller(values.baseline!), ...comparison } }
+            : {}),
+          ...(values.output !== undefined ? { output: fromCaller(values.output) } : {})
         },
         null,
         2
@@ -711,8 +718,8 @@ export async function runBench(argv: string[]): Promise<void> {
     console.log(
       `\n${rows.length} rows · ${iterations} iterations after one warm-up · engines ${engines.join(', ')}${commit ? ` · commit ${commit.slice(0, 7)}` : ''}`
     );
-    if (comparison) console.log(`\n${renderComparison(comparison, resolve(values.baseline!))}`);
-    if (values.output !== undefined) console.log(`\nWrote ${resolve(values.output)}`);
+    if (comparison) console.log(`\n${renderComparison(comparison, fromCaller(values.baseline!))}`);
+    if (values.output !== undefined) console.log(`\nWrote ${fromCaller(values.output)}`);
   }
   if (values['fail-on-geometry-change'] && comparison?.geometryChanged) {
     console.error(JSON.stringify({ error: 'Geometry fingerprint changed against the baseline' }));

@@ -23,7 +23,10 @@ The installed artifact contains the server build, example models, production dep
 the Playwright runtime used by PNG export. It never links `node_modules` or application code back
 to the checkout. Runtime dependency versions come from the checked-in lockfile, including package
 overrides. Run `npm ci` after dependency changes so the build and staged runtime use that same
-tree. Playwright's Chromium browser must also be available to the installing user for PNG export.
+tree. Playwright's Chromium browser must also be available to the installing user for PNG export;
+without it the export route answers 503 with a structured `png-export-needs-chromium` error. The
+LaunchAgent does not forward `FRACTAL_CHROMIUM_PATH`, so an existing Chrome is a CLI option
+(`--chromium`) rather than a service setting.
 
 Use another catalog, port, or installation root when needed:
 
