@@ -18,6 +18,7 @@ export interface MeasuredNode extends Element {
   /** The title row an expanded container reserves above its children. */
   headerHeight: number;
   titleLines: string[];
+  titleSize?: number;
   descriptionLines: string[];
   kindLabel: string;
 }

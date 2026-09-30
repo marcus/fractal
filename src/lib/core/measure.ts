@@ -1,6 +1,6 @@
 import { kindTitle } from './kind-icons';
 import { ARCHITECTURE_NODE_METRICS as METRICS } from './node-metrics';
-import { textWidth, wrapText } from './projection';
+import { fitTitleSize, textWidth, wrapText } from './projection';
 import type { MeasuredEdge, MeasuredGraph, MeasuredNode } from './layout-engine';
 import type { Projection } from './types';
 
@@ -20,15 +20,23 @@ export function measure(projection: Projection): MeasuredGraph {
     for (const element of projection.elements) {
       if (element.parent !== parent) continue;
       const open = expanded.has(element.id);
+      const titleInset = open ? METRICS.expandedTitleWidthInset : METRICS.collapsed.titleWidthInset;
+      // A long identifier widens its card to sit on one line before it wraps or shrinks.
       const width = Math.max(
         METRICS.collapsed.minWidth,
-        Math.min(METRICS.collapsed.maxWidth, textWidth(element.title, METRICS.titleSize) + 44)
+        Math.min(
+          METRICS.collapsed.maxWidth,
+          Math.max(
+            textWidth(element.title, METRICS.titleSize) + 44,
+            Math.max(
+              0,
+              ...element.title.split(/\s+/).map((word) => textWidth(word, METRICS.titleSize))
+            ) + titleInset
+          )
+        )
       );
-      const titleLines = wrapText(
-        element.title,
-        width - (open ? METRICS.expandedTitleWidthInset : METRICS.collapsed.titleWidthInset),
-        METRICS.titleSize
-      );
+      const titleSize = fitTitleSize(element.title, width - titleInset, METRICS.titleSize);
+      const titleLines = wrapText(element.title, width - titleInset, titleSize);
       const descriptionLines = open
         ? []
         : wrapText(element.description, width - METRICS.collapsed.descriptionWidthInset, 12);
@@ -50,6 +58,7 @@ export function measure(projection: Projection): MeasuredGraph {
         height,
         headerHeight,
         titleLines,
+        ...(titleSize === METRICS.titleSize ? {} : { titleSize }),
         descriptionLines,
         kindLabel: kindTitle(element.kind, element.status)
       });

@@ -1,7 +1,7 @@
 import { getLayoutEngine } from '../adapters/layout';
 import { measure } from './measure';
 import { ARCHITECTURE_NODE_METRICS as METRICS } from './node-metrics';
-import { project, wrapText } from './projection';
+import { fitTitleSize, project, wrapText } from './projection';
 import type { LayoutEngine, MeasuredGraph, Placement } from './layout-engine';
 import type { Diagram, LayoutEdge, LayoutNode, Model, Projection, ViewState } from './types';
 
@@ -27,10 +27,15 @@ export function assembleDiagram(
       height: measuredHeight,
       headerHeight: _header,
       titleLines,
+      titleSize: _measuredTitleSize,
       descriptionLines,
       kindLabel,
       ...element
     } = node;
+    const titleWidth = width - METRICS.expandedTitleWidthInset;
+    const titleSize = expanded
+      ? fitTitleSize(node.title, titleWidth, METRICS.titleSize)
+      : node.titleSize;
     return {
       ...element,
       x: placed?.x ?? 0,
@@ -39,8 +44,9 @@ export function assembleDiagram(
       height: placed?.height ?? measuredHeight,
       expanded,
       titleLines: expanded
-        ? wrapText(node.title, width - METRICS.expandedTitleWidthInset, METRICS.titleSize)
+        ? wrapText(node.title, titleWidth, titleSize ?? METRICS.titleSize)
         : titleLines,
+      ...(titleSize === undefined || titleSize === METRICS.titleSize ? {} : { titleSize }),
       kindLabel,
       descriptionLines,
       depth

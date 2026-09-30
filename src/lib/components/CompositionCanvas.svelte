@@ -724,6 +724,7 @@
                     x={node.expanded ? METRICS.expandedContentX : METRICS.collapsed.contentX}
                     y={(node.expanded ? METRICS.expandedTitleY : METRICS.collapsed.titleY) +
                       index * 20}
+                    style:font-size={node.titleSize ? `${node.titleSize}px` : undefined}
                     class="node-title">{line}</text
                   >{/each}
                 {#if !node.expanded}{#each node.descriptionLines as line, index}<text

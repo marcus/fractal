@@ -79,7 +79,7 @@ function nodeSvg(
   const descriptionY = titleY + node.titleLines.length * 21 + 3;
   return `<g data-project="${xml(project.model)}" data-node-id="${xml(project.model)}:${xml(node.id)}">${rings}<rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="14" fill="${node.expanded ? theme.group : theme.card}" stroke="${node.status === 'proposed' ? accent : theme.border}" stroke-width="1.3"${node.status === 'proposed' ? ' stroke-dasharray="6 5"' : ''}/>
       <g transform="translate(${number(node.x + node.width - METRICS.toggleRight - METRICS.kindIconSize)} ${number(node.y + METRICS.toggleY + (METRICS.toggleSize - METRICS.kindIconSize) / 2)}) scale(${number(METRICS.kindIconSize / 24)})" color="${theme.appearance === 'dark' ? theme.accent : accent}" opacity="0.85"><title>${xml(node.kindLabel)}</title>${kindIcon(node.kind).markup}</g>
-      ${textLines(node.titleLines, node.x + (node.expanded ? METRICS.expandedContentX : METRICS.collapsed.contentX), titleY, METRICS.titleSize, METRICS.titleLineHeight, theme.text, 600)}
+      ${textLines(node.titleLines, node.x + (node.expanded ? METRICS.expandedContentX : METRICS.collapsed.contentX), titleY, node.titleSize ?? METRICS.titleSize, METRICS.titleLineHeight, theme.text, 600)}
       ${textLines(node.descriptionLines, node.x + METRICS.collapsed.contentX, descriptionY, 12, 17, theme.muted)}
       </g>`;
 }

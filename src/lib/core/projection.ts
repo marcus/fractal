@@ -134,6 +134,52 @@ export function textWidth(text: string, size: number): number {
   );
 }
 
+/**
+ * Where a long identifier may break without splitting a word: after `_`, `.`, `/` and `-`, and at
+ * camelCase boundaries (`requestMoreTools`, `HTTPServer`). Text with none of these is one piece.
+ */
+export function breakSegments(word: string): string[] {
+  const segments: string[] = [];
+  let segment = '';
+  const chars = [...word];
+  chars.forEach((char, index) => {
+    segment += char;
+    const next = chars[index + 1];
+    if (next === undefined) return;
+    const after = chars[index + 2];
+    const boundary =
+      /[_./-]/.test(char) ||
+      (/[\p{Ll}\d]/u.test(char) && /\p{Lu}/u.test(next)) ||
+      (/\p{Lu}/u.test(char) &&
+        /\p{Lu}/u.test(next) &&
+        after !== undefined &&
+        /\p{Ll}/u.test(after));
+    if (boundary) {
+      segments.push(segment);
+      segment = '';
+    }
+  });
+  if (segment) segments.push(segment);
+  return segments;
+}
+
+/** The widest piece of text that has no place to break: the floor a title can shrink toward. */
+export function longestUnbreakable(text: string, size: number): number {
+  return Math.max(
+    0,
+    ...text
+      .split(/\s+/)
+      .filter(Boolean)
+      .flatMap(breakSegments)
+      .map((segment) => textWidth(segment, size))
+  );
+}
+
+/**
+ * Wrap into lines of at most `width`. Words break between words first; a word too long for a line
+ * breaks at its own break opportunities, and only a piece that still does not fit is split
+ * mid-word.
+ */
 export function wrapText(text: string, width: number, size: number): string[] {
   if (!text.trim()) return [];
   const lines: string[] = [];
@@ -148,16 +194,36 @@ export function wrapText(text: string, width: number, size: number): string[] {
       lines.push(line);
       line = '';
     }
-    for (const char of word) {
-      if (line && textWidth(line + char, size) > width) {
+    for (const segment of breakSegments(word)) {
+      if (line && textWidth(line + segment, size) <= width) {
+        line += segment;
+        continue;
+      }
+      if (line) {
         lines.push(line);
         line = '';
       }
-      line += char;
+      for (const char of segment) {
+        if (line && textWidth(line + char, size) > width) {
+          lines.push(line);
+          line = '';
+        }
+        line += char;
+      }
     }
   }
   if (line) lines.push(line);
   return lines;
+}
+
+/**
+ * The type size a title draws at: the shared size, shrunk a little (never below two steps) when
+ * some piece of it could not otherwise fit the line. Only then does it split inside a word.
+ */
+export function fitTitleSize(text: string, width: number, size: number): number {
+  for (let candidate = size; candidate >= size - 2; candidate--)
+    if (longestUnbreakable(text, candidate) <= width) return candidate;
+  return size - 2;
 }
 
 /** A compact visual label; the full semantic value remains on the model element. */

@@ -107,6 +107,8 @@ export interface LayoutNode extends Element {
   height: number;
   expanded: boolean;
   titleLines: string[];
+  /** Set only when a long identifier shrank to fit; absent means the shared title size. */
+  titleSize?: number;
   kindLabel: string;
   descriptionLines: string[];
   depth: number;
