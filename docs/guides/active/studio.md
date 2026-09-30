@@ -12,7 +12,8 @@ or install the [local service](local-service.md). Every action here has a keyboa
 - Select a component or connection to inspect its meaning, provenance and underlying relationships.
 - Use **Focus this component** for a readable deep view. The external-connections inventory keeps
   every relationship crossing the focus boundary available. Click the system breadcrumb to return.
-- Choose **Trust** to see exact authored boundary memberships. **Diagram key** (the bottom-right
+- Choose **Trust** to see exact authored boundary memberships: a solid-looking dashed outline marks a
+  member, and a dotted outline marks a collapsed element that contains members. **Diagram key** (the bottom-right
   information icon, or **I**) explains the legend, counts and boundaries and opens external
   connections. These describe the model, not enforced permissions.
 - Enable **Proposed** to include planned elements and relationships.

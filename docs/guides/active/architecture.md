@@ -47,7 +47,10 @@ authentication, remote editing and collaboration are separate future product jou
 - Distinct relationship claims remain distinct even if they share projected endpoints.
 - Focus shows a subtree and inventories crossing connections. Relationships entirely outside the
   view are irrelevant to that projection, but remain in the model.
-- Trust colors describe exact authored membership. Fractal does not infer permission enforcement.
+- Trust colors describe exact authored membership. A member hidden inside a collapsed element
+  marks that element with a dotted outline ("contains members"), and boundaries with no member in
+  view are counted in the key and the export footer rather than dropped. Fractal does not infer
+  permission enforcement.
 - Source references are evidence pointers. Their presence does not certify that the model is current.
 
 ## Presentation state

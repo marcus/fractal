@@ -3,6 +3,7 @@ import type { Diagram, LayoutNode, Model } from './types';
 import { getTheme } from './themes';
 import { ARCHITECTURE_NODE_METRICS as METRICS } from './node-metrics';
 import { kindIcon } from './kind-icons';
+import { boundaryView } from './boundaries';
 
 const xml = (value: unknown): string =>
   String(value).replace(
@@ -52,12 +53,12 @@ export function exportSvg(
   const theme = getTheme(diagram.state.theme);
   const titleLines = boundedLines(options.title ?? model.title, 1728, 48, 2);
   const subtitleLines = boundedLines(options.subtitle ?? model.description, 1728, 19, 3);
-  const legends =
-    diagram.state.lens === 'trust'
-      ? model.boundaries.filter((boundary) =>
-          diagram.nodes.some((node) => boundary.members.includes(node.id))
-        )
-      : [];
+  const trust = diagram.state.lens === 'trust' ? boundaryView(model, diagram) : null;
+  const legends = trust?.present.map((entry) => entry.boundary) ?? [];
+  // A boundary with no exact member drawn is represented only by collapsed containers.
+  const containsOnly = new Set(
+    trust?.present.filter((entry) => !entry.exact.length).map((entry) => entry.boundary.id)
+  );
   const headerBottom = 92 + titleLines.length * 54 + subtitleLines.length * 26 + 38;
   const area = {
     x: 96,
@@ -68,7 +69,7 @@ export function exportSvg(
   // Include decorative member outlines in the fit bounds, even for many memberships.
   const bounds = { left: 0, top: 0, right: diagram.width, bottom: diagram.height };
   for (const node of diagram.nodes) {
-    const extent = legends.filter((boundary) => boundary.members.includes(node.id)).length * 4 + 2;
+    const extent = (trust?.byNode.get(node.id)?.length ?? 0) * 4 + 2;
     bounds.left = Math.min(bounds.left, node.x - extent);
     bounds.top = Math.min(bounds.top, node.y - extent);
     bounds.right = Math.max(bounds.right, node.x + node.width + extent);
@@ -81,14 +82,10 @@ export function exportSvg(
   const ty = area.y + (area.height - height * scale) / 2 - bounds.top * scale;
   const nodeSvg = (node: LayoutNode): string => {
     const accent = color(node.color);
-    const highlights =
-      diagram.state.lens === 'trust'
-        ? model.boundaries.filter((boundary) => boundary.members.includes(node.id))
-        : [];
-    const rings = highlights
+    const rings = (trust?.byNode.get(node.id) ?? [])
       .map(
-        (boundary, index) =>
-          `<rect x="${node.x - 4 - index * 4}" y="${node.y - 4 - index * 4}" width="${node.width + 8 + index * 8}" height="${node.height + 8 + index * 8}" rx="${16 + index * 4}" fill="none" stroke="${color(boundary.color)}" stroke-width="2"/>`
+        ({ boundary, kind }, index) =>
+          `<rect${kind === 'contains' ? ' data-contains-members="true"' : ''} x="${node.x - 4 - index * 4}" y="${node.y - 4 - index * 4}" width="${node.width + 8 + index * 8}" height="${node.height + 8 + index * 8}" rx="${16 + index * 4}" fill="none" stroke="${color(boundary.color)}" stroke-width="2"${kind === 'contains' ? ' stroke-dasharray="2 5" stroke-linecap="round"' : ''}/>`
       )
       .join('');
     const type = node.kindLabel;
@@ -116,10 +113,15 @@ export function exportSvg(
       return `<g><rect x="${edge.label.x - width / 2}" y="${edge.label.y - 13}" width="${width}" height="${edge.labelLines.length * 15 + 8}" rx="5" fill="${theme.label}"/><text x="${edge.label.x}" y="${edge.label.y}" text-anchor="middle" font-size="11" fill="${theme.labelText}">${edge.labelLines.map((line, index) => `<tspan x="${edge.label.x}" dy="${index ? 15 : 0}">${xml(line)}</tspan>`).join('')}</text></g>`;
     })
     .join('');
-  const legendRows: { title: string; color: string; width: number }[][] = [[]];
+  const legendRows: { title: string; color: string; hollow?: boolean; width: number }[][] = [[]];
   for (let index = 0; index < legends.length; index++) {
     const title = truncateText(legends[index].title, 400, 14);
-    const item = { title, color: color(legends[index].color), width: textWidth(title, 14) + 42 };
+    const item = {
+      title,
+      color: color(legends[index].color),
+      hollow: containsOnly.has(legends[index].id),
+      width: textWidth(title, 14) + 42
+    };
     let row = legendRows[legendRows.length - 1];
     const rowWidth = (): number => row.reduce((sum, item) => sum + item.width, 0);
     if (rowWidth() + item.width > 1728 && legendRows.length === 1) {
@@ -145,7 +147,7 @@ export function exportSvg(
       let x = 100;
       return row
         .map((item) => {
-          const output = `<circle cx="${x}" cy="${952 + rowIndex * 28}" r="4" fill="${item.color}"/><text x="${x + 12}" y="${958 + rowIndex * 28}" font-size="14" fill="${theme.legendText}">${xml(item.title)}</text>`;
+          const output = `<circle cx="${x}" cy="${952 + rowIndex * 28}" r="4" fill="${item.hollow ? 'none' : item.color}"${item.hollow ? ` stroke="${item.color}" stroke-width="1.5"` : ''}/><text x="${x + 12}" y="${958 + rowIndex * 28}" font-size="14" fill="${theme.legendText}">${xml(item.title)}</text>`;
           x += item.width;
           return output;
         })
@@ -159,7 +161,7 @@ export function exportSvg(
     ? `FOCUS: ${truncateText(scope.title, 340, 13)} · ${diagram.outside?.length ?? 0} external connections outside view`
     : `${truncateText(model.id, 340, 13)} · Authored architecture`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title description" data-theme="${theme.id}" data-theme-appearance="${theme.appearance}">
-  <title id="title">${xml(options.title ?? model.title)}</title><desc id="description">${xml(options.subtitle ?? model.description)}. ${diagram.state.lens === 'trust' ? 'Colored outlines mark exact authored boundary members, not inferred trust envelopes.' : 'Architecture structure.'}</desc>
+  <title id="title">${xml(options.title ?? model.title)}</title><desc id="description">${xml(options.subtitle ?? model.description)}. ${diagram.state.lens === 'trust' ? 'Solid colored outlines mark exact authored boundary members; dotted outlines mark collapsed elements that contain members. Neither is an inferred trust envelope.' : 'Architecture structure.'}</desc>
   <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${theme.edge}"/></marker></defs>
   <rect width="1920" height="1080" fill="${theme.canvas}"/>
   <g font-family="Arial, Helvetica, sans-serif"><text x="96" y="58" font-size="12" letter-spacing="3" fill="${theme.eyebrow}">FRACTAL / SYSTEM MODEL</text>
@@ -173,5 +175,5 @@ export function exportSvg(
     .filter((node) => !node.expanded)
     .map(nodeSvg)
     .join('')}${edgeLabels}</g>
-  <g data-export-layer="legend">${legend}</g><path d="M96 1010H1824" stroke="${theme.divider}"/><text x="96" y="1044" font-size="13" fill="${theme.subtle}">${xml(diagram.state.lens === 'trust' ? 'AUTHORITY & TRUST · EXACT MEMBER OUTLINES' : 'STRUCTURE')} · ${diagram.state.proposed ? 'CURRENT + PROPOSED' : 'CURRENT SYSTEM'}</text><text x="1824" y="1044" text-anchor="end" font-size="13" fill="${theme.subtle}">${xml(scopeFooter)}</text></g></svg>`;
+  <g data-export-layer="legend">${legend}</g><path d="M96 1010H1824" stroke="${theme.divider}"/><text x="96" y="1044" font-size="13" fill="${theme.subtle}">${xml(trust ? `AUTHORITY & TRUST · EXACT MEMBER OUTLINES${trust.present.some((entry) => entry.contains.length) ? ' · DOTTED = CONTAINS MEMBERS' : ''}${trust.omitted.length ? ` · ${trust.omitted.length} ${trust.omitted.length === 1 ? 'BOUNDARY' : 'BOUNDARIES'} NOT IN VIEW` : ''}` : 'STRUCTURE')} · ${diagram.state.proposed ? 'CURRENT + PROPOSED' : 'CURRENT SYSTEM'}</text><text x="1824" y="1044" text-anchor="end" font-size="13" fill="${theme.subtle}">${xml(scopeFooter)}</text></g></svg>`;
 }

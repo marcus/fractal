@@ -9,6 +9,7 @@
   import { getTheme } from '$lib/core/themes';
   import { ARCHITECTURE_NODE_METRICS as METRICS } from '$lib/core/node-metrics';
   import { kindHint, kindIcon } from '$lib/core/kind-icons';
+  import { boundaryView } from '$lib/core/boundaries';
   import {
     REFERENCE_STUB_BODY_WIDTH,
     referenceStubDetail,
@@ -89,9 +90,18 @@
       source.elements.filter((element) => element.parent).map((element) => element.parent!)
     );
   }
-  function boundariesFor(model: string, id: string) {
-    return (models[model]?.boundaries ?? []).filter((boundary) => boundary.members.includes(id));
-  }
+  /** Boundary membership per project drawn under the trust lens, against what each draws. */
+  const boundaryViews = $derived(
+    new Map(
+      composed.projects.flatMap((entry) => {
+        const source = models[entry.model];
+        const lens = composed.state.projects.find((item) => item.model === entry.model)?.view.lens;
+        return entry.diagram && source && lens === 'trust'
+          ? [[entry.model, boundaryView(source, entry.diagram)] as const]
+          : [];
+      })
+    )
+  );
   function project(model: string) {
     return composed.projects.find((candidate) => candidate.model === model);
   }
@@ -661,11 +671,7 @@
               </g>
             {/each}
             {#each entry.diagram.nodes.filter( (node) => nodeMounted(entry.model, node, entry.content) ) as node (node.id)}
-              {@const memberships =
-                composed.state.projects.find((candidate) => candidate.model === entry.model)?.view
-                  .lens === 'trust'
-                  ? boundariesFor(entry.model, node.id)
-                  : []}
+              {@const memberships = boundaryViews.get(entry.model)?.byNode.get(node.id) ?? []}
               <g
                 data-interactive="node"
                 data-node-id={`${entry.model}:${node.id}`}
@@ -709,17 +715,24 @@
                   />
                 {/if}
                 {#each memberships as membership, index}<rect
-                    data-boundary-id={membership.id}
+                    data-boundary-id={membership.boundary.id}
+                    data-contains-members={membership.kind === 'contains' ? 'true' : undefined}
                     x={-4 - index * 4}
                     y={-4 - index * 4}
                     width={node.width + 8 + index * 8}
                     height={node.height + 8 + index * 8}
                     rx={16 + index * 4}
                     fill="none"
-                    stroke={membership.color}
-                    stroke-width="1.5"
-                    stroke-dasharray="4 5"
-                  />{/each}
+                    stroke={membership.boundary.color}
+                    stroke-width={membership.kind === 'contains' ? 2 : 1.5}
+                    stroke-dasharray={membership.kind === 'contains' ? '1.5 5' : '4 5'}
+                    stroke-linecap={membership.kind === 'contains' ? 'round' : undefined}
+                    ><title
+                      >{membership.kind === 'contains'
+                        ? `Contains members of ${membership.boundary.title}`
+                        : `Member of ${membership.boundary.title}`}</title
+                    ></rect
+                  >{/each}
                 {#each node.titleLines as line, index}<text
                     x={node.expanded ? METRICS.expandedContentX : METRICS.collapsed.contentX}
                     y={(node.expanded ? METRICS.expandedTitleY : METRICS.collapsed.titleY) +

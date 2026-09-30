@@ -26,6 +26,7 @@
   import { directionalNeighbor, type Direction } from '$lib/core/navigation';
   import { SHORTCUTS, shortcutLabel, shortcutKeys } from '$lib/core/shortcuts';
   import { inspectComponent } from '$lib/core/inspect';
+  import { boundaryView } from '$lib/core/boundaries';
   let {
     diagram,
     model,
@@ -510,9 +511,9 @@
     }
   });
 
-  function boundaryFor(id: string) {
-    return model.boundaries.filter((b) => b.members.includes(id));
-  }
+  const boundaries = $derived(
+    diagram?.state.lens === 'trust' ? boundaryView(model, diagram) : null
+  );
   function screenOrigin(x: number, y: number): Point {
     // Screen positions are measured from the centre of the fit region, like the camera.
     const box = svg.getBoundingClientRect();
@@ -715,7 +716,7 @@
         </g>
       {/each}
       {#each nodes as node (node.id)}
-        {@const memberships = diagram?.state.lens === 'trust' ? boundaryFor(node.id) : []}
+        {@const memberships = boundaries?.byNode.get(node.id) ?? []}
         <g
           data-interactive="node"
           data-node-id={node.id}
@@ -755,17 +756,24 @@
             />
           {/if}
           {#each memberships as membership, index}<rect
-              data-boundary-id={membership.id}
+              data-boundary-id={membership.boundary.id}
+              data-contains-members={membership.kind === 'contains' ? 'true' : undefined}
               x={-4 - index * 4}
               y={-4 - index * 4}
               width={node.width + 8 + index * 8}
               height={node.height + 8 + index * 8}
               rx={16 + index * 4}
               fill="none"
-              stroke={membership.color}
-              stroke-width="1.5"
-              stroke-dasharray="4 5"
-            />{/each}
+              stroke={membership.boundary.color}
+              stroke-width={membership.kind === 'contains' ? 2 : 1.5}
+              stroke-dasharray={membership.kind === 'contains' ? '1.5 5' : '4 5'}
+              stroke-linecap={membership.kind === 'contains' ? 'round' : undefined}
+              ><title
+                >{membership.kind === 'contains'
+                  ? `Contains members of ${membership.boundary.title}`
+                  : `Member of ${membership.boundary.title}`}</title
+              ></rect
+            >{/each}
           {#each node.titleLines as line, i}<text
               x={node.expanded ? METRICS.expandedContentX : METRICS.collapsed.contentX}
               y={(node.expanded ? METRICS.expandedTitleY : METRICS.collapsed.titleY) + i * 20}

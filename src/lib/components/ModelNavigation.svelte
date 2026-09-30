@@ -290,7 +290,7 @@
           class="view-toggle"
           use:tip={{
             title: 'Trust lens',
-            text: 'Outline each element with the boundaries it belongs to. A boundary is a claim about membership, not an enforced rule.'
+            text: 'Outline each element with the boundaries it belongs to; a dotted outline marks a collapsed element that contains members. A boundary is a claim about membership, not an enforced rule.'
           }}
           ><input
             type="checkbox"

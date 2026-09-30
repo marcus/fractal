@@ -1,12 +1,16 @@
 <script lang="ts">
   import { SHORTCUTS, shortcutLabel } from '$lib/core/shortcuts';
   import { Info, ArrowUpRight } from '@marcusv/roc/svelte/outline';
+  import { boundaryView } from '$lib/core/boundaries';
   import type { Model, Diagram } from '$lib/core/types';
   let {
     model,
     diagram,
     onoutside
   }: { model: Model; diagram: Diagram | null; onoutside: () => void } = $props();
+  const boundaries = $derived(
+    diagram?.state.lens === 'trust' ? boundaryView(model, diagram) : null
+  );
   let panel: HTMLDivElement;
   let button: HTMLButtonElement;
   let position = $state({ left: 0, bottom: 0 });
@@ -61,12 +65,29 @@
     {diagram?.nodes.length ?? 0} visible · {model.elements.length - (diagram?.nodes.length ?? 0)} outside
     this detail
   </p>
-  {#if diagram?.state.lens === 'trust'}<div class="key-boundaries">
-      {#each model.boundaries as boundary}<div>
-          <strong><i style={`background:${boundary.color}`}></i>{boundary.title}</strong>
-          <p>{boundary.description}</p>
+  {#if boundaries}<div class="key-boundaries">
+      {#each boundaries.present as entry}<div>
+          <strong
+            ><i class:contains={!entry.exact.length} style={`--boundary:${entry.boundary.color}`}
+            ></i>{entry.boundary.title}</strong
+          >
+          <p>{entry.boundary.description}</p>
+          {#if entry.contains.length}<p class="contains-note">
+              {entry.exact.length ? 'Also contains' : 'Contains'} members inside
+              {entry.contains.length === 1 ? 'a collapsed element' : 'collapsed elements'}.
+            </p>{/if}
         </div>{/each}
-      <small>Outlines show exact membership.</small>
+      {#if boundaries.omitted.length}<div class="omitted">
+          <strong>
+            {boundaries.omitted.length}
+            {boundaries.omitted.length === 1 ? 'boundary is' : 'boundaries are'} not in this view
+          </strong>
+          <p>{boundaries.omitted.map((boundary) => boundary.title).join(', ')}</p>
+        </div>{/if}
+      <small
+        >Solid outlines show exact membership; dotted outlines mark a collapsed element that
+        contains members.</small
+      >
     </div>{/if}
   {#if diagram?.outside?.length}<button
       class="button outside-link"

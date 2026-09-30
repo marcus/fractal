@@ -3,6 +3,7 @@ import type { LayoutEdge, LayoutNode, Model } from '../core/types';
 import { getTheme } from '../core/themes';
 import { ARCHITECTURE_NODE_METRICS as METRICS } from '../core/node-metrics';
 import { kindIcon } from '../core/kind-icons';
+import { boundaryView, type BoundaryView } from '../core/boundaries';
 import { textWidth, truncateText, wrapText } from '../core/projection';
 import { COMPOSITION_METRICS } from './place';
 import {
@@ -61,18 +62,14 @@ function nodeSvg(
   model: Model,
   project: ComposedProject,
   node: LayoutNode,
-  lens: 'structure' | 'trust',
+  trust: BoundaryView | null,
   theme: ReturnType<typeof getTheme>
 ): string {
   const accent = color(node.color);
-  const highlights =
-    lens === 'trust'
-      ? model.boundaries.filter((boundary) => boundary.members.includes(node.id))
-      : [];
-  const rings = highlights
+  const rings = (trust?.byNode.get(node.id) ?? [])
     .map(
-      (boundary, index) =>
-        `<rect x="${node.x - 4 - index * 4}" y="${node.y - 4 - index * 4}" width="${node.width + 8 + index * 8}" height="${node.height + 8 + index * 8}" rx="${16 + index * 4}" fill="none" stroke="${color(boundary.color)}" stroke-width="2"/>`
+      ({ boundary, kind }, index) =>
+        `<rect${kind === 'contains' ? ' data-contains-members="true"' : ''} x="${node.x - 4 - index * 4}" y="${node.y - 4 - index * 4}" width="${node.width + 8 + index * 8}" height="${node.height + 8 + index * 8}" rx="${16 + index * 4}" fill="none" stroke="${color(boundary.color)}" stroke-width="2"${kind === 'contains' ? ' stroke-dasharray="2 5" stroke-linecap="round"' : ''}/>`
     )
     .join('');
   const titleY = node.y + (node.expanded ? METRICS.expandedTitleY : METRICS.collapsed.titleY);
@@ -244,15 +241,16 @@ export function exportCompositionSvg(
       const lens =
         composed.state.projects.find((entry) => entry.model === project.model)?.view.lens ??
         'structure';
+      const trust = lens === 'trust' ? boundaryView(model, project.diagram) : null;
       const nodes = project.diagram.nodes;
       const groups = nodes
         .filter((node) => node.expanded)
         .sort((a, b) => a.depth - b.depth)
-        .map((node) => nodeSvg(model, project, node, lens, theme))
+        .map((node) => nodeSvg(model, project, node, trust, theme))
         .join('');
       const cards = nodes
         .filter((node) => !node.expanded)
-        .map((node) => nodeSvg(model, project, node, lens, theme))
+        .map((node) => nodeSvg(model, project, node, trust, theme))
         .join('');
       const edges = project.diagram.edges.map((edge) => edgeSvg(edge, theme)).join('');
       const edgeLabels = project.diagram.edges
