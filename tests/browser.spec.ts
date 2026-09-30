@@ -2679,6 +2679,8 @@ test('portable HTML linked composition works offline from a file', async ({ page
     await expect(page.locator('[data-project-frame]')).toHaveCount(2);
     await page.getByRole('button', { name: 'Expand Harbor host', exact: true }).click();
     await expect(page.locator('[data-node-id="host:cli"]')).toBeVisible({ timeout: 30000 });
+    // Expanding keeps the host anchored, so bring the plugin frame back into view first.
+    await page.keyboard.press('0');
     await page.getByRole('button', { name: 'Expand Beacon plugin', exact: true }).click();
     await expect(page.locator('[data-node-id="plugin:cli"]')).toBeVisible({ timeout: 30000 });
     await page
@@ -2927,6 +2929,8 @@ test('composition export dialog writes SVG, PNG and HTML in every theme', async 
       await expect(offline.locator('[data-project-frame]')).toHaveCount(2);
       await offline.getByRole('button', { name: 'Expand Harbor host', exact: true }).click();
       await expect(offline.locator('[data-node-id="host:cli"]')).toBeVisible({ timeout: 30000 });
+      // Expanding keeps the host anchored, so bring the plugin frame back into view first.
+      await offline.keyboard.press('0');
       await offline.getByRole('button', { name: 'Expand Beacon plugin', exact: true }).click();
       await expect(offline.locator('[data-node-id="plugin:cli"]')).toBeVisible({
         timeout: 30000
