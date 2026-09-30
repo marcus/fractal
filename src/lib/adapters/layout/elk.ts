@@ -203,9 +203,19 @@ export function elkLayeredEngine(options: ElkLayeredOptions): LayoutEngine {
         }
         return result;
       };
+      const hinted = graph.edges.some((edge) => edge.layoutFeedback);
       for (const edge of graph.edges) {
         const elkEdge: ElkExtendedEdge = {
           id: edge.id,
+          // Only a scene that hints pays for it, so unhinted layouts stay byte-identical. Greedy
+          // cycle breaking reverses the lowest-priority edge of a loop, so the hinted one goes.
+          ...(hinted
+            ? {
+                layoutOptions: {
+                  'elk.layered.priority.direction': edge.layoutFeedback ? '0' : '10'
+                }
+              }
+            : {}),
           sources: [`${edge.source}::out`],
           targets: [`${edge.target}::in`],
           labels: edge.labelLines.length

@@ -108,12 +108,27 @@ export function project(model: Model, state: ViewState): Projection {
     // Different claims stay distinct, even when they roll up to the same endpoints.
     const key = rolledPairs.has(pairKey(source, target, edge.status))
       ? JSON.stringify(['summary', source, target, edge.status])
-      : JSON.stringify([source, target, edge.kind, edge.status, edge.title, edge.description]);
+      : JSON.stringify([
+          source,
+          target,
+          edge.kind,
+          edge.status,
+          edge.title,
+          edge.description,
+          edge.layoutFeedback ?? false
+        ]);
     const existing = groups.get(key);
     if (existing) existing.underlying.push(edge.id);
     else groups.set(key, { ...edge, source, target, underlying: [edge.id] });
   }
-  const edges = [...groups.values()].map((edge): ProjectedEdge => {
+  const edges = [...groups.values()].map((group): ProjectedEdge => {
+    // A drawn edge is a feedback edge only when every claim it stands for is one.
+    const { layoutFeedback: _first, ...rest } = group;
+    const edge: ProjectedEdge = group.underlying.every(
+      (id) => relationshipsById.get(id)!.layoutFeedback
+    )
+      ? { ...rest, layoutFeedback: true }
+      : rest;
     if (
       !rolledPairs.has(pairKey(edge.source, edge.target, edge.status)) ||
       edge.underlying.length < 2

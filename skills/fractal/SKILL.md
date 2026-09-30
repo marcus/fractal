@@ -60,6 +60,10 @@ collapsed overview scene whose parents share many relationships: it draws one co
 per pair of collapsed cards instead of one labeled edge per claim, and the inspector still lists
 each claim. Keep the default `"detail"` wherever relationship titles matter.
 
+When a small cycle makes a scene read backwards, add `layoutFeedback 'true'` to the metadata of
+the relationship that closes the loop (the one that returns to an earlier stage) rather than
+reversing its authored direction. It changes placement only.
+
 ## Deepen an existing model
 
 For a drilldown request, follow the implemented responsibilities and collaboration paths behind

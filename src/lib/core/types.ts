@@ -56,6 +56,11 @@ export interface Relationship {
   kind: string;
   description: string;
   status: Status;
+  /**
+   * Authored layout hint: this relationship closes a cycle back to an earlier stage, so layout
+   * should reverse it rather than any other edge in the loop. It never changes the model's meaning.
+   */
+  layoutFeedback?: true;
 }
 export interface Boundary {
   id: string;

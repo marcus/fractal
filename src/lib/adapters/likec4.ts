@@ -34,6 +34,13 @@ function color(value: unknown, path: string): string {
     throw new Error(`${path} must be a six-digit hex color`);
   return value;
 }
+/** `layoutFeedback true` in relationship metadata; LikeC4 may hand the value back as a string. */
+function layoutFeedback(metadata: RecordValue, path: string): boolean {
+  const value = metadata.layoutFeedback;
+  if (value === undefined || value === false || value === 'false') return false;
+  if (value === true || value === 'true') return true;
+  throw new Error(`${path}.layoutFeedback must be true or false`);
+}
 function unique(values: string[], path: string): void {
   if (new Set(values).size !== values.length) throw new Error(`${path} contains duplicate IDs`);
 }
@@ -163,7 +170,10 @@ export async function parseModelWithOrigins(
         title: relation.title ?? '',
         kind: relation.kind ?? 'relates',
         description: relation.description.text ?? '',
-        status: status(relation.getMetadata() ?? {}, relation.tags, `relationship ${relation.id}`)
+        status: status(relation.getMetadata() ?? {}, relation.tags, `relationship ${relation.id}`),
+        ...(layoutFeedback(relation.getMetadata() ?? {}, `relationship ${relation.id}`)
+          ? { layoutFeedback: true as const }
+          : {})
       };
     });
     unique(

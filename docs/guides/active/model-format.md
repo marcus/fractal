@@ -66,12 +66,13 @@ relationship kind records its meaning independently of that wording.
 
 ### Fractal metadata
 
-| Property       | Applies to                 | Meaning                                                                     |
-| -------------- | -------------------------- | --------------------------------------------------------------------------- |
-| `uid`          | Elements and relationships | Explicit stable identity, independent of nesting and display title.         |
-| `fractalColor` | Elements                   | Optional six-digit hex color, such as `#739886`. Defaults to a muted green. |
-| `evidence`     | Elements                   | One path/string or an array of evidence references shown in the inspector.  |
-| `status`       | Elements and relationships | Optional `current` or `proposed`; tags are usually more convenient.         |
+| Property         | Applies to                 | Meaning                                                                                                                                                                                           |
+| ---------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `uid`            | Elements and relationships | Explicit stable identity, independent of nesting and display title.                                                                                                                               |
+| `fractalColor`   | Elements                   | Optional six-digit hex color, such as `#739886`. Defaults to a muted green.                                                                                                                       |
+| `evidence`       | Elements                   | One path/string or an array of evidence references shown in the inspector.                                                                                                                        |
+| `status`         | Elements and relationships | Optional `current` or `proposed`; tags are usually more convenient.                                                                                                                               |
+| `layoutFeedback` | Relationships              | Set to `true` on the relationship that closes a cycle back to an earlier stage. Layout reverses that edge instead of another one in the loop, so a scene keeps reading in its authored direction. |
 
 `color` is a reserved word in LikeC4 and is not accepted as a bare metadata key;
 use `fractalColor`. Other LikeC4 metadata may remain in the authored file, but the
@@ -88,6 +89,21 @@ source names, and relationship IDs to LikeC4's generated IDs. Those fallback IDs
 can change when the model is reorganized or edited. Use explicit `uid` values for
 anything referenced by a boundary, scene or long-lived external link. All bundled
 examples use explicit identities.
+
+### Cycles and reading order
+
+A small cycle in the relationships can flip a scene: with `filter` feeding `options`, then `llm`,
+then `rescope`, and `rescope` feeding back to `filter`, the layout may push `filter` to the far
+side of `llm` and make a left-to-right scene read backwards. Mark the relationship that closes the
+loop, and layout treats it as the one to reverse:
+
+```likec4
+rescope .calls filter 'Re-filters' { metadata { uid 'rescope-filter' layoutFeedback 'true' } }
+```
+
+The hint only steers placement. The relationship keeps its direction, title and claim everywhere
+else, and a model with no hints lays out exactly as before. Mark one edge per loop; a drawn edge
+that merges several claims counts as feedback only when every claim behind it is marked.
 
 ### Current and proposed status
 
