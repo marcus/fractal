@@ -19,7 +19,12 @@ export function fromCaller(path: string, env: NodeJS.ProcessEnv = process.env): 
  * `FRACTAL_CATALOG=catalog.json bin/fractal ...` means the same file `--catalog catalog.json` does.
  */
 export function anchorPathEnv(env: NodeJS.ProcessEnv = process.env): void {
-  for (const name of ['FRACTAL_CATALOG', 'FRACTAL_MODELS_DIR', 'XDG_CONFIG_HOME']) {
+  for (const name of [
+    'FRACTAL_CATALOG',
+    'FRACTAL_MODELS_DIR',
+    'FRACTAL_CHROMIUM_PATH',
+    'XDG_CONFIG_HOME'
+  ]) {
     const value = env[name];
     if (value && !value.startsWith('~')) env[name] = fromCaller(value, env);
   }

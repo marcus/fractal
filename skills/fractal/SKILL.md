@@ -164,8 +164,11 @@ tiny text, node containment, crossings, spacing, and the story's reading order. 
 scene when the result is not presentation-ready, then export and inspect again.
 
 Relative `--directory` and `--output` paths resolve against the directory you run `bin/fractal`
-from, not the Fractal checkout. PNG export requires Playwright Chromium; install it from the Fractal
-repository only if it is missing.
+from, not the Fractal checkout. PNG export requires a browser. When none is available it fails with
+`{"error":"png-export-needs-chromium","fix":"npx playwright install chromium-headless-shell"}`;
+run the fix from the Fractal repository only if it is missing, or reuse a browser that is already on
+the machine with `--chromium /path/to/chrome` (or `FRACTAL_CHROMIUM_PATH`). Without either, export
+SVG and rasterize it: `rsvg-convert -w 3840 scene.svg -o scene.png`.
 
 ## Register and open an interactive model
 

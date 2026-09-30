@@ -12,9 +12,14 @@ and keeps stdout free of the npm banner; `service` is routed to
 `scripts/service.mjs`, everything else to `scripts/fractal.ts`. Errors are JSON on stderr with
 a nonzero exit.
 
-Relative `--directory`, `--output`, `--catalog` and `--composition-state` paths
-(and relative `FRACTAL_CATALOG` and `FRACTAL_MODELS_DIR` values)
+Relative `--directory`, `--output`, `--catalog`, `--composition-state` and `--chromium` paths
+(and relative `FRACTAL_CATALOG`, `FRACTAL_MODELS_DIR` and `FRACTAL_CHROMIUM_PATH` values)
 resolve against the directory the command was run from, not the Fractal checkout.
+
+PNG export needs a browser. Without one it fails with a short structured error, for example
+`{"error":"png-export-needs-chromium","fix":"npx playwright install chromium-headless-shell"}`.
+Point `--chromium PATH` (or `FRACTAL_CHROMIUM_PATH`) at an existing Chrome or Chromium instead,
+or export SVG and rasterize it: `rsvg-convert -w 3840 scene.svg -o scene.png`.
 
 ## fractal
 
@@ -72,6 +77,14 @@ Options:
   --query TEXT                   Search titles, identifiers and descriptions
   --format svg|png|html          Export format (HTML includes the full model, or a linked set with --include; a root owning links.json exports a linked document with a root-only included set by default; PNG needs Chromium)
   --include ID,ID                HTML export: embed these linked projects with the root
+  --chromium PATH                PNG export: use this Chrome/Chromium instead of Playwright's (or set FRACTAL_CHROMIUM_PATH)
+  --output PATH                  Write result to a file (relative paths resolve against the current directory)
+
+Examples:
+  npm run cli -- projects --json
+  npm run cli -- links --model sidecar --json
+  npm run cli -- validate --model delivery --json
+  npm run cli -- layout --model host --composition plugins
   npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg
 ```
 
