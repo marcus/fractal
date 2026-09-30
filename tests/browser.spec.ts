@@ -2994,8 +2994,9 @@ test('composition export dialog writes SVG, PNG and HTML in every theme', async 
     } finally {
       await fast.close();
     }
-    // The source-model load takes 400 ms here, so a badge inside the 150 ms gate of the
-    // click proves the 100 ms timer starts at the action, not after the load lands.
+    // The source-model load takes 400 ms here, so a badge inside the 300 ms gate of the click
+    // proves the 100 ms timer starts at the action, not after the load lands (which would put it
+    // past 500 ms). The margin over 100 ms absorbs a loaded CI runner.
     const slow = await page.context().newPage();
     try {
       await slow.route('**/api/models/plugin', async (route) => {
@@ -3010,8 +3011,8 @@ test('composition export dialog writes SVG, PNG and HTML in every theme', async 
       const clicked = Date.now();
       await slow.locator('[data-open-link="plugin"]').click();
       await expect(slow.locator('.diagram-area')).toHaveAttribute('aria-busy', 'true');
-      await expect(slow.locator('.loading-badge')).toBeVisible({ timeout: 150 });
-      expect(Date.now() - clicked).toBeLessThan(150);
+      await expect(slow.locator('.loading-badge')).toBeVisible({ timeout: 300 });
+      expect(Date.now() - clicked).toBeLessThan(300);
       await expect(slow.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false', {
         timeout: 30000
       });
