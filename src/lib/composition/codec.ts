@@ -70,6 +70,7 @@ type Compact = Record<string, unknown>;
 function compactView(view: ProjectViewState): Compact {
   return {
     e: [...view.expanded],
+    ...(view.hide ? { h: [...view.hide] } : {}),
     p: view.proposed,
     l: view.lens,
     ...(view.scope === undefined ? {} : { c: view.scope })
@@ -148,13 +149,14 @@ function knownKeys(value: unknown, allowed: string[], path: string): Record<stri
 }
 
 function expandView(value: unknown, path: string): Record<string, unknown> {
-  const compact = knownKeys(value, ['e', 'p', 'l', 'c'], path);
+  const compact = knownKeys(value, ['e', 'p', 'l', 'c', 'h'], path);
   const view: Record<string, unknown> = {
     expanded: compact.e,
     proposed: compact.p,
     lens: compact.l
   };
   if (compact.c !== undefined) view.scope = compact.c;
+  if (compact.h !== undefined) view.hide = compact.h;
   return view;
 }
 

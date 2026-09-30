@@ -183,6 +183,7 @@ Each scene stores a named perspective on the same model:
 - `theme`: optional `grove`, `graphite`, or `midnight`. CLI/export defaults to Grove; the studio
   retains its selected theme when a scene omits this field. Explicit scene themes override it.
 - `scope`: optional element ID that anchors a focused view. Omit it for the whole model.
+- `hide`: optional array of exact element IDs to omit, including their descendants. Use it to tell a story across sibling subsystems without drawing every sibling. Unknown or duplicate IDs fail validation. Relationships crossing between visible and omitted elements remain in `outside` and the footer count; relationships entirely outside the view are not counted. Hidden endpoints do not roll up to visible ancestors or create ports unless `context: "ports"` is explicit. Search reveals a hidden identity by removing the omissions along its ancestry; other omissions remain.
 - `layout`: optional layout engine id, from `bin/fractal engines --json`. Omit it for the default
   left-to-right layered layout (`elk-layered`); `elk-layered-down` lays the same view out top to
   bottom, which suits portrait pages, tall screens and README embeds. An unknown id fails

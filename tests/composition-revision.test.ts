@@ -174,3 +174,50 @@ test('estimateBytes is a deterministic positive approximation that grows with co
   assert.ok(estimateBytes(composed) > estimateBytes(diagram));
   assert.equal(estimateBytes(composed), estimateBytes(structuredClone(composed)));
 });
+
+test('missing hidden identities are diagnosed and removed during composition revision repair', async () => {
+  const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
+  const state = openState();
+  state.projects[0].view.hide = ['removed-element'];
+  const composed = await compose(staticResolver([host, plugin]), state);
+  assert.ok(
+    composed.diagnostics.some(
+      (item) =>
+        item.path === 'composition.projects[0].view.hide' && item.code === 'endpoint_missing'
+    )
+  );
+  assert.deepEqual(
+    composed.projects.find((project) => project.model === 'host')?.diagram?.state.hide,
+    []
+  );
+  assert.ok(composed.projects.find((project) => project.model === 'host')?.diagram);
+});
+
+test('a hidden bridge port reveals its endpoint without clearing unrelated omissions', async () => {
+  const { revealProjectElement } = await import('../src/lib/composition/state');
+  const host = await snapshot('host');
+  const target = host.model.elements.find((element) => element.parent !== null)!;
+  const other = host.model.elements.find(
+    (element) => element.id !== target.id && element.id !== target.parent
+  )!;
+  const state = openState();
+  state.projects[0].view.hide = [target.id, other.id];
+  const revealed = revealProjectElement(state, 'host', target.id, host);
+  assert.deepEqual(revealed.projects[0].view.hide, [other.id]);
+  assert.equal(revealed.projects[0].view.scope, target.id);
+});
+
+test('composition permalinks reveal selected hidden elements through the shared projection', async () => {
+  const [host, plugin] = await Promise.all([snapshot('host'), snapshot('plugin')]);
+  const target = host.model.elements.find((element) => element.parent !== null)!;
+  const state = openState();
+  state.projects[0].view.hide = [target.id];
+  state.selection = { kind: 'element', model: 'host', element: target.id };
+  const composed = await compose(staticResolver([host, plugin]), state);
+  assert.deepEqual(composed.state.projects[0].view.hide, []);
+  assert.ok(
+    composed.projects
+      .find((project) => project.model === 'host')
+      ?.diagram?.nodes.some((node) => node.id === target.id)
+  );
+});

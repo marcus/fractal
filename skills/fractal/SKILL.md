@@ -65,6 +65,8 @@ port on the edge of the view, so a subsystem scene still shows where its inputs 
 it calls. Set `"context": "none"` for a tight focus on the inside alone (`--context none` on the
 CLI). Ports are not model elements and the `outside` inventory is unchanged.
 
+Use `"hide": ["stable-element-id"]` to omit unrelated elements and their descendants while retaining a crossing story between sibling subsystems. Crossing claims stay in the `outside` inventory and footer, without ports for hidden endpoints unless you explicitly set `"context": "ports"`. The CLI accepts `--hide ID,ID` (or `--hide ""` to clear a scene's omissions). Search still finds and reveals hidden identities.
+
 When a small cycle makes a scene read backwards, add `layoutFeedback 'true'` to the metadata of
 the relationship that closes the loop (the one that returns to an earlier stage) rather than
 reversing its authored direction. It changes placement only.

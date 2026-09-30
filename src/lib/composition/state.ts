@@ -1,4 +1,5 @@
 import type { LayoutEngineId, Model, Scene, ThemeId } from '../core/types';
+import { revealSearchResult } from '../core/search';
 import { parseCompositionState } from './parse';
 import type { CompositionState, ProjectViewState, QualifiedSelection } from './types';
 import type { ProjectSnapshot } from './snapshot';
@@ -14,6 +15,7 @@ const EMPTY_VIEW: ProjectViewState = { expanded: [], proposed: false, lens: 'str
 function viewOf(scene: Scene): ProjectViewState {
   return {
     expanded: [...scene.expanded],
+    ...(scene.hide ? { hide: [...scene.hide] } : {}),
     proposed: scene.proposed,
     lens: scene.lens,
     ...(scene.scope === undefined ? {} : { scope: scene.scope })
@@ -193,4 +195,30 @@ export function setProjectScope(
 /** Focus one participating project, or clear the focus. */
 export function focusProject(state: CompositionState, model: string | undefined): CompositionState {
   return parseCompositionState({ ...state, focusedProject: model });
+}
+
+/** Reveal a perimeter endpoint, removing only omissions that hide its ancestry. */
+export function revealProjectElement(
+  state: CompositionState,
+  model: string,
+  element: string,
+  snapshot: ProjectSnapshot
+): CompositionState {
+  if (snapshot.id !== model) throw new Error(`Snapshot ${snapshot.id} does not describe ${model}`);
+  const entry = state.projects.find((project) => project.model === model);
+  if (!entry) throw new Error(`Unknown project: ${model}`);
+  const revealed = revealSearchResult(snapshot.model, entry.view, {
+    type: 'element',
+    id: element,
+    title: '',
+    description: ''
+  });
+  return parseCompositionState({
+    ...state,
+    projects: state.projects.map((project) =>
+      project.model === model
+        ? { ...project, mode: 'open', view: { ...revealed.view, scope: element } }
+        : project
+    )
+  });
 }

@@ -174,9 +174,17 @@ export function exportSvg(
   const scope = diagram.state.scope
     ? model.elements.find((element) => element.id === diagram.state.scope)
     : undefined;
+  const outsideCount = diagram.outside?.length ?? 0;
+  const portIds = new Set(diagram.nodes.filter((node) => node.port).map((node) => node.id));
+  const drawnOutside = diagram.edges
+    .filter((edge) => portIds.has(edge.source) || portIds.has(edge.target))
+    .reduce((count, edge) => count + edge.underlying.length, 0);
+  const outsideLabel = `${outsideCount} external connections ${drawnOutside === outsideCount && outsideCount > 0 ? 'drawn as outside ports' : drawnOutside > 0 ? `outside view (${drawnOutside} drawn as ports)` : 'outside view'}`;
   const scopeFooter = scope
-    ? `FOCUS: ${truncateText(scope.title, 340, 13)} · ${diagram.outside?.length ?? 0} external connections ${diagram.nodes.some((node) => node.port) ? 'drawn as outside ports' : 'outside view'}`
-    : `${truncateText(model.id, 340, 13)} · Authored architecture`;
+    ? `FOCUS: ${truncateText(scope.title, 340, 13)} · ${outsideLabel}`
+    : diagram.state.hide?.length
+      ? outsideLabel
+      : `${truncateText(model.id, 340, 13)} · Authored architecture`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title description" data-theme="${theme.id}" data-theme-appearance="${theme.appearance}">
   <title id="title">${xml(options.title ?? model.title)}</title><desc id="description">${xml(options.subtitle ?? model.description)}. ${diagram.state.lens === 'trust' ? 'Solid colored outlines mark exact authored boundary members; dotted outlines mark collapsed elements that contain members. Neither is an inferred trust envelope.' : 'Architecture structure.'}</desc>
   <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${theme.edge}"/></marker></defs>

@@ -70,6 +70,7 @@ function currentView(
   const entry = state.projects.find((project) => project.model === owner);
   return {
     expanded: entry ? [...entry.view.expanded] : [],
+    ...(entry?.view.hide ? { hide: [...entry.view.hide] } : {}),
     proposed: entry?.view.proposed ?? false,
     lens: entry?.view.lens ?? 'structure',
     ...(entry?.view.scope === undefined ? {} : { scope: entry.view.scope }),

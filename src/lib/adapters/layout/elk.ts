@@ -211,6 +211,7 @@ export function elkLayeredEngine(options: ElkLayeredOptions): LayoutEngine {
         return result;
       };
       const hinted = graph.edges.some((edge) => edge.layoutFeedback);
+      const outsidePorts = new Set(graph.nodes.filter((node) => node.port).map((node) => node.id));
       for (const edge of graph.edges) {
         const elkEdge: ElkExtendedEdge = {
           id: edge.id,
@@ -231,7 +232,15 @@ export function elkLayeredEngine(options: ElkLayeredOptions): LayoutEngine {
                   text: edge.labelLines.join('\n'),
                   width: edge.labelWidth,
                   height: edge.labelHeight,
-                  layoutOptions: { 'elk.edgeLabels.placement': 'CENTER' }
+                  layoutOptions: {
+                    'elk.edgeLabels.placement': 'CENTER',
+                    // Side-placed labels fall between the tightly packed parallel routes of
+                    // outside ports. Reserve each label on its own route; both renderers already
+                    // draw a solid label halo that keeps the text clear of the line beneath it.
+                    ...(outsidePorts.has(edge.source) || outsidePorts.has(edge.target)
+                      ? { 'elk.edgeLabels.inline': 'true' }
+                      : {})
+                  }
                 }
               ]
             : []
@@ -288,6 +297,29 @@ export function elkLayeredEngine(options: ElkLayeredOptions): LayoutEngine {
             ])
             .map((point) => ({ x: point.x + x, y: point.y + y }));
           const label = edge.labels?.[0];
+          const portEdge = endpoints.get(edge.id)?.some((id) => outsidePorts.has(id));
+          if (down && portEdge && label) {
+            // ELK occasionally shortcuts a downward hierarchical route diagonally to the far
+            // side of its label. Turn above the reserved label band, then enter it vertically.
+            // The ordinary corner repair otherwise follows the shared channel straight past
+            // this edge's label (and through a different edge's label).
+            const labelTop = y + (label.y ?? 0);
+            const labelBottom = labelTop + (label.height ?? 0);
+            const labelX = x + (label.x ?? 0) + (label.width ?? 0) / 2;
+            for (let i = points.length - 1; i > 0; i--) {
+              const before = points[i - 1];
+              const after = points[i];
+              if (
+                Math.abs(before.x - after.x) > 0.5 &&
+                before.y < labelTop &&
+                after.y > labelBottom &&
+                Math.abs(after.x - labelX) < 1
+              ) {
+                const turnY = labelTop - 18;
+                points.splice(i, 0, { x: before.x, y: turnY }, { x: after.x, y: turnY });
+              }
+            }
+          }
           placement.edges[edge.id] = {
             // A route leaves its source on the side this engine's ports sit on, so that is the
             // direction a repaired corner continues, and every other collapsed card is something

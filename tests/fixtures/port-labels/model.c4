@@ -1,0 +1,35 @@
+specification {
+  element system
+  element component
+  relationship calls
+}
+model {
+  bakery = system 'Bakery' {
+    metadata { uid 'bakery' }
+    floor = system 'Production line' {
+      metadata { uid 'bakery.floor' }
+      mix = component 'Mix' { metadata { uid 'bakery.floor.mix' } }
+      proof = component 'Proof' { metadata { uid 'bakery.floor.proof' } }
+      bake = component 'Bake' { metadata { uid 'bakery.floor.bake' } }
+      cool = component 'Cool' { metadata { uid 'bakery.floor.cool' } }
+      pack = component 'Pack' { metadata { uid 'bakery.floor.pack' } }
+      mix .calls proof 'Dough' { metadata { uid 'mix-proof' } }
+      proof .calls bake 'Risen dough' { metadata { uid 'proof-bake' } }
+      bake .calls cool 'Loaves' { metadata { uid 'bake-cool' } }
+      cool .calls pack 'Cool loaves' { metadata { uid 'cool-pack' } }
+    }
+  }
+  pantry = system 'Pantry' { metadata { uid 'pantry' } }
+  ledger = system 'Ledger' { metadata { uid 'ledger' } }
+  sensors = system 'Sensors' { metadata { uid 'sensors' } }
+  bakery.floor.mix .calls pantry 'Draws flour and water' { metadata { uid 'mix-pantry' } }
+  bakery.floor.mix .calls ledger 'Records batch start' { metadata { uid 'mix-ledger' } }
+  bakery.floor.proof .calls sensors 'Reads humidity' { metadata { uid 'proof-sensors' } }
+  bakery.floor.proof .calls ledger 'Records proof time' { metadata { uid 'proof-ledger' } }
+  bakery.floor.bake .calls sensors 'Reads oven temperature' { metadata { uid 'bake-sensors' } }
+  bakery.floor.bake .calls ledger 'Records bake time' { metadata { uid 'bake-ledger' } }
+  bakery.floor.cool .calls sensors 'Reads core temperature' { metadata { uid 'cool-sensors' } }
+  bakery.floor.pack .calls pantry 'Draws bags' { metadata { uid 'pack-pantry' } }
+  bakery.floor.pack .calls ledger 'Records batch end' { metadata { uid 'pack-ledger' } }
+}
+views { view index { include * } }

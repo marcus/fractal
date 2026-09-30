@@ -258,3 +258,18 @@ test('reveal rejects stale result identities', () => {
     /Unknown relationship/
   );
 });
+
+test('search reveals a hidden descendant while preserving unrelated omissions', () => {
+  const result = revealSearchResult(
+    model,
+    {
+      expanded: [],
+      proposed: false,
+      lens: 'structure',
+      hide: ['payments.region', 'payments.ledger']
+    },
+    { type: 'element', id: 'payments.region.worker', title: '', description: '' }
+  );
+  assert.deepEqual(result.view.hide, ['payments.ledger']);
+  assert.ok(result.view.expanded.includes('payments.region'));
+});

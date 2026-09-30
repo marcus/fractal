@@ -17,7 +17,8 @@
     openProject,
     setProjectMode,
     setProjectScene,
-    setProjectScope
+    setProjectScope,
+    revealProjectElement
   } from '../composition/state';
   import type {
     ComposedDiagram,
@@ -368,7 +369,12 @@
   }
 
   function revealPort(port: ComposedPort) {
-    void render(setProjectScope(live, port.reveal.model, port.reveal.element), port.reveal.model);
+    const snapshot = snapshotMap.get(port.reveal.model);
+    if (!snapshot) return;
+    void render(
+      revealProjectElement(live, port.reveal.model, port.reveal.element, snapshot),
+      port.reveal.model
+    );
   }
 
   function toggleFlow() {

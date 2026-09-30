@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
+  import { rememberSessionView, sessionView } from '$lib/ui/session-view';
   import DiagramCanvas from '$lib/components/DiagramCanvas.svelte';
   import CompositionCanvas, { type ProjectAction } from '$lib/components/CompositionCanvas.svelte';
   import type { ProjectLinks } from '$lib/composition/types';
@@ -9,6 +10,7 @@
   import { resolveShortcut, shortcutLabel, SHORTCUTS, type CommandId } from '$lib/core/shortcuts';
   import { tip } from '$lib/ui/tooltip.svelte';
   import { revealSearchResult, type SearchResult } from '$lib/core/search';
+  import { revealHiddenSelection } from '$lib/core/selection';
   import DiagramKey from '$lib/components/DiagramKey.svelte';
   import InspectorPanel from '$lib/components/InspectorPanel.svelte';
   import ThemeMenu from '$lib/components/ThemeMenu.svelte';
@@ -57,7 +59,8 @@
     rootState,
     setProjectMode,
     setProjectScene,
-    setProjectScope
+    setProjectScope,
+    revealProjectElement
   } from '$lib/composition/state';
   import {
     COMPOSITION_URL_PARAM,
@@ -531,6 +534,8 @@
     } else {
       url.searchParams.delete(COMPOSITION_URL_PARAM);
       url.searchParams.set('view', JSON.stringify(view));
+      if (sceneAnchor)
+        rememberSessionView('architecture', modelId, sceneAnchor, revision, { view, sceneId });
       if (sceneId) url.searchParams.set('scene', sceneId);
       else url.searchParams.delete('scene');
       // The selection rides beside the view, so a refresh or a copied link reopens the inspector
@@ -646,19 +651,32 @@
       revision = result.revision;
       modelId = id;
       const scene = model?.scenes.find((s) => s.id === requestedScene) || model!.scenes[0];
+      const navigationTheme = view.theme;
+      const remembered = initialView
+        ? null
+        : sessionView<{ view: ViewState; sceneId: string | null }>(
+            'architecture',
+            id,
+            scene.id,
+            revision
+          );
       sceneId = initialView && !requestedScene ? null : scene.id;
       sceneAnchor = scene.id;
-      view = initialView ?? {
-        expanded: [...scene.expanded],
-        proposed: scene.proposed,
-        lens: scene.lens,
-        theme: initialTheme ?? scene.theme ?? view.theme,
-        ...(scene.scope ? { scope: scene.scope } : {}),
-        ...(scene.layout ? { layout: scene.layout } : {}),
-        ...sceneOptions(scene)
-      };
+      view = initialView ??
+        remembered?.view ?? {
+          expanded: [...scene.expanded],
+          proposed: scene.proposed,
+          lens: scene.lens,
+          theme: initialTheme ?? scene.theme ?? view.theme,
+          ...(scene.scope ? { scope: scene.scope } : {}),
+          ...(scene.layout ? { layout: scene.layout } : {}),
+          ...sceneOptions(scene)
+        };
+      if (!initialView && remembered)
+        view = { ...view, theme: initialTheme ?? scene.theme ?? navigationTheme };
       initialView = null;
       initialTheme = null;
+      if (initialSelection && model) view = revealHiddenSelection(model, view, initialSelection);
       const rendered = await renderView();
       if (rendered === requestId) {
         rememberLastProject(id);
@@ -1095,7 +1113,9 @@
     const entry = composition.state.projects.find((project) => project.model === port.reveal.model);
     let state = composition.state;
     if (entry?.mode === 'collapsed') state = setProjectMode(state, port.reveal.model, 'open');
-    state = setProjectScope(state, port.reveal.model, port.reveal.element);
+    const snapshot = snapshotFor(port.reveal.model);
+    if (!snapshot) return;
+    state = revealProjectElement(state, port.reveal.model, port.reveal.element, snapshot);
     compositionSelection = {
       kind: 'element',
       model: port.reveal.model,
@@ -1205,15 +1225,24 @@
     initialView = null;
     changeModel(id);
   }
-  function chooseScene(id: string) {
+  function chooseScene(id: string, restore = true) {
     const scene = model?.scenes.find((s) => s.id === id);
     if (!scene) return;
     if (composition) {
       closeComposition();
     }
+    const navigationTheme = view.theme;
+    const remembered = restore
+      ? sessionView<{ view: ViewState; sceneId: string | null }>(
+          'architecture',
+          modelId,
+          id,
+          revision
+        )
+      : null;
     sceneId = scene.id;
     sceneAnchor = scene.id;
-    view = {
+    view = remembered?.view ?? {
       expanded: [...scene.expanded],
       proposed: scene.proposed,
       lens: scene.lens,
@@ -1222,6 +1251,7 @@
       ...(scene.layout ? { layout: scene.layout } : {}),
       ...sceneOptions(scene)
     };
+    if (remembered) view = { ...view, theme: scene.theme ?? navigationTheme };
     menuOpen = false;
     renderView();
   }
@@ -1326,7 +1356,7 @@
   function setContext(context: 'ports' | 'none') {
     if (composition || !diagram || busy) return;
     const { context: _previous, ...rest } = view;
-    view = context === 'none' ? { ...rest, context } : rest;
+    view = context === 'none' || view.hide?.length ? { ...rest, context } : rest;
     sceneId = null;
     renderView();
   }
@@ -1493,6 +1523,7 @@
           expanded: [...(entry?.view.expanded ?? [])],
           proposed: entry?.view.proposed ?? false,
           lens: entry?.view.lens ?? 'structure',
+          ...(entry?.view.hide ? { hide: entry.view.hide } : {}),
           ...(entry?.view.scope === undefined ? {} : { scope: entry.view.scope }),
           theme: composition.state.theme,
           layout: composition.state.layout
@@ -1509,6 +1540,7 @@
                   ...project.view,
                   expanded: [...revealed.view.expanded],
                   proposed: revealed.view.proposed,
+                  ...(revealed.view.hide ? { hide: revealed.view.hide } : {}),
                   ...(revealed.view.scope === undefined
                     ? { scope: undefined }
                     : { scope: revealed.view.scope })
@@ -2057,7 +2089,7 @@
       <header class="appbar">
         {#if breadcrumbScene}
           <nav class="appbar-breadcrumb" aria-label="Current location">
-            <button class="crumb-scene" onclick={() => chooseScene(breadcrumbScene.id)}
+            <button class="crumb-scene" onclick={() => chooseScene(breadcrumbScene.id, false)}
               >{breadcrumbScene.title}</button
             >
             {#each scopePath as item, index}
@@ -2157,7 +2189,9 @@
         onlens={lens}
         edges={view.edges ?? 'detail'}
         onedges={composition ? undefined : setEdges}
-        context={view.scope ? (view.context ?? 'ports') : undefined}
+        context={view.scope || view.hide?.length
+          ? (view.context ?? (view.scope ? 'ports' : 'none'))
+          : undefined}
         oncontext={composition ? undefined : setContext}
         onproposed={(proposed) => {
           if (composition) {
@@ -2289,7 +2323,7 @@
             onclick={() => {
               initialView = null;
               if (catalogError || !model) openNavigation('projects');
-              else chooseScene(model.scenes[0]?.id ?? 'overview');
+              else chooseScene(model.scenes[0]?.id ?? 'overview', false);
             }}>{catalogError || !model ? 'Choose project' : 'Reset view'}</button
           >
         </div>{/if}

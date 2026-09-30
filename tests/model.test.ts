@@ -246,3 +246,16 @@ test('scene edges and context fields are validated and carried', async () => {
   await assert.rejects(parseModel(source, withScene({ edges: 'all' })), /edges must be/);
   await assert.rejects(parseModel(source, withScene({ context: 'some' })), /context must be/);
 });
+
+test('scene hide accepts stable identities and rejects unknown or duplicate omissions', async () => {
+  const config = companion();
+  const withHide = (hide: unknown) => ({ ...config, scenes: [{ ...config.scenes[0], hide }] });
+  const parsed = await parseModel(source, withHide(['stable-api']));
+  assert.deepEqual(parsed.scenes[0].hide, ['stable-api']);
+  await assert.rejects(
+    parseModel(source, withHide(['system.api'])),
+    /hide references unknown element/
+  );
+  await assert.rejects(parseModel(source, withHide(['stable-api', 'stable-api'])), /duplicate/i);
+  await assert.rejects(parseModel(source, withHide('stable-api')), /array/i);
+});

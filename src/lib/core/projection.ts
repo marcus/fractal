@@ -24,7 +24,8 @@ export function project(model: Model, state: ViewState): Projection {
   if (
     !['structure', 'trust'].includes(state.lens) ||
     typeof state.proposed !== 'boolean' ||
-    !Array.isArray(state.expanded)
+    !Array.isArray(state.expanded) ||
+    (state.hide !== undefined && !Array.isArray(state.hide))
   ) {
     throw new Error('Invalid view state');
   }
@@ -45,6 +46,8 @@ export function project(model: Model, state: ViewState): Projection {
   }
   for (const id of state.expanded)
     if (!byId.has(id)) throw new Error(`Unknown expanded element: ${id}`);
+  for (const id of state.hide ?? [])
+    if (!byId.has(id)) throw new Error(`Unknown hidden element: ${id}`);
   if (state.scope !== undefined && !byId.has(state.scope))
     throw new Error(`Unknown scope: ${state.scope}`);
   const relationshipIds = new Set<string>();
@@ -67,13 +70,18 @@ export function project(model: Model, state: ViewState): Projection {
   };
   if (state.scope !== undefined && !eligible(byId.get(state.scope)!))
     throw new Error(`Scope is hidden by proposal filter: ${state.scope}`);
+  const hidden = new Set(state.hide ?? []);
+  const hiddenRoot = (element: Element): string | null =>
+    (element.parent !== null ? hiddenRoot(byId.get(element.parent)!) : null) ??
+    (hidden.has(element.id) ? element.id : null);
   const inScope = (element: Element): boolean =>
     state.scope === undefined ||
     element.id === state.scope ||
     (element.parent !== null && inScope(byId.get(element.parent)!));
+  const included = (element: Element): boolean => inScope(element) && hiddenRoot(element) === null;
   const visible = (element: Element): boolean =>
     eligible(element) &&
-    inScope(element) &&
+    included(element) &&
     (element.id === state.scope ||
       element.parent === null ||
       (expanded.has(element.parent) && visible(byId.get(element.parent)!)));
@@ -84,7 +92,7 @@ export function project(model: Model, state: ViewState): Projection {
   const visibleIds = new Set(elements.map((element) => element.id));
   const representative = (id: string): string | null => {
     const element = byId.get(id)!;
-    if (!eligible(element) || !inScope(element)) return null;
+    if (!eligible(element) || !included(element)) return null;
     if (visibleIds.has(id)) return id;
     return element.parent === null ? null : representative(element.parent);
   };
@@ -115,13 +123,15 @@ export function project(model: Model, state: ViewState): Projection {
     const sourceElement = byId.get(edge.source)!;
     const targetElement = byId.get(edge.target)!;
     if (!eligible(sourceElement) || !eligible(targetElement)) continue;
-    if (inScope(sourceElement) !== inScope(targetElement)) {
+    if (included(sourceElement) !== included(targetElement)) {
       outside.push({ ...edge });
-      if (!portsOn) continue;
-      const entering = !inScope(sourceElement);
+      const entering = !included(sourceElement);
+      const outsideElement = entering ? sourceElement : targetElement;
+      const omitted = hiddenRoot(outsideElement);
+      if (omitted ? state.context !== 'ports' : !portsOn) continue;
       const inside = representative(entering ? edge.target : edge.source);
       if (!inside) continue;
-      const element = outsideRepresentative(entering ? edge.source : edge.target);
+      const element = omitted ?? outsideRepresentative(entering ? edge.source : edge.target);
       const id = `${OUTSIDE_PORT_PREFIX}${element}`;
       const use = portFor.get(id) ?? { element, sends: false, receives: false };
       if (entering) use.sends = true;

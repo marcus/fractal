@@ -229,6 +229,8 @@ Separate model meaning, a shareable view, and the reader's workspace preferences
 | Panel visibility, position, size, and folding; Perspectives/Sequences disclosure    | Optional browser preferences                      | Shared links do not dictate another person's panel layout.                                             |
 | Participant-list disclosure; inspector disclosure; tooltips                         | Local interface state                             | Folding the list does not combine lanes or hide model content. Inspector detail resets with selection. |
 
+Within a browser tab, reopening a journey or architecture perspective restores its last diagram state. Remember it per model and journey or perspective, and discard it when the model revision changes. An explicit view in a link takes precedence; ordinary navigation keeps the current theme unless the destination authors one. The perspective breadcrumb is an explicit path back to its authored starting view. Restoring a perspective keeps its story title and position. Portable readers preserve the same navigation behavior for their immutable snapshot.
+
 Restore remembered chrome before first paint. Do not flash a panel open and then animate it away.
 Both diagram surfaces honor the same preferences, and unavailable browser storage is harmless.
 

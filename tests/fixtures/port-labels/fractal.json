@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "id": "bakery",
+  "title": "Bakery",
+  "description": "Fictional repro for port-edge label placement.",
+  "provenance": "Synthetic.",
+  "boundaries": [],
+  "scenes": [
+    {
+      "id": "line",
+      "title": "Production line",
+      "description": "Scoped scene with several outside ports.",
+      "scope": "bakery.floor",
+      "expanded": ["bakery.floor"],
+      "proposed": false,
+      "lens": "structure"
+    }
+  ]
+}

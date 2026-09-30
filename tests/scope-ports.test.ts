@@ -167,3 +167,56 @@ test('revealing a port widens the scope to the shared ancestor and keeps the ope
     undefined
   );
 });
+
+test('hidden subtrees leave crossing claims inventoried without implicit ports or ancestor rollup', () => {
+  const state: ViewState = {
+    expanded: ['system', 'subsystem', 'sibling'],
+    proposed: false,
+    lens: 'structure',
+    hide: ['sibling']
+  };
+  const view = project(model, state);
+  assert.ok(!view.elements.some((item) => item.id === 'sibling' || item.id === 'sibling-child'));
+  assert.deepEqual(
+    view.outside?.map((edge) => edge.id),
+    ['read']
+  );
+  assert.ok(!view.edges.some((edge) => edge.underlying.includes('read')));
+  assert.equal(view.ports, undefined);
+  const contextual = project(model, { ...state, context: 'ports' });
+  assert.deepEqual(
+    contextual.ports?.map((port) => port.element),
+    ['sibling']
+  );
+  assert.equal(
+    contextual.edges.find((edge) => edge.id === 'read')?.target,
+    `${OUTSIDE_PORT_PREFIX}sibling`
+  );
+  const revealed = revealOutside(model, { ...state, context: 'ports' }, 'sibling');
+  assert.ok(project(model, revealed.state).elements.some((item) => item.id === 'sibling'));
+});
+
+test('scoped omissions preserve ordinary outside ports and report mixed footer counts', async () => {
+  const state: ViewState = {
+    ...scoped,
+    scope: 'system',
+    expanded: ['system', 'subsystem', 'sibling'],
+    hide: ['sibling']
+  };
+  const view = project(model, state);
+  assert.equal(view.outside?.length, 6);
+  assert.ok(!view.ports?.some((port) => port.element === 'sibling'));
+  const diagram = await layout(model, state);
+  const svg = exportSvg(model, diagram);
+  assert.match(svg, /6 external connections outside view \(5 drawn as ports\)/);
+  const unscoped = await layout(model, { ...state, scope: undefined });
+  assert.match(exportSvg(model, unscoped), /1 external connections outside view/);
+});
+
+test('view hide rejects unknown elements and invalid list types', () => {
+  assert.throws(() => project(model, { ...scoped, hide: ['missing'] }), /Unknown hidden element/);
+  assert.throws(
+    () => project(model, { ...scoped, hide: 'inner' as unknown as string[] }),
+    /Invalid view/
+  );
+});

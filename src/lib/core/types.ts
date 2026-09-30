@@ -77,6 +77,8 @@ export interface ViewState {
   proposed: boolean;
   lens: Lens;
   scope?: string;
+  /** Omit these elements and their descendants from this view. */
+  hide?: string[];
   theme?: ThemeId;
   /** Which engine places the view; absent means the default, so existing links keep their look. */
   layout?: LayoutEngineId;

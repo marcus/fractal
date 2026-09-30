@@ -1,3 +1,4 @@
+import { revealHiddenSelection } from '../core/selection';
 import { layout } from '../core/layout';
 import { EDGE_LABEL_SIZE, EDGE_LABEL_WIDTH } from '../core/measure';
 import { wrapText } from '../core/projection';
@@ -102,6 +103,8 @@ function representative(
   const byId = new Map(snapshot.model.elements.map((element) => [element.id, element]));
   // Validated upstream; an unknown element stays total by standing in the whole project.
   if (!byId.has(elementId)) return { kind: 'project' };
+  if (project.view.hide?.some((hidden) => withinScope(byId, elementId, hidden)))
+    return { kind: 'port', reason: 'outside-scope' };
   const nodeIds = new Set(composed.diagram.nodes.map((node) => node.id));
   if (nodeIds.has(elementId)) return { kind: 'node', id: elementId };
   let parent = byId.get(elementId)?.parent ?? null;
@@ -317,6 +320,18 @@ function sanitizeView(
     });
     return false;
   });
+  const hide = project.view.hide?.filter((id) => {
+    if (byId.has(id)) return true;
+    diagnostics.push({
+      code: 'endpoint_missing',
+      ownerModel: project.model,
+      message: `Hidden element ${id} is missing from ${project.model}.`,
+      path: `composition.projects[${index}].view.hide`,
+      target: { model: project.model, element: id },
+      recovery: 'repair'
+    });
+    return false;
+  });
   let scope = project.view.scope;
   if (scope !== undefined) {
     const element = byId.get(scope);
@@ -338,6 +353,7 @@ function sanitizeView(
   }
   return {
     expanded,
+    ...(hide ? { hide } : {}),
     proposed: project.view.proposed,
     lens: project.view.lens,
     ...(scope === undefined ? {} : { scope })
@@ -426,7 +442,25 @@ export async function compose(
   const effectiveProjects: ProjectState[] = projectStates.map((project, index) => {
     const snapshot = resolved.get(project.model);
     if (!snapshot) return project;
-    return { ...project, view: sanitizeView(snapshot, project, index, diagnostics) };
+    const view = sanitizeView(snapshot, project, index, diagnostics);
+    const selected = normalized.selection;
+    if (
+      selected &&
+      (selected.kind === 'element' || selected.kind === 'relationship') &&
+      selected.model === project.model
+    ) {
+      const revealed = revealHiddenSelection(
+        snapshot.model,
+        view,
+        selected.kind === 'element' ? selected.element : selected.relationship
+      );
+      if (revealed !== view) {
+        project.view = revealed;
+        project.mode = 'open';
+        return { ...project, view: revealed };
+      }
+    }
+    return { ...project, view };
   });
 
   const diagrams = new Map<string, Diagram | null>();

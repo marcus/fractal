@@ -44,7 +44,7 @@ export type QualifiedSelection =
   | { kind: 'connection'; ownerModel: string; connectionId: string };
 
 /** Shared theme/direction own presentation; project records retain semantic local view state. */
-export type ProjectViewState = Pick<ViewState, 'expanded' | 'proposed' | 'lens' | 'scope'>;
+export type ProjectViewState = Pick<ViewState, 'expanded' | 'proposed' | 'lens' | 'scope' | 'hide'>;
 export interface CompositionState {
   version: 1;
   root: string;

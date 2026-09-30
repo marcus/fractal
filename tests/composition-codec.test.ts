@@ -190,3 +190,9 @@ test('composition shares one URL parameter and leaves single-model parameters un
     (error: unknown) => error instanceof CompositionContractError
   );
 });
+
+test('composition permalink preserves project hide lists', async () => {
+  const state = await valid();
+  state.projects[0].view.hide = ['example'];
+  assert.deepEqual(decodeCompositionState(encodeCompositionState(state)), state);
+});

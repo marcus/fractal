@@ -201,6 +201,13 @@ function revealedView(
   }
   return {
     ...current,
+    ...(current.hide
+      ? {
+          hide: current.hide.filter(
+            (id) => !lineages.some((lineage) => lineage.some((element) => element.id === id))
+          )
+        }
+      : {}),
     expanded: [...expanded],
     proposed:
       current.proposed ||

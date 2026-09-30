@@ -20,6 +20,7 @@
     showAllStructure
   } from '../core/navigation';
   import { sceneOptions } from '../core/scene';
+  import { revealHiddenSelection } from '../core/selection';
   import { searchModel, revealSearchResult } from '../core/search';
   import { layout } from '../core/layout';
   import { isLayoutEngineId } from '../core/layout-engines';
@@ -50,6 +51,9 @@
   let busy = $state(false);
   let error = $state('');
   let notice = $state('');
+  // Portable models are immutable. Keep each view for the lifetime of this reader.
+  const journeyViews = new Map<string, SequenceViewState>();
+  const sceneViews = new Map<string, ViewState>();
   let ready = false;
   let renderId = 0;
   let canvas = $state<DiagramCanvas>();
@@ -80,6 +84,8 @@
 
   function saveLink() {
     if (!ready) return;
+    if (journeyId) journeyViews.set(journeyId, $state.snapshot(sequenceView));
+    else sceneViews.set(sceneId, $state.snapshot(view));
     const hash = new URLSearchParams({ scene: sceneId, view: JSON.stringify(view) });
     if (selected) {
       hash.set('selected', selected);
@@ -111,10 +117,11 @@
   function chooseScene(id: string) {
     const next = model.scenes.find((item) => item.id === id);
     if (!next) return;
+    const navigationTheme = view.theme;
     sceneId = id;
     journeyId = '';
     selected = null;
-    view = {
+    view = sceneViews.get(id) ?? {
       expanded: [...next.expanded],
       proposed: next.proposed,
       lens: next.lens,
@@ -123,6 +130,7 @@
       layout: next.layout,
       ...sceneOptions(next)
     };
+    view = { ...view, theme: next.theme ?? navigationTheme };
     navOpen = false;
     void render().then(() => canvas?.fit());
   }
@@ -175,14 +183,18 @@
   }
   function setContext(context: 'ports' | 'none') {
     const { context: _previous, ...rest } = view;
-    view = context === 'none' ? { ...rest, context } : rest;
+    view = context === 'none' || view.hide?.length ? { ...rest, context } : rest;
     void render();
   }
   function chooseJourney(id: string) {
     journeyId = id;
     selected = null;
     navOpen = false;
-    sequenceView = { collapsedPhases: [], collapsedGroups: [], hiddenParticipants: [] };
+    sequenceView = journeyViews.get(id) ?? {
+      collapsedPhases: [],
+      collapsedGroups: [],
+      hiddenParticipants: []
+    };
     saveLink();
   }
   function toggleSequence(key: 'collapsedPhases' | 'collapsedGroups', id: string) {
@@ -315,6 +327,12 @@
       if (hash.has('view')) {
         const next = JSON.parse(hash.get('view')!);
         if (
+          (next.hide !== undefined &&
+            (!Array.isArray(next.hide) ||
+              !next.hide.every(
+                (id: unknown) =>
+                  typeof id === 'string' && model.elements.some((item) => item.id === id)
+              ))) ||
           !Array.isArray(next.expanded) ||
           !next.expanded.every((id: unknown) => typeof id === 'string') ||
           typeof next.proposed !== 'boolean' ||
@@ -342,6 +360,7 @@
         sequenceView = next;
       }
       selected = hash.get('selected');
+      if (!journeyId && selected) view = revealHiddenSelection(model, view, selected);
       selectedType =
         hash.get('type') === 'relationship'
           ? 'relationship'
@@ -512,10 +531,10 @@
                 void render();
               }}
             />Proposed</label
-          >{#if view.scope}<label
+          >{#if view.scope || view.hide?.length}<label
               ><input
                 type="checkbox"
-                checked={view.context !== 'none'}
+                checked={view.context === 'ports' || (!!view.scope && view.context !== 'none')}
                 onchange={(e) => setContext(e.currentTarget.checked ? 'ports' : 'none')}
               />Outside connections</label
             >{/if}<label

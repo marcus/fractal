@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PageProps } from './$types';
   import { onMount, tick, untrack } from 'svelte';
+  import { rememberSessionView, sessionView } from '$lib/ui/session-view';
   import { replaceState } from '$app/navigation';
   import SequencePhases from '$lib/components/SequencePhases.svelte';
   import {
@@ -247,6 +248,7 @@
     // the inspector on the same thing.
     if (selected) url.searchParams.set('selected', selected);
     else url.searchParams.delete('selected');
+    rememberSessionView('sequence', modelId, journeyId, revision, view);
     replaceState(url, {});
   }
   async function refreshCatalog() {
@@ -264,6 +266,16 @@
       hiddenParticipants: [],
       theme: view.theme
     };
+  }
+  function rememberedJourney(item: SequenceJourney): SequenceViewState {
+    const remembered = sessionView<SequenceViewState>('sequence', modelId, item.id, revision);
+    try {
+      return remembered
+        ? { ...normalizedInitialState(remembered), theme: view.theme }
+        : defaultState(item);
+    } catch {
+      return defaultState(item);
+    }
   }
   async function loadModel(
     id: string,
@@ -303,7 +315,7 @@
       const nextJourney =
         journeys.find((item: SequenceJourney) => item.id === requestedJourney) ?? journeys[0];
       journeyId = nextJourney.id;
-      if (!preserveState) view = initialState ?? defaultState(nextJourney);
+      if (!preserveState) view = initialState ?? rememberedJourney(nextJourney);
       initialState = null;
       if (metadataOnly) return;
       await renderSequence();
@@ -354,7 +366,7 @@
     journeyId = id;
     selected = null;
     menuOpen = false;
-    view = defaultState(item);
+    view = rememberedJourney(item);
     renderSequence();
   }
   function advanceJourney(delta: number) {

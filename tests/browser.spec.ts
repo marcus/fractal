@@ -464,7 +464,8 @@ test('animation has intermediate geometry and rapid scene changes settle to late
   await page.getByRole('button', { name: '01 The big picture' }).click();
   await ready(page);
   await expect(sceneTitle(page)).toHaveText('The big picture');
-  await expect(page.locator('[data-node-id="core.shipments"]')).toHaveCount(0);
+  // Returning to this perspective restores the expansion made before switching away.
+  await expect(page.locator('[data-node-id="core.shipments"]')).toHaveCount(1);
 });
 
 test('inspector preserves current/proposed distinction for hidden children and connections', async ({
@@ -682,6 +683,25 @@ test('the selection survives a refresh and leaves the link when the inspector cl
   await ready(page);
   await expect(page.locator('.inspector')).toHaveCount(0);
   await expect(page).not.toHaveURL(/selected=/);
+});
+
+test('a permalink reveals a scene-hidden selection and preserves unrelated omissions', async ({
+  page
+}) => {
+  const view = {
+    expanded: ['core'],
+    proposed: false,
+    lens: 'structure',
+    hide: ['core.floor', 'intake']
+  };
+  await page.goto(
+    '/?model=delivery&scene=overview&selected=core.floor&view=' +
+      encodeURIComponent(JSON.stringify(view))
+  );
+  await ready(page);
+  await expect(page.locator('[data-node-id="core.floor"]')).toBeVisible();
+  await expect(page.locator('.inspector h2')).toHaveText('Warehouse floor');
+  expect(JSON.parse(new URL(page.url()).searchParams.get('view')!).hide).toEqual(['intake']);
 });
 
 test('a drag pans from anywhere, including a node, while a still click still selects', async ({

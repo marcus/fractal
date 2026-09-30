@@ -196,14 +196,20 @@ export function parseLinks(value: unknown, ownerModel: string): ProjectLinks {
 }
 
 function view(value: unknown, path: string): ProjectViewState {
-  const input = object(value, ['expanded', 'proposed', 'lens', 'scope'], path);
+  const input = object(value, ['expanded', 'proposed', 'lens', 'scope', 'hide'], path);
   const expanded = list(input.expanded, `${path}.expanded`).map((value, index) =>
     id(value, `${path}.expanded[${index}]`)
   );
   unique(expanded, `${path}.expanded`);
+  const hide =
+    input.hide === undefined
+      ? undefined
+      : list(input.hide, `${path}.hide`).map((value, index) => id(value, `${path}.hide[${index}]`));
+  if (hide) unique(hide, `${path}.hide`);
   if (typeof input.proposed !== 'boolean') fail(`${path}.proposed`, 'must be a boolean');
   return {
     expanded,
+    ...(hide ? { hide } : {}),
     proposed: input.proposed,
     lens: choice(input.lens, ['structure', 'trust'], `${path}.lens`),
     ...optionalId(input.scope, 'scope', path)

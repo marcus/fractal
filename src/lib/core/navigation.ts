@@ -1,5 +1,6 @@
 import type { LayoutNode, Model, ViewState } from './types';
 import { project } from './projection';
+import { revealSearchResult } from './search';
 
 /** Reveal all eligible descendants without leaving the current scope or enabling proposals. */
 export function showAllStructure(model: Model, state: ViewState): ViewState {
@@ -68,6 +69,15 @@ export function revealOutside(
   state: ViewState,
   id: string
 ): { state: ViewState; target: string } {
+  if (state.hide?.length) {
+    const result = revealSearchResult(model, state, {
+      id,
+      type: 'element',
+      title: '',
+      description: ''
+    });
+    state = result.view;
+  }
   if (state.scope === undefined) return { state, target: id };
   const byId = new Map(model.elements.map((element) => [element.id, element]));
   const chain: string[] = [];

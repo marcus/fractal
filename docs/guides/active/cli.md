@@ -66,6 +66,7 @@ Options:
   --visible-phases ID,ID         Show exact phases with ancestor context (empty shows none)
   --scene ID                     Start from a saved scene
   --expanded ID,ID                Override expanded elements (empty collapses all)
+  --hide ID,ID                   Omit elements and their descendants (empty clears omissions)
   --show-all                     Expand all structure within the selected scope
   --proposed                     Include proposed elements and relationships
   --lens structure|trust         Boundary lens

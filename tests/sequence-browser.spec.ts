@@ -748,3 +748,69 @@ test.describe('touch', () => {
     await expect(page.locator('.inspector')).toHaveCount(0);
   });
 });
+
+test('journey navigation remembers presentation state and explicit links win', async ({ page }) => {
+  await page.goto(path);
+  await ready(page);
+  await page.getByRole('button', { name: 'Expand all phases', exact: true }).click();
+  await ready(page);
+  await page.getByRole('button', { name: 'Warehouse team lane options', exact: true }).click();
+  await page.getByRole('button', { name: 'Separate lanes', exact: true }).click();
+  await ready(page);
+  await page.getByRole('button', { name: 'Picker visibility', exact: true }).click();
+  await ready(page);
+  const remembered = state(page);
+  // Cross-surface navigation performs a full document load, just like the switcher.
+  await page.goto('/?model=delivery');
+  await page.getByRole('navigation', { name: 'Sequence journeys' }).getByRole('link').click();
+  await ready(page);
+  expect(state(page)).toEqual(remembered);
+  const explicit = { collapsedPhases: ['order'], collapsedGroups: [], hiddenParticipants: [] };
+  await page.goto(`${path}&seq=${encodeURIComponent(JSON.stringify(explicit))}`);
+  await ready(page);
+  expect(state(page).collapsedPhases).toEqual(['order']);
+  expect(state(page).hiddenParticipants).toEqual([]);
+  await page.goto('/?model=delivery');
+  await page.getByRole('navigation', { name: 'Sequence journeys' }).getByRole('link').click();
+  await ready(page);
+  expect(state(page).collapsedPhases).toEqual(['order']);
+  await page.goto(`${path}&theme=midnight`);
+  await ready(page);
+  expect(state(page).collapsedPhases).toEqual(['order']);
+  expect(state(page).theme).toBe('midnight');
+});
+
+test('journey picker and architecture perspectives retain their last view', async ({ page }) => {
+  await page.goto(path);
+  await ready(page);
+  await page.getByRole('button', { name: 'Expand all phases', exact: true }).click();
+  await ready(page);
+  await page.keyboard.press('Meta+k');
+  await page.getByRole('dialog').getByRole('combobox').fill('order to delivery');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await ready(page);
+  expect(state(page).collapsedPhases).toEqual([]);
+  // Re-entering the current journey through the sidebar also preserves its presentation.
+  await page.getByRole('navigation', { name: 'Sequence journeys' }).getByRole('button').click();
+  await ready(page);
+  expect(state(page).collapsedPhases).toEqual([]);
+  await page.goto('/?model=delivery');
+  await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+  const initial = JSON.parse(new URL(page.url()).searchParams.get('view')!);
+  const custom = { ...initial, expanded: [] };
+  const architecture = new URL(page.url());
+  architecture.searchParams.set('view', JSON.stringify(custom));
+  await page.goto(architecture.href);
+  await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+  await page.goto(path);
+  await ready(page);
+  await page.goto('/?model=delivery');
+  await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+  expect(JSON.parse(new URL(page.url()).searchParams.get('view')!).expanded).toEqual([]);
+  await page.goto('/?model=delivery&theme=midnight');
+  await expect(page.locator('.diagram-area')).toHaveAttribute('aria-busy', 'false');
+  const themed = JSON.parse(new URL(page.url()).searchParams.get('view')!);
+  expect(themed.expanded).toEqual([]);
+  expect(themed.theme).toBe('midnight');
+});

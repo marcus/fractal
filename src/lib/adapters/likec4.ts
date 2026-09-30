@@ -219,6 +219,12 @@ export async function parseModelWithOrigins(
         scene = object(value, path);
       const expanded = strings(scene.expanded, `${path}.expanded`);
       unique(expanded, `${path}.expanded`);
+      const hide = scene.hide === undefined ? undefined : strings(scene.hide, `${path}.hide`);
+      if (hide) {
+        unique(hide, `${path}.hide`);
+        for (const id of hide)
+          if (!elementIds.has(id)) throw new Error(`${path}.hide references unknown element ${id}`);
+      }
       if (typeof scene.proposed !== 'boolean') throw new Error(`${path}.proposed must be boolean`);
       if (scene.lens !== 'structure' && scene.lens !== 'trust')
         throw new Error(`${path}.lens must be structure or trust`);
@@ -278,6 +284,7 @@ export async function parseModelWithOrigins(
         title: string(scene.title, `${path}.title`),
         description: string(scene.description, `${path}.description`, true),
         expanded,
+        ...(hide ? { hide } : {}),
         proposed: scene.proposed,
         lens: scene.lens,
         ...(scope ? { scope } : {}),
