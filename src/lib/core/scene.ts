@@ -5,6 +5,9 @@ import type { Scene, ViewState } from './types';
  * scene that never set them produces exactly the view it always did. Every surface that turns a
  * scene into a view state spreads this rather than naming the fields itself.
  */
-export function sceneOptions(scene: Scene): Pick<ViewState, 'edges'> {
-  return scene.edges ? { edges: scene.edges } : {};
+export function sceneOptions(scene: Scene): Pick<ViewState, 'edges' | 'context'> {
+  return {
+    ...(scene.edges ? { edges: scene.edges } : {}),
+    ...(scene.context ? { context: scene.context } : {})
+  };
 }

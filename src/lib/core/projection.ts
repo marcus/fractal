@@ -1,4 +1,15 @@
-import type { Element, Model, Projection, ProjectedEdge, Relationship, ViewState } from './types';
+import type {
+  Element,
+  Model,
+  Projection,
+  ProjectedEdge,
+  ProjectedPort,
+  Relationship,
+  ViewState
+} from './types';
+
+/** Prefix of every port identity. Authored IDs start with a letter or number, so none can collide. */
+export const OUTSIDE_PORT_PREFIX = '__outside__:';
 import { getTheme } from './themes';
 import { getLayoutEngineInfo } from './layout-engines';
 
@@ -7,6 +18,8 @@ export function project(model: Model, state: ViewState): Projection {
   getTheme(state.theme);
   getLayoutEngineInfo(state.layout);
   if (state.edges !== undefined && !['detail', 'summary'].includes(state.edges))
+    throw new Error('Invalid view state');
+  if (state.context !== undefined && !['ports', 'none'].includes(state.context))
     throw new Error('Invalid view state');
   if (
     !['structure', 'trust'].includes(state.lens) ||
@@ -78,6 +91,25 @@ export function project(model: Model, state: ViewState): Projection {
   const summarize = state.edges === 'summary';
   const claims: { edge: Relationship; source: string; target: string }[] = [];
   const outside: Relationship[] = [];
+  // A scoped view stands each outside endpoint in with a perimeter port unless told not to.
+  const portsOn = state.scope !== undefined && state.context !== 'none';
+  const scopeChain = new Set<string>();
+  for (let at = state.scope; at; at = byId.get(at)?.parent ?? undefined) scopeChain.add(at);
+  /**
+   * The outside element a port stands for: the child of the lowest ancestor shared with the scope
+   * on the outside endpoint's own path, which is what widening the scope one step would draw. With
+   * no shared ancestor it is the endpoint's top-level ancestor; an endpoint that is itself an
+   * ancestor of the scope stands for itself.
+   */
+  const outsideRepresentative = (id: string): string => {
+    let previous = id;
+    for (let at: string | null = id; at !== null; at = byId.get(at)!.parent) {
+      if (scopeChain.has(at)) return previous;
+      previous = at;
+    }
+    return previous;
+  };
+  const portFor = new Map<string, { element: string; sends: boolean; receives: boolean }>();
   for (const edge of model.relationships) {
     if (!state.proposed && edge.status === 'proposed') continue;
     const sourceElement = byId.get(edge.source)!;
@@ -85,6 +117,19 @@ export function project(model: Model, state: ViewState): Projection {
     if (!eligible(sourceElement) || !eligible(targetElement)) continue;
     if (inScope(sourceElement) !== inScope(targetElement)) {
       outside.push({ ...edge });
+      if (!portsOn) continue;
+      const entering = !inScope(sourceElement);
+      const inside = representative(entering ? edge.target : edge.source);
+      if (!inside) continue;
+      const element = outsideRepresentative(entering ? edge.source : edge.target);
+      const id = `${OUTSIDE_PORT_PREFIX}${element}`;
+      const use = portFor.get(id) ?? { element, sends: false, receives: false };
+      if (entering) use.sends = true;
+      else use.receives = true;
+      portFor.set(id, use);
+      claims.push(
+        entering ? { edge, source: id, target: inside } : { edge, source: inside, target: id }
+      );
       continue;
     }
     const source = representative(edge.source);
@@ -121,6 +166,8 @@ export function project(model: Model, state: ViewState): Projection {
     if (existing) existing.underlying.push(edge.id);
     else groups.set(key, { ...edge, source, target, underlying: [edge.id] });
   }
+  const titleOf = (id: string): string | undefined =>
+    byId.get(portFor.get(id)?.element ?? id)?.title;
   const edges = [...groups.values()].map((group): ProjectedEdge => {
     // A drawn edge is a feedback edge only when every claim it stands for is one.
     const { layoutFeedback: _first, ...rest } = group;
@@ -139,12 +186,27 @@ export function project(model: Model, state: ViewState): Projection {
       ...edge,
       kind: kinds.size === 1 ? edge.kind : 'relates',
       title: `${edge.underlying.length} connections`,
-      description: `${edge.underlying.length} relationships between ${byId.get(edge.source)?.title} and ${byId.get(edge.target)?.title}.`,
+      description: `${edge.underlying.length} relationships between ${titleOf(edge.source)} and ${titleOf(edge.target)}.`,
       rollup: true
+    };
+  });
+  const ports: ProjectedPort[] = [...portFor].map(([id, use]) => {
+    const element = byId.get(use.element)!;
+    return {
+      id,
+      element: element.id,
+      title: element.title,
+      kind: element.kind,
+      color: element.color,
+      connections: edges
+        .filter((edge) => edge.source === id || edge.target === id)
+        .reduce((sum, edge) => sum + edge.underlying.length, 0),
+      flow: use.sends && use.receives ? 'both' : use.sends ? 'in' : 'out'
     };
   });
   return {
     elements,
+    ...(ports.length ? { ports } : {}),
     edges,
     outside,
     expanded: elements

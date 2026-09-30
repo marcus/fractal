@@ -4,6 +4,13 @@ import { getTheme } from './themes';
 import { ARCHITECTURE_NODE_METRICS as METRICS } from './node-metrics';
 import { kindIcon } from './kind-icons';
 import { boundaryView } from './boundaries';
+import {
+  COMPOSITION_PORT_CAPTION,
+  COMPOSITION_PORT_CAPTION_SIZE,
+  COMPOSITION_PORT_LABEL_LINE_HEIGHT,
+  COMPOSITION_PORT_LABEL_SIZE,
+  compositionPortGeometry
+} from '../composition/ports';
 
 const xml = (value: unknown): string =>
   String(value).replace(
@@ -80,7 +87,17 @@ export function exportSvg(
   const scale = Math.min(area.width / Math.max(1, width), area.height / Math.max(1, height), 1.8);
   const tx = area.x + (area.width - width * scale) / 2 - bounds.left * scale;
   const ty = area.y + (area.height - height * scale) / 2 - bounds.top * scale;
+  /** An outside endpoint of a scoped view, drawn as the same port card a linked composition uses. */
+  const portSvg = (node: LayoutNode): string => {
+    const geometry = compositionPortGeometry(
+      'left',
+      { x: node.x, y: node.y + node.height / 2 },
+      node.titleLines
+    );
+    return `<g data-outside-port="${xml(node.port!.element)}" transform="translate(${number(node.x)} ${number(node.y)})" role="group" aria-label="${xml(`Outside scope: ${node.title}. ${node.port!.connections} ${node.port!.connections === 1 ? 'connection' : 'connections'}.`)}"><rect width="${number(geometry.width)}" height="${number(geometry.height)}" rx="7" fill="${theme.card}" stroke="${theme.subtle}" stroke-width="1.2"/>${node.titleLines.map((line, index) => `<text x="${number(geometry.width / 2)}" y="${number(geometry.labelY + index * COMPOSITION_PORT_LABEL_LINE_HEIGHT)}" text-anchor="middle" font-size="${COMPOSITION_PORT_LABEL_SIZE}" font-weight="600" fill="${theme.text}">${xml(line)}</text>`).join('')}<text x="${number(geometry.width / 2)}" y="${number(geometry.captionY)}" text-anchor="middle" font-size="${COMPOSITION_PORT_CAPTION_SIZE}" fill="${theme.muted}">${xml(COMPOSITION_PORT_CAPTION)}</text></g>`;
+  };
   const nodeSvg = (node: LayoutNode): string => {
+    if (node.port) return portSvg(node);
     const accent = color(node.color);
     const rings = (trust?.byNode.get(node.id) ?? [])
       .map(
@@ -158,7 +175,7 @@ export function exportSvg(
     ? model.elements.find((element) => element.id === diagram.state.scope)
     : undefined;
   const scopeFooter = scope
-    ? `FOCUS: ${truncateText(scope.title, 340, 13)} · ${diagram.outside?.length ?? 0} external connections outside view`
+    ? `FOCUS: ${truncateText(scope.title, 340, 13)} · ${diagram.outside?.length ?? 0} external connections ${diagram.nodes.some((node) => node.port) ? 'drawn as outside ports' : 'outside view'}`
     : `${truncateText(model.id, 340, 13)} · Authored architecture`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title description" data-theme="${theme.id}" data-theme-appearance="${theme.appearance}">
   <title id="title">${xml(options.title ?? model.title)}</title><desc id="description">${xml(options.subtitle ?? model.description)}. ${diagram.state.lens === 'trust' ? 'Solid colored outlines mark exact authored boundary members; dotted outlines mark collapsed elements that contain members. Neither is an inferred trust envelope.' : 'Architecture structure.'}</desc>

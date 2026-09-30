@@ -205,7 +205,7 @@ export const SHORTCUTS = [
   },
   {
     id: 'toggle',
-    label: 'Expand or collapse component',
+    label: 'Expand or collapse component, or reveal an outside port',
     group: 'Canvas',
     keys: ['space'],
     contexts: ['studio', 'presentation', 'canvas']

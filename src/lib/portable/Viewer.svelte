@@ -14,7 +14,11 @@
   import { resolveShortcut, shortcutLabel, SHORTCUTS } from '../core/shortcuts';
   import { tip } from '../ui/tooltip.svelte';
   import { ArrowRight, ArrowDown } from '@marcusv/roc/svelte/outline';
-  import { outwardView, showAllStructure } from '../core/navigation';
+  import {
+    outwardView,
+    revealOutside as widenToReveal,
+    showAllStructure
+  } from '../core/navigation';
   import { sceneOptions } from '../core/scene';
   import { searchModel, revealSearchResult } from '../core/search';
   import { layout } from '../core/layout';
@@ -163,6 +167,17 @@
     selected = null;
     void render();
   }
+  function revealOutside(id: string) {
+    const next = widenToReveal(model, view, id);
+    view = next.state;
+    selected = id;
+    void render().then(() => canvas?.reveal(next.target));
+  }
+  function setContext(context: 'ports' | 'none') {
+    const { context: _previous, ...rest } = view;
+    view = context === 'none' ? { ...rest, context } : rest;
+    void render();
+  }
   function chooseJourney(id: string) {
     journeyId = id;
     selected = null;
@@ -307,6 +322,7 @@
           (next.theme !== undefined && !isThemeId(next.theme)) ||
           (next.layout !== undefined && !isLayoutEngineId(next.layout)) ||
           (next.edges !== undefined && !['detail', 'summary'].includes(next.edges)) ||
+          (next.context !== undefined && !['ports', 'none'].includes(next.context)) ||
           (next.scope !== undefined && !model.elements.some((item) => item.id === next.scope))
         )
           throw new Error('Invalid view');
@@ -439,6 +455,7 @@
         onselect={select}
         ontoggle={toggle}
         onexitlayer={outward}
+        onrevealoutside={revealOutside}
         oncommandkey={keyboard}
         measureInsets={insets}
       />
@@ -495,7 +512,13 @@
                 void render();
               }}
             />Proposed</label
-          ><label
+          >{#if view.scope}<label
+              ><input
+                type="checkbox"
+                checked={view.context !== 'none'}
+                onchange={(e) => setContext(e.currentTarget.checked ? 'ports' : 'none')}
+              />Outside connections</label
+            >{/if}<label
             ><input
               type="checkbox"
               checked={view.edges === 'summary'}
@@ -570,6 +593,7 @@
         {view}
         {toggle}
         {focus}
+        onrevealoutside={revealOutside}
         {inspectElement}
         fullSystem={() => {
           view = { ...view, scope: undefined };

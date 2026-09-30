@@ -26,7 +26,7 @@ export interface BoundaryView {
  */
 export function boundaryView(model: Model, diagram: Diagram): BoundaryView {
   const byId = new Map(model.elements.map((element) => [element.id, element]));
-  const drawn = new Set(diagram.nodes.map((node) => node.id));
+  const drawn = new Set(diagram.nodes.filter((node) => !node.port).map((node) => node.id));
   const hidden = (id: string): boolean => {
     for (let current = byId.get(id); current; current = byId.get(current.parent ?? '')) {
       if (current.status === 'proposed' && !diagram.state.proposed) return true;

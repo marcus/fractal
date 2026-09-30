@@ -1,5 +1,5 @@
 import type { ARCHITECTURE_NODE_METRICS } from './node-metrics';
-import type { Element, LayoutEngineId, Point, ProjectedEdge } from './types';
+import type { Element, LayoutEngineId, OutsidePort, Point, ProjectedEdge } from './types';
 
 /**
  * The seam between measuring node content and placing it. Measurement is engine-neutral core
@@ -11,6 +11,8 @@ export type ArchitectureNodeMetrics = typeof ARCHITECTURE_NODE_METRICS;
 
 /** A visible element with the size its content needs before any placement. */
 export interface MeasuredNode extends Element {
+  /** Present when this node draws an outside element as a perimeter port. */
+  port?: OutsidePort;
   depth: number;
   expanded: boolean;
   width: number;

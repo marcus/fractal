@@ -18,17 +18,17 @@ geometry. State is inspectable files, not a database.
 
 ## Capability matrix
 
-| Capability                            | Browser                   | CLI                              | Local HTTP              |
-| ------------------------------------- | ------------------------- | -------------------------------- | ----------------------- |
-| Compile + validate                    | Load/reload model         | `validate`                       | `GET /api/models/:id`   |
-| Inspect model/source                  | Inspector + source dialog | `inspect`                        | `GET /api/models/:id`   |
-| Select expanded/focused/proposed view | Canvas, scenes, toggles   | `project`, flags                 | `POST /api/render`      |
-| Inspect external connections          | Focus inventory           | `project` / `layout` → `outside` | Render response         |
-| Inspect geometry                      | Canvas                    | `layout`                         | `POST /api/render`      |
-| Save view configuration               | Copy link / JSON download | Model scenes / view flags        | Render state payload    |
-| Export SVG                            | Export dialog             | `export`                         | `POST /api/export`      |
-| Export PNG                            | Browser rasterization     | `export --format png`            | SVG + client rasterizer |
-| Navigate presentation                 | Present, arrow keys       | Scene selection + export         | Same state per scene    |
+| Capability                            | Browser                   | CLI                                       | Local HTTP              |
+| ------------------------------------- | ------------------------- | ----------------------------------------- | ----------------------- |
+| Compile + validate                    | Load/reload model         | `validate`                                | `GET /api/models/:id`   |
+| Inspect model/source                  | Inspector + source dialog | `inspect`                                 | `GET /api/models/:id`   |
+| Select expanded/focused/proposed view | Canvas, scenes, toggles   | `project`, flags                          | `POST /api/render`      |
+| Inspect external connections          | Outside ports + inventory | `project` / `layout` → `outside`, `ports` | Render response         |
+| Inspect geometry                      | Canvas                    | `layout`                                  | `POST /api/render`      |
+| Save view configuration               | Copy link / JSON download | Model scenes / view flags                 | Render state payload    |
+| Export SVG                            | Export dialog             | `export`                                  | `POST /api/export`      |
+| Export PNG                            | Browser rasterization     | `export --format png`                     | SVG + client rasterizer |
+| Navigate presentation                 | Present, arrow keys       | Scene selection + export                  | Same state per scene    |
 
 Pan, camera zoom, selection, focus management and animation timing are presentation mechanics.
 They do not change architectural meaning. Model authoring uses the existing text-file tools;

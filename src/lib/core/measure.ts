@@ -1,12 +1,15 @@
 import { kindTitle } from './kind-icons';
-import { ARCHITECTURE_NODE_METRICS as METRICS } from './node-metrics';
+import {
+  ARCHITECTURE_NODE_METRICS as METRICS,
+  EDGE_LABEL_SIZE,
+  EDGE_LABEL_WIDTH
+} from './node-metrics';
+import { compositionPortLabelLines, compositionPortSize } from '../composition/ports';
 import { fitTitleSize, textWidth, wrapText } from './projection';
 import type { MeasuredEdge, MeasuredGraph, MeasuredNode } from './layout-engine';
 import type { Projection } from './types';
 
-/** Width of the text budget an edge label wraps into, and its type size. */
-export const EDGE_LABEL_WIDTH = 112;
-export const EDGE_LABEL_SIZE = 11;
+export { EDGE_LABEL_SIZE, EDGE_LABEL_WIDTH };
 
 /**
  * Measure every visible node and edge before layout. Sizes come from the shared density profile
@@ -70,6 +73,32 @@ export function measure(projection: Projection): MeasuredGraph {
     }
   };
   visit(null, 0);
+  // Outside endpoints of a scoped view: the same port card a linked composition draws.
+  for (const port of projection.ports ?? []) {
+    const labelLines = compositionPortLabelLines(port.title);
+    const size = compositionPortSize(labelLines);
+    nodes.push({
+      id: port.id,
+      sourceId: port.element,
+      parent: null,
+      title: port.title,
+      kind: port.kind,
+      description: '',
+      technology: '',
+      status: 'current',
+      color: port.color,
+      evidence: [],
+      port: { element: port.element, connections: port.connections, flow: port.flow },
+      depth: 0,
+      expanded: false,
+      width: size.width,
+      height: size.height,
+      headerHeight: 0,
+      titleLines: labelLines,
+      descriptionLines: [],
+      kindLabel: kindTitle(port.kind, 'current')
+    });
+  }
   const edges: MeasuredEdge[] = projection.edges.map((edge) => {
     const labelLines = wrapText(
       `${edge.title}${edge.underlying.length > 1 && !edge.rollup ? ` ×${edge.underlying.length}` : ''}`,

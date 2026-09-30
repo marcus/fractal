@@ -69,10 +69,11 @@ Options:
   --show-all                     Expand all structure within the selected scope
   --proposed                     Include proposed elements and relationships
   --lens structure|trust         Boundary lens
-  --scope ID                     Focus one component; retain external connection inventory
+  --scope ID                     Focus one component; outside connections draw as ports and stay inventoried
   --theme grove|graphite|midnight Presentation theme (default Grove)
   --layout ID                    Layout engine for architecture views (see engines)
   --edges detail|summary         Draw every claim, or one counted connection per collapsed pair
+  --context ports|none           Scoped views: draw outside endpoints as ports (default) or hide them
   --json                         Structured output
   --element ID                   Inspect a stable element ID
   --query TEXT                   Search titles, identifiers and descriptions

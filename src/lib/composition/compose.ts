@@ -442,7 +442,9 @@ export async function compose(
       await layout(snapshot.model, {
         ...project.view,
         theme: normalized.theme,
-        layout: normalized.layout
+        layout: normalized.layout,
+        // A linked composition draws its own perimeter ports and bridges for out-of-scope endpoints.
+        context: 'none'
       })
     );
   }

@@ -3,6 +3,8 @@ export type Lens = 'structure' | 'trust';
 export type ThemeId = 'grove' | 'graphite' | 'midnight';
 /** Registered layout engines; `core/layout-engines.ts` carries their metadata. */
 export type LayoutEngineId = 'elk-layered' | 'elk-layered-down';
+/** `ports` (the default for a scoped view) draws outside endpoints as perimeter ports; `none` hides them. */
+export type OutsideContext = 'ports' | 'none';
 /** `detail` draws every distinct claim; `summary` rolls collapsed connections up into counts. */
 export type EdgeDetail = 'detail' | 'summary';
 export interface Theme {
@@ -80,6 +82,8 @@ export interface ViewState {
   layout?: LayoutEngineId;
   /** How collapsed connections draw; absent means `detail`, so existing links keep their look. */
   edges?: EdgeDetail;
+  /** How a scoped view shows connections that cross its boundary; absent means `ports`. */
+  context?: OutsideContext;
 }
 export interface Scene extends ViewState {
   id: string;
@@ -102,8 +106,26 @@ export interface ProjectedEdge extends Relationship {
   /** Set on an edge that stands for several claims rolled up into one counted connection. */
   rollup?: true;
 }
+/**
+ * A visual stand-in for one element outside a scoped view's scope. It is presentation, not model
+ * structure: the element it names stays authored where it is, and nothing here is a parent.
+ */
+export interface ProjectedPort {
+  /** Identity of the drawn port, distinct from every authored element ID. */
+  id: string;
+  /** The outside element the port stands for; selecting the port inspects it. */
+  element: string;
+  title: string;
+  kind: string;
+  color: string;
+  /** Connections drawn to or from this port, counting every claim rolled into an edge. */
+  connections: number;
+  /** `in`: the port only supplies the scope; `out`: it only receives from it. */
+  flow: 'in' | 'out' | 'both';
+}
 export interface Projection {
   elements: Element[];
+  ports?: ProjectedPort[];
   edges: ProjectedEdge[];
   expanded: string[];
   hiddenCount: number;
@@ -113,7 +135,14 @@ export interface Point {
   x: number;
   y: number;
 }
+/** Marks a layout node that draws an outside element as a perimeter port. */
+export interface OutsidePort {
+  element: string;
+  connections: number;
+  flow: 'in' | 'out' | 'both';
+}
 export interface LayoutNode extends Element {
+  port?: OutsidePort;
   x: number;
   y: number;
   width: number;

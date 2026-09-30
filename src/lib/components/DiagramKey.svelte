@@ -11,6 +11,7 @@
   const boundaries = $derived(
     diagram?.state.lens === 'trust' ? boundaryView(model, diagram) : null
   );
+  const drawn = $derived(diagram?.nodes.filter((node) => !node.port).length ?? 0);
   let panel: HTMLDivElement;
   let button: HTMLButtonElement;
   let position = $state({ left: 0, bottom: 0 });
@@ -62,8 +63,7 @@
     {#if diagram?.state.proposed}<span><i class="proposed"></i>Proposed</span>{/if}
   </div>
   <p>
-    {diagram?.nodes.length ?? 0} visible · {model.elements.length - (diagram?.nodes.length ?? 0)} outside
-    this detail
+    {drawn} visible · {model.elements.length - drawn} outside this detail
   </p>
   {#if boundaries}<div class="key-boundaries">
       {#each boundaries.present as entry}<div>
@@ -85,8 +85,8 @@
           <p>{boundaries.omitted.map((boundary) => boundary.title).join(', ')}</p>
         </div>{/if}
       <small
-        >Solid outlines show exact membership; dotted outlines mark a collapsed element that
-        contains members.</small
+        >Outlines show exact membership; dotted outlines mark a collapsed element that contains
+        members.</small
       >
     </div>{/if}
   {#if diagram?.outside?.length}<button

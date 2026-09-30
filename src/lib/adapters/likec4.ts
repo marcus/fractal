@@ -237,6 +237,14 @@ export async function parseModelWithOrigins(
             : (() => {
                 throw new Error(`${path}.edges must be detail or summary`);
               })();
+      const context =
+        scene.context === undefined
+          ? undefined
+          : scene.context === 'ports' || scene.context === 'none'
+            ? scene.context
+            : (() => {
+                throw new Error(`${path}.context must be ports or none`);
+              })();
       if (scope !== undefined) {
         const scopedElement = elements.find((element) => element.id === scope);
         if (!scopedElement) throw new Error(`${path}.scope references unknown element ${scope}`);
@@ -275,7 +283,8 @@ export async function parseModelWithOrigins(
         ...(scope ? { scope } : {}),
         ...(theme ? { theme } : {}),
         ...(layout ? { layout } : {}),
-        ...(edges ? { edges } : {})
+        ...(edges ? { edges } : {}),
+        ...(context ? { context } : {})
       };
     });
     unique(

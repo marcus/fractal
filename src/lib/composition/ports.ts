@@ -1,4 +1,4 @@
-import { EDGE_LABEL_WIDTH } from '../core/measure';
+import { EDGE_LABEL_WIDTH } from '../core/node-metrics';
 import { textWidth, truncateText, wrapText } from '../core/projection';
 import type { Point } from '../core/types';
 import type { PortSide } from './types';

@@ -1,3 +1,7 @@
+/** Width of the text budget an edge label wraps into, and its type size. */
+export const EDGE_LABEL_WIDTH = 112;
+export const EDGE_LABEL_SIZE = 11;
+
 /**
  * The single density seam for architecture nodes and containers. A theme can
  * eventually replace this profile without letting layout, canvas, and export drift.

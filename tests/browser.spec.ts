@@ -329,7 +329,7 @@ test('native source dialog keyboard and real SVG / PNG exports', async ({ page }
     const data = await readFile((await file.path())!);
     if (format === 'Vector SVG') {
       expect(data.toString()).toContain('width="1920"');
-      expect(data.toString()).toContain('external connections outside view');
+      expect(data.toString()).toContain('external connections drawn as outside ports');
       expect(data.toString()).not.toContain('foreignObject');
       await file.saveAs('artifacts/delivery-execution.svg');
     } else {
@@ -373,6 +373,55 @@ test('presentation navigation, second model, narrow layout', async ({ page }) =>
   await expect(page.locator('.sidebar')).toBeVisible();
   await expect(page.locator('.sidebar')).toHaveClass(/mobile-open/);
   await page.screenshot({ path: 'artifacts/narrow-browser.png' });
+});
+
+test('a scoped scene draws outside ports that inspect, reveal and switch off', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await scene(page, 'Inside delivery operations');
+  const ports = page.locator('[data-outside-port]');
+  await expect(ports).toHaveCount(3);
+  await expect(page.locator('[data-outside-port="intake"]')).toHaveCount(0);
+  const context = ports.filter({ hasText: 'Fulfillment context' });
+  await expect(context).toContainText('outside scope');
+  // Selecting a port inspects the outside element it stands for.
+  await context.click();
+  await expect(page.getByRole('complementary', { name: 'Selection details' })).toContainText(
+    'Fulfillment context'
+  );
+  // A port can be switched off for a tight focus, and back on.
+  const outside = page.getByRole('checkbox', { name: 'Outside', exact: true });
+  await outside.uncheck();
+  await ready(page);
+  await expect(ports).toHaveCount(0);
+  expect(JSON.parse(new URL(page.url()).searchParams.get('view')!).context).toBe('none');
+  await outside.check();
+  await ready(page);
+  await expect(ports).toHaveCount(3);
+  // Revealing a port widens the scope so the element is an ordinary card.
+  await ports.filter({ hasText: 'Customer outcomes' }).click();
+  await page.getByRole('button', { name: 'Reveal in view' }).click();
+  await ready(page);
+  await expect(ports).toHaveCount(0);
+  await expect(page.locator('[data-node-id="outputs"]')).toBeVisible();
+  expect(JSON.parse(new URL(page.url()).searchParams.get('view')!).scope).toBeUndefined();
+});
+
+test('Summarize and E roll collapsed connections up into counts', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await scene(page, 'Where responsibility changes');
+  const labels = page.locator('.edge-label');
+  const before = await labels.count();
+  await page.getByRole('checkbox', { name: 'Summarize', exact: true }).check();
+  await ready(page);
+  expect(JSON.parse(new URL(page.url()).searchParams.get('view')!).edges).toBe('summary');
+  expect(await labels.count()).toBeLessThan(before);
+  await expect(page.locator('.edge-label', { hasText: /\d+ connections/ }).first()).toBeVisible();
+  await page.locator('[data-node-id="core"]').focus();
+  await page.keyboard.press('e');
+  await ready(page);
+  expect(JSON.parse(new URL(page.url()).searchParams.get('view')!).edges).toBeUndefined();
 });
 
 test('render and export refuse a stale source revision; invalid scopes fail', async ({

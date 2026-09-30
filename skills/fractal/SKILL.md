@@ -60,6 +60,11 @@ collapsed overview scene whose parents share many relationships: it draws one co
 per pair of collapsed cards instead of one labeled edge per claim, and the inspector still lists
 each claim. Keep the default `"detail"` wherever relationship titles matter.
 
+A scene with `"scope"` draws every element outside the scope that connects to it as an outside
+port on the edge of the view, so a subsystem scene still shows where its inputs come from and what
+it calls. Set `"context": "none"` for a tight focus on the inside alone (`--context none` on the
+CLI). Ports are not model elements and the `outside` inventory is unchanged.
+
 When a small cycle makes a scene read backwards, add `layoutFeedback 'true'` to the metadata of
 the relationship that closes the loop (the one that returns to an earlier stage) rather than
 reversing its authored direction. It changes placement only.

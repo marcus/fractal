@@ -67,6 +67,8 @@
     onproposed,
     edges = 'detail',
     onedges,
+    context,
+    oncontext,
     sourceLabel = '.c4',
     sections,
     structureProjects,
@@ -104,6 +106,9 @@
     onproposed?: (proposed: boolean) => void;
     edges?: 'detail' | 'summary';
     onedges?: (edges: 'detail' | 'summary') => void;
+    /** Only a scoped view has outside connections to show; undefined hides the toggle. */
+    context?: 'ports' | 'none';
+    oncontext?: (context: 'ports' | 'none') => void;
     sourceLabel?: string;
     /** Surface-specific navigation, shown where the architecture outline sits. */
     sections?: Snippet;
@@ -310,6 +315,18 @@
             onchange={(e) => onproposed?.(e.currentTarget.checked)}
           /><span class="toggle-track"></span>Proposed</label
         >
+        {#if oncontext && context}<label
+            class="view-toggle"
+            use:tip={{
+              title: 'Outside connections',
+              text: 'Draw the elements outside this focus that connect to it as labeled ports on the edge of the view. Turn off for a tight focus on the inside alone.'
+            }}
+            ><input
+              type="checkbox"
+              checked={context === 'ports'}
+              onchange={(e) => oncontext?.(e.currentTarget.checked ? 'ports' : 'none')}
+            /><span class="toggle-track"></span>Outside</label
+          >{/if}
         {#if onedges}<label
             class="view-toggle"
             use:tip={{

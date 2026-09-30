@@ -231,3 +231,18 @@ test('LikeC4 summary is card text while the full description stays on the elemen
   const plain = await parseModel(source, companion());
   assert.equal(plain.elements.find((element) => element.id === 'stable-api')!.summary, undefined);
 });
+
+test('scene edges and context fields are validated and carried', async () => {
+  const withScene = (extra: Record<string, unknown>) => {
+    const value = companion();
+    Object.assign(value.scenes[0], extra);
+    return value;
+  };
+  const model = await parseModel(source, withScene({ edges: 'summary', context: 'none' }));
+  assert.equal(model.scenes[0].edges, 'summary');
+  assert.equal(model.scenes[0].context, 'none');
+  const plain = await parseModel(source, companion());
+  assert.equal('edges' in plain.scenes[0] || 'context' in plain.scenes[0], false);
+  await assert.rejects(parseModel(source, withScene({ edges: 'all' })), /edges must be/);
+  await assert.rejects(parseModel(source, withScene({ context: 'some' })), /context must be/);
+});

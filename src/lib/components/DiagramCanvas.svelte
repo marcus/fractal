@@ -27,12 +27,20 @@
   import { SHORTCUTS, shortcutLabel, shortcutKeys } from '$lib/core/shortcuts';
   import { inspectComponent } from '$lib/core/inspect';
   import { boundaryView } from '$lib/core/boundaries';
+  import {
+    COMPOSITION_PORT_CAPTION,
+    COMPOSITION_PORT_CAPTION_SIZE,
+    COMPOSITION_PORT_LABEL_LINE_HEIGHT,
+    COMPOSITION_PORT_LABEL_SIZE,
+    compositionPortGeometry
+  } from '$lib/composition/ports';
   let {
     diagram,
     model,
     selected,
     onselect,
     ontoggle,
+    onrevealoutside,
     onexitlayer,
     oncommandkey,
     presentation = false,
@@ -43,12 +51,15 @@
     selected: string | null;
     onselect: (id: string, type: 'element' | 'relationship') => void;
     ontoggle: (id: string) => void;
+    /** Widen the scope so the outside element a port stands for is drawn. */
+    onrevealoutside?: (id: string) => void;
     onexitlayer: (id: string | null) => void;
     oncommandkey: (e: KeyboardEvent) => void;
     presentation?: boolean;
     measureInsets?: () => Insets;
   } = $props();
   type Insets = { left: number; right: number; top: number; bottom: number };
+  const revealKey = shortcutLabel(SHORTCUTS.find((command) => command.id === 'toggle')!);
   const keyboardHelp = $derived(
     SHORTCUTS.filter(
       (command) =>
@@ -252,6 +263,12 @@
   }
   export function toggleActive() {
     const id = activeId ?? selected;
+    const port = nodes.find((node) => node.id === id)?.port;
+    if (port) {
+      clearPeek();
+      onrevealoutside?.(port.element);
+      return;
+    }
     if (id && childIds.has(id)) {
       clearPeek();
       ontoggle(id);
@@ -293,7 +310,8 @@
     return { x: tx, y: ty, scale: factor };
   }
   export function activate() {
-    if (activeId) onselect(activeId, 'element');
+    if (!activeId) return;
+    onselect(nodes.find((node) => node.id === activeId)?.port?.element ?? activeId, 'element');
   }
   export function exitLayer() {
     if (!clearPeek()) onexitlayer(activeId ?? selected);
@@ -717,113 +735,170 @@
       {/each}
       {#each nodes as node (node.id)}
         {@const memberships = boundaries?.byNode.get(node.id) ?? []}
-        <g
-          data-interactive="node"
-          data-node-id={node.id}
-          role="button"
-          tabindex={activeId === node.id ? 0 : -1}
-          onfocus={() => (activeId = node.id)}
-          aria-label={`${node.title}${childIds.has(node.id) ? (node.expanded ? ', expanded' : ', collapsed') : ''}`}
-          transform={`translate(${node.x} ${node.y})`}
-          opacity={node.opacity}
-          class="node"
-          class:presenter-active={presentation && activeId === node.id}
-          onclick={() => {
-            if (!moved) {
-              activeId = node.id;
-              onselect(node.id, 'element');
-            }
-          }}
-          ondblclick={() => doubleClick(node.id)}
-          onkeydown={oncommandkey}
-        >
-          {#if node.expanded}<rect
-              width={node.width}
-              height={Math.max(56, 32 + node.titleLines.length * 20)}
-              fill="transparent"
-            />{:else}
+        {#if node.port}
+          {@const geometry = compositionPortGeometry(
+            'left',
+            { x: 0, y: node.height / 2 },
+            node.titleLines
+          )}
+          <g
+            data-interactive="node"
+            data-node-id={node.id}
+            data-outside-port={node.port.element}
+            role="button"
+            tabindex={activeId === node.id ? 0 : -1}
+            onfocus={() => (activeId = node.id)}
+            aria-label={`Outside scope: ${node.title}, ${node.port.connections} ${node.port.connections === 1 ? 'connection' : 'connections'}. Press ${revealKey} to reveal it.`}
+            transform={`translate(${node.x} ${node.y})`}
+            opacity={node.opacity}
+            class="node port"
+            class:presenter-active={presentation && activeId === node.id}
+            onclick={() => {
+              if (!moved) {
+                activeId = node.id;
+                onselect(node.port!.element, 'element');
+              }
+            }}
+            ondblclick={() => onrevealoutside?.(node.port!.element)}
+            onkeydown={oncommandkey}
+          >
+            <title
+              >{`Outside scope: ${node.title} · ${node.port.connections} ${node.port.connections === 1 ? 'connection' : 'connections'}. Double-click to reveal.`}</title
+            >
             <rect
               width={node.width}
               height={node.height}
-              rx="12"
+              rx="7"
               fill={theme.card}
-              stroke={selected === node.id || node.status === 'proposed'
-                ? node.color
-                : theme.border}
-              stroke-width={selected === node.id ? 2 : 1.2}
-              stroke-dasharray={node.status === 'proposed' ? '6 4' : undefined}
-              filter="url(#shadow)"
+              stroke={selected === node.port.element ? theme.accent : theme.subtle}
+              stroke-width={selected === node.port.element ? 2 : 1.2}
             />
-          {/if}
-          {#each memberships as membership, index}<rect
-              data-boundary-id={membership.boundary.id}
-              data-contains-members={membership.kind === 'contains' ? 'true' : undefined}
-              x={-4 - index * 4}
-              y={-4 - index * 4}
-              width={node.width + 8 + index * 8}
-              height={node.height + 8 + index * 8}
-              rx={16 + index * 4}
-              fill="none"
-              stroke={membership.boundary.color}
-              stroke-width={membership.kind === 'contains' ? 2 : 1.5}
-              stroke-dasharray={membership.kind === 'contains' ? '1.5 5' : '4 5'}
-              stroke-linecap={membership.kind === 'contains' ? 'round' : undefined}
-              ><title
-                >{membership.kind === 'contains'
-                  ? `Contains members of ${membership.boundary.title}`
-                  : `Member of ${membership.boundary.title}`}</title
-              ></rect
-            >{/each}
-          {#each node.titleLines as line, i}<text
-              x={node.expanded ? METRICS.expandedContentX : METRICS.collapsed.contentX}
-              y={(node.expanded ? METRICS.expandedTitleY : METRICS.collapsed.titleY) + i * 20}
-              style:font-size={node.titleSize ? `${node.titleSize}px` : undefined}
-              class="node-title">{line}</text
-            >{/each}
-          {#if !node.expanded}{#each node.descriptionLines as line, i}<text
-                x={METRICS.collapsed.contentX}
-                y={METRICS.collapsed.titleY + 3 + node.titleLines.length * 21 + i * 17}
-                class="node-description">{line}</text
-              >{/each}{/if}
-          <!-- The kind sits at the end of the title row: an icon, then the expand control. -->
-          <g
-            class="kind-icon"
-            data-kind={node.kind}
-            transform={`translate(${node.width - METRICS.toggleRight - METRICS.kindIconSize - (childIds.has(node.id) ? METRICS.toggleSize + METRICS.kindIconGap : 0)} ${METRICS.toggleY + (METRICS.toggleSize - METRICS.kindIconSize) / 2}) scale(${METRICS.kindIconSize / 24})`}
-            color={theme.appearance === 'dark' ? theme.accent : node.color}
-            use:tip={{ title: node.kindLabel, text: kindHint(node.kind) }}
-          >
-            <rect width="24" height="24" fill="transparent" />
-            {@html kindIcon(node.kind).markup}
-          </g>
-          {#if childIds.has(node.id)}
-            <g
-              data-interactive="toggle"
-              role="button"
-              tabindex="0"
-              aria-label={`${node.expanded ? 'Collapse' : 'Expand'} ${node.title}`}
-              transform={`translate(${node.width - 24 - METRICS.toggleRight} ${METRICS.toggleY})`}
-              onclick={(e) => {
-                e.stopPropagation();
-                clearPeek();
-                ontoggle(node.id);
-              }}
-              onkeydown={oncommandkey}
-              onpointerenter={(e) => requestPeek(node.id, e.currentTarget.getBoundingClientRect())}
-              onpointerleave={clearPeek}
-              onfocus={(e) => requestPeek(node.id, e.currentTarget.getBoundingClientRect())}
-              onblur={clearPeek}
-              aria-describedby={peekId === node.id ? 'component-peek' : undefined}
-              class="expand-control"
+            {#each node.titleLines as line, i}<text
+                x={node.width / 2}
+                y={geometry.labelY + i * COMPOSITION_PORT_LABEL_LINE_HEIGHT}
+                text-anchor="middle"
+                font-size={COMPOSITION_PORT_LABEL_SIZE}
+                font-weight="600"
+                fill={theme.text}>{line}</text
+              >{/each}
+            <text
+              x={node.width / 2}
+              y={geometry.captionY}
+              text-anchor="middle"
+              font-size={COMPOSITION_PORT_CAPTION_SIZE}
+              fill={theme.muted}>{COMPOSITION_PORT_CAPTION}</text
             >
-              <rect width="24" height="24" rx="5" fill="transparent" /><path
-                d={node.expanded ? 'M 7 12 H 17' : 'M 7 12 H 17 M 12 7 V 17'}
-                stroke={node.color}
-                stroke-width="1.5"
+          </g>
+        {:else}
+          <g
+            data-interactive="node"
+            data-node-id={node.id}
+            role="button"
+            tabindex={activeId === node.id ? 0 : -1}
+            onfocus={() => (activeId = node.id)}
+            aria-label={`${node.title}${childIds.has(node.id) ? (node.expanded ? ', expanded' : ', collapsed') : ''}`}
+            transform={`translate(${node.x} ${node.y})`}
+            opacity={node.opacity}
+            class="node"
+            class:presenter-active={presentation && activeId === node.id}
+            onclick={() => {
+              if (!moved) {
+                activeId = node.id;
+                onselect(node.id, 'element');
+              }
+            }}
+            ondblclick={() => doubleClick(node.id)}
+            onkeydown={oncommandkey}
+          >
+            {#if node.expanded}<rect
+                width={node.width}
+                height={Math.max(56, 32 + node.titleLines.length * 20)}
+                fill="transparent"
+              />{:else}
+              <rect
+                width={node.width}
+                height={node.height}
+                rx="12"
+                fill={theme.card}
+                stroke={selected === node.id || node.status === 'proposed'
+                  ? node.color
+                  : theme.border}
+                stroke-width={selected === node.id ? 2 : 1.2}
+                stroke-dasharray={node.status === 'proposed' ? '6 4' : undefined}
+                filter="url(#shadow)"
               />
+            {/if}
+            {#each memberships as membership, index}<rect
+                data-boundary-id={membership.boundary.id}
+                data-contains-members={membership.kind === 'contains' ? 'true' : undefined}
+                x={-4 - index * 4}
+                y={-4 - index * 4}
+                width={node.width + 8 + index * 8}
+                height={node.height + 8 + index * 8}
+                rx={16 + index * 4}
+                fill="none"
+                stroke={membership.boundary.color}
+                stroke-width={membership.kind === 'contains' ? 2 : 1.5}
+                stroke-dasharray={membership.kind === 'contains' ? '1.5 5' : '4 5'}
+                stroke-linecap={membership.kind === 'contains' ? 'round' : undefined}
+                ><title
+                  >{membership.kind === 'contains'
+                    ? `Contains members of ${membership.boundary.title}`
+                    : `Member of ${membership.boundary.title}`}</title
+                ></rect
+              >{/each}
+            {#each node.titleLines as line, i}<text
+                x={node.expanded ? METRICS.expandedContentX : METRICS.collapsed.contentX}
+                y={(node.expanded ? METRICS.expandedTitleY : METRICS.collapsed.titleY) + i * 20}
+                style:font-size={node.titleSize ? `${node.titleSize}px` : undefined}
+                class="node-title">{line}</text
+              >{/each}
+            {#if !node.expanded}{#each node.descriptionLines as line, i}<text
+                  x={METRICS.collapsed.contentX}
+                  y={METRICS.collapsed.titleY + 3 + node.titleLines.length * 21 + i * 17}
+                  class="node-description">{line}</text
+                >{/each}{/if}
+            <!-- The kind sits at the end of the title row: an icon, then the expand control. -->
+            <g
+              class="kind-icon"
+              data-kind={node.kind}
+              transform={`translate(${node.width - METRICS.toggleRight - METRICS.kindIconSize - (childIds.has(node.id) ? METRICS.toggleSize + METRICS.kindIconGap : 0)} ${METRICS.toggleY + (METRICS.toggleSize - METRICS.kindIconSize) / 2}) scale(${METRICS.kindIconSize / 24})`}
+              color={theme.appearance === 'dark' ? theme.accent : node.color}
+              use:tip={{ title: node.kindLabel, text: kindHint(node.kind) }}
+            >
+              <rect width="24" height="24" fill="transparent" />
+              {@html kindIcon(node.kind).markup}
             </g>
-          {/if}
-        </g>
+            {#if childIds.has(node.id)}
+              <g
+                data-interactive="toggle"
+                role="button"
+                tabindex="0"
+                aria-label={`${node.expanded ? 'Collapse' : 'Expand'} ${node.title}`}
+                transform={`translate(${node.width - 24 - METRICS.toggleRight} ${METRICS.toggleY})`}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  clearPeek();
+                  ontoggle(node.id);
+                }}
+                onkeydown={oncommandkey}
+                onpointerenter={(e) =>
+                  requestPeek(node.id, e.currentTarget.getBoundingClientRect())}
+                onpointerleave={clearPeek}
+                onfocus={(e) => requestPeek(node.id, e.currentTarget.getBoundingClientRect())}
+                onblur={clearPeek}
+                aria-describedby={peekId === node.id ? 'component-peek' : undefined}
+                class="expand-control"
+              >
+                <rect width="24" height="24" rx="5" fill="transparent" /><path
+                  d={node.expanded ? 'M 7 12 H 17' : 'M 7 12 H 17 M 12 7 V 17'}
+                  stroke={node.color}
+                  stroke-width="1.5"
+                />
+              </g>
+            {/if}
+          </g>
+        {/if}
       {/each}
     </g>
   </svg>

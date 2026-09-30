@@ -28,6 +28,7 @@
     links = null,
     toggle,
     focus,
+    onrevealoutside,
     inspectElement,
     fullSystem,
     onopenlink,
@@ -50,6 +51,8 @@
     links?: AuthoredLinks | null;
     toggle: (id: string) => void;
     focus: (id: string) => void;
+    /** Widen a scoped view so an outside element it draws as a port becomes an ordinary card. */
+    onrevealoutside?: (id: string) => void;
     inspectElement: (id: string) => void;
     fullSystem: () => void;
     onopenlink?: (link: DiagramLink) => void;
@@ -252,6 +255,13 @@
         </div>
       {:else if selectedElement}
         {#if selectedElement.technology}<p class="meta">{selectedElement.technology}</p>{/if}
+        {#if onrevealoutside && diagram?.nodes.some((node) => node.port?.element === selectedElement!.id)}
+          <div class="component-actions">
+            <button class="button" onclick={() => onrevealoutside(selectedElement!.id)}
+              >Reveal in view<ArrowUpRight size={14} /></button
+            >
+          </div>
+        {/if}
         {#if selectedElement.description || selectedElement.summary}<p class="description">
             {selectedElement.description || selectedElement.summary}
           </p>{/if}

@@ -235,14 +235,24 @@ test('focus preserves authored containment and inventories exact crossing relati
     ['core', 'worker', 'store']
   );
   assert.equal(focused.elements[0].parent, null);
+  const inside = new Set(focused.elements.map((node) => node.id));
   assert.deepEqual(
-    focused.edges.map((connection) => connection.id),
+    focused.edges
+      .filter((connection) => inside.has(connection.source) && inside.has(connection.target))
+      .map((connection) => connection.id),
     ['d']
   );
   assert.deepEqual(
     focused.outside?.map((connection) => connection.id),
     ['a', 'b', 'c']
   );
+  // Without ports, focus draws only what is inside and keeps the crossing inventory.
+  const tight = project(model, { ...state, expanded: ['core'], scope: 'core', context: 'none' });
+  assert.deepEqual(
+    tight.edges.map((connection) => connection.id),
+    ['d']
+  );
+  assert.equal(tight.ports, undefined);
   assert.deepEqual(focused.outside?.[0], model.relationships[0]);
   const nested = project(model, { ...state, scope: 'worker' });
   assert.deepEqual(
@@ -256,7 +266,17 @@ test('focus preserves authored containment and inventories exact crossing relati
   assert.deepEqual(model, before, 'focus must not mutate authored containment or relationships');
   const diagram = await layout(model, { ...state, expanded: ['core'], scope: 'core' });
   assert.deepEqual(diagram.outside, focused.outside);
-  assert.match(exportSvg(model, diagram), /FOCUS: core · 3 external connections outside view/);
+  assert.match(
+    exportSvg(model, diagram),
+    /FOCUS: core · 3 external connections drawn as outside ports/
+  );
+  assert.match(
+    exportSvg(
+      model,
+      await layout(model, { ...state, expanded: ['core'], scope: 'core', context: 'none' })
+    ),
+    /FOCUS: core · 3 external connections outside view/
+  );
 });
 
 test('focus crossing inventory applies proposal filtering at relationships and endpoints', () => {
@@ -368,7 +388,7 @@ test('slide export bounds long headings, footer and many boundary legends withou
   const footerSvg = exportSvg(footerModel, footerDiagram);
   const footer = footerSvg.match(/<text x="1824" y="1044"[^>]*>([^<]*)<\/text>/)![1];
   assert.ok(textWidth(footer, 13) <= 860);
-  assert.match(footer, /… · 3 external connections outside view$/);
+  assert.match(footer, /… · 3 external connections drawn as outside ports$/);
   const remaining = Number(legend.match(/\+(\d+) more boundaries/)![1]);
   assert.equal(entries.length - 1 + remaining, largeModel.boundaries.length);
   const transform = svg.match(

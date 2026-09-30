@@ -1752,6 +1752,7 @@ h1 {
 /* One row: the lens toggles, then the search at the far right. */
 .sidebar-view-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 0 10px 14px;

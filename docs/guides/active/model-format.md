@@ -195,6 +195,14 @@ Each scene stores a named perspective on the same model:
   A pair with a single claim keeps its own title, and pairs of exactly visible elements are never
   rolled up. Use it for overview scenes; leave detail for expanded views where titles matter.
 
+- `context`: optional `ports` (the default) or `none`, for a scene with `scope`. Ports draw each
+  element outside the scope that connects to it as a labeled perimeter port, the same card a linked
+  composition uses for an out-of-scope endpoint. A port stands for the child of the lowest ancestor
+  the outside endpoint shares with the scope (its top-level ancestor when they share none), so it
+  is what widening the scope one step would draw. Claims through one port bundle as usual, and
+  `edges: summary` counts them. Ports are presentation only: they are not model elements, and the
+  crossing inventory (`outside`) is unchanged. Set `none` to keep a tight focus on the inside.
+
 A scope must exist and be visible under the scene's proposed setting. Expanded
 nodes must be the scope itself or its descendants. Include each ancestor needed to
 reach an expanded descendant, stopping at the scope; ancestors outside the scope do

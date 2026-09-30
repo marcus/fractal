@@ -57,6 +57,35 @@ export function directionalNeighbor(
   return ranked[0].n.id;
 }
 
+/**
+ * Reveal the outside element a port stands for by widening the scope to the lowest ancestor it
+ * shares with the current scope (or to the whole model), keeping everything already open open and
+ * opening the path from that ancestor down to the old scope so nothing the reader was looking at
+ * collapses. The target is the element itself, which is now drawn as an ordinary card.
+ */
+export function revealOutside(
+  model: Model,
+  state: ViewState,
+  id: string
+): { state: ViewState; target: string } {
+  if (state.scope === undefined) return { state, target: id };
+  const byId = new Map(model.elements.map((element) => [element.id, element]));
+  const chain: string[] = [];
+  for (let at: string | null = state.scope; at; at = byId.get(at)?.parent ?? null) chain.push(at);
+  let shared: string | null = id;
+  while (shared !== null && !chain.includes(shared)) shared = byId.get(shared)?.parent ?? null;
+  const opened = shared === null ? chain.slice(1) : chain.slice(1, chain.indexOf(shared) + 1);
+  const { scope: _scope, ...rest } = state;
+  return {
+    state: {
+      ...rest,
+      ...(shared === null ? {} : { scope: shared }),
+      expanded: [...new Set([...state.expanded, ...opened])]
+    },
+    target: id
+  };
+}
+
 /** Escape changes only the visible level; it never changes the authored model. */
 export function outwardView(
   model: Model,

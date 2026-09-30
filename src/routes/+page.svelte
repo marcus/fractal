@@ -35,7 +35,12 @@
   import { sequenceLink } from '$lib/core/links';
   import { sceneOptions } from '$lib/core/scene';
   import { floatingInsets } from '$lib/ui/floating-panel';
-  import { outwardView, showAllStructure, type Direction } from '$lib/core/navigation';
+  import {
+    outwardView,
+    revealOutside as widenToReveal,
+    showAllStructure,
+    type Direction
+  } from '$lib/core/navigation';
   import {
     lastProject,
     rememberLastProject,
@@ -385,6 +390,17 @@
       if (rendered === requestId) canvas?.reveal(next.target);
     }
   }
+  /** A port stands for an element outside the scope: widen the scope until it is drawn. */
+  async function revealOutside(id: string) {
+    if (!model || composition) return;
+    const next = widenToReveal(model, view, id);
+    view = next.state;
+    sceneId = null;
+    selected = id;
+    const rendered = await renderView();
+    await tick();
+    if (rendered === requestId) canvas?.reveal(next.target);
+  }
   let renderedSceneId: string | null = null;
   let requestId = 0;
   let modelRequestId = 0;
@@ -445,7 +461,7 @@
   const sceneIndex = $derived(
     Math.max(0, model?.scenes.findIndex((s) => s.id === sceneAnchor) ?? 0)
   );
-  const tree = $derived(diagram?.nodes ?? []);
+  const tree = $derived((diagram?.nodes ?? []).filter((node) => !node.port));
   const navigationView = $derived.by(() => {
     if (!composition) return view;
     const target = selectedCompositionModel ?? composition.state.root;
@@ -1306,6 +1322,14 @@
     sceneId = null;
     renderView();
   }
+  /** Outside ports are on by default for a scoped view; turning them off keeps a tight focus. */
+  function setContext(context: 'ports' | 'none') {
+    if (composition || !diagram || busy) return;
+    const { context: _previous, ...rest } = view;
+    view = context === 'none' ? { ...rest, context } : rest;
+    sceneId = null;
+    renderView();
+  }
   function select(id: string, type: 'element' | 'relationship' | 'outside') {
     selected = id;
     selectedType = type;
@@ -2133,6 +2157,8 @@
         onlens={lens}
         edges={view.edges ?? 'detail'}
         onedges={composition ? undefined : setEdges}
+        context={view.scope ? (view.context ?? 'ports') : undefined}
+        oncontext={composition ? undefined : setContext}
         onproposed={(proposed) => {
           if (composition) {
             const target = selectedCompositionModel ?? composition.state.root;
@@ -2189,6 +2215,7 @@
               {#key model.id}<DiagramCanvas
                   bind:this={canvas}
                   onexitlayer={goOut}
+                  onrevealoutside={revealOutside}
                   oncommandkey={keydown}
                   {diagram}
                   {model}
@@ -2282,6 +2309,7 @@
           : null}
         {toggle}
         {focus}
+        onrevealoutside={composition ? undefined : revealOutside}
         {inspectElement}
         {fullSystem}
         onopenlink={openLink}

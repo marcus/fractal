@@ -164,6 +164,13 @@ export function elkLayeredEngine(options: ElkLayeredOptions): LayoutEngine {
           layoutOptions: {
             ...base,
             'elk.portConstraints': 'FIXED_SIDE',
+            // A port that only supplies the scope belongs at the start of the flow and one that
+            // only receives from it at the end, so they read as the view's perimeter.
+            ...(node.port && node.port.flow !== 'both'
+              ? {
+                  'elk.layered.layering.layerConstraint': node.port.flow === 'in' ? 'FIRST' : 'LAST'
+                }
+              : {}),
             'elk.padding': `[top=${node.headerHeight + request.metrics.expandedChildTopGap},left=${padding},bottom=${padding},right=${padding}]`
           },
           ports: [
