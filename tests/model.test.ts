@@ -207,3 +207,27 @@ test('scoped scenes retain a nested focus without requiring outside ancestor exp
     /scope cannot reference hidden proposed element/
   );
 });
+
+test('LikeC4 summary is card text while the full description stays on the element', async () => {
+  const model = await parseModel(
+    source.replace(
+      "description 'Accept requests'",
+      "summary 'Accepts requests' description 'Accept requests, authenticate the caller and hand work to the queue.'"
+    ),
+    companion()
+  );
+  const api = model.elements.find((element) => element.id === 'stable-api')!;
+  assert.equal(api.summary, 'Accepts requests');
+  assert.match(api.description, /authenticate the caller/);
+  const { measure } = await import('../src/lib/core/measure');
+  const { project } = await import('../src/lib/core/projection');
+  const graph = measure(
+    project(model, { expanded: ['stable-system'], proposed: true, lens: 'structure' })
+  );
+  assert.deepEqual(graph.nodes.find((node) => node.id === 'stable-api')!.descriptionLines, [
+    'Accepts requests'
+  ]);
+  // With only a description, nothing splits and the card keeps showing it.
+  const plain = await parseModel(source, companion());
+  assert.equal(plain.elements.find((element) => element.id === 'stable-api')!.summary, undefined);
+});

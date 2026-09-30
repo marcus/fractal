@@ -47,8 +47,22 @@ views { view index { include * } }
 ```
 
 Element descriptions appear in the inspector and on cards where space permits.
-Keep the opening sentence short and useful. Relationship titles explain the action;
-the relationship kind records its meaning independently of that wording.
+Keep the opening sentence short and useful. When the full description is too dense for a
+card at presentation scale, declare LikeC4's `summary` next to it:
+
+```likec4
+api = component 'API' {
+  summary 'Accepts requests'
+  description 'Accepts requests, authenticates the caller and hands work to the queue.'
+}
+```
+
+The card draws the summary; the inspector, search and exports keep the full description.
+Without a `summary` the card shows the description as before (LikeC4 falls each one back to
+the other, so declaring only one changes nothing). Relationships already split the same way:
+the title is the short label drawn on the edge, and the description is the full claim the
+inspector shows, alongside every underlying claim. LikeC4 has no relationship `summary`. The
+relationship kind records its meaning independently of that wording.
 
 ### Fractal metadata
 

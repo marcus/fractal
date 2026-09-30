@@ -86,7 +86,7 @@ export function searchModel(model: Model, query: string, limit = 30): SearchResu
         id: element.id,
         type: 'element',
         title: element.title,
-        description: element.description,
+        description: element.description || element.summary || '',
         status: element.status
       },
       title: normalized(element.title),
@@ -96,7 +96,7 @@ export function searchModel(model: Model, query: string, limit = 30): SearchResu
         normalized(element.kind),
         normalized(element.technology)
       ],
-      description: normalized(element.description),
+      description: normalized(`${element.description} ${element.summary ?? ''}`),
       order: order++
     });
   }

@@ -39,7 +39,11 @@ export function measure(projection: Projection): MeasuredGraph {
       const titleLines = wrapText(element.title, width - titleInset, titleSize);
       const descriptionLines = open
         ? []
-        : wrapText(element.description, width - METRICS.collapsed.descriptionWidthInset, 12);
+        : wrapText(
+            element.summary?.trim() || element.description,
+            width - METRICS.collapsed.descriptionWidthInset,
+            12
+          );
       const headerHeight = Math.max(
         METRICS.expandedHeaderMin,
         METRICS.expandedHeaderBase + titleLines.length * METRICS.titleLineHeight

@@ -39,6 +39,8 @@ export interface Element {
   title: string;
   kind: string;
   description: string;
+  /** Optional short card text from LikeC4 `summary`; the card falls back to `description` and the inspector keeps it whole. */
+  summary?: string;
   technology: string;
   status: Status;
   color: string;

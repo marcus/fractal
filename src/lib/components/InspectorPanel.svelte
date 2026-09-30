@@ -252,8 +252,8 @@
         </div>
       {:else if selectedElement}
         {#if selectedElement.technology}<p class="meta">{selectedElement.technology}</p>{/if}
-        {#if selectedElement.description}<p class="description">
-            {selectedElement.description}
+        {#if selectedElement.description || selectedElement.summary}<p class="description">
+            {selectedElement.description || selectedElement.summary}
           </p>{/if}
         {#if children.length}
           <section aria-label="Inside this component">

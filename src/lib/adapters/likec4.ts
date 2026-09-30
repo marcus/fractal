@@ -131,6 +131,9 @@ export async function parseModelWithOrigins(
         title: element.title,
         kind: element.kind,
         description: element.description.text ?? '',
+        // LikeC4 falls each of summary and description back to the other; only a declared pair
+        // splits the card text from the inspector text.
+        ...(element.hasSummary ? { summary: element.summary.text ?? '' } : {}),
         technology: element.technology ?? '',
         status: status(metadata, element.tags, element.id, parentElement?.status),
         color: color(metadata.fractalColor ?? metadata.color, `${element.id}.color`),
