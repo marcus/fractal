@@ -6,6 +6,8 @@ import { getLayoutEngineInfo } from './layout-engines';
 export function project(model: Model, state: ViewState): Projection {
   getTheme(state.theme);
   getLayoutEngineInfo(state.layout);
+  if (state.edges !== undefined && !['detail', 'summary'].includes(state.edges))
+    throw new Error('Invalid view state');
   if (
     !['structure', 'trust'].includes(state.lens) ||
     typeof state.proposed !== 'boolean' ||
@@ -33,9 +35,11 @@ export function project(model: Model, state: ViewState): Projection {
   if (state.scope !== undefined && !byId.has(state.scope))
     throw new Error(`Unknown scope: ${state.scope}`);
   const relationshipIds = new Set<string>();
+  const relationshipsById = new Map<string, Relationship>();
   for (const edge of model.relationships) {
     if (relationshipIds.has(edge.id)) throw new Error(`Duplicate relationship: ${edge.id}`);
     relationshipIds.add(edge.id);
+    relationshipsById.set(edge.id, edge);
     if (!byId.has(edge.source) || !byId.has(edge.target))
       throw new Error(`Unknown endpoint in relationship: ${edge.id}`);
   }
@@ -71,7 +75,8 @@ export function project(model: Model, state: ViewState): Projection {
     if (visibleIds.has(id)) return id;
     return element.parent === null ? null : representative(element.parent);
   };
-  const groups = new Map<string, ProjectedEdge>();
+  const summarize = state.edges === 'summary';
+  const claims: { edge: Relationship; source: string; target: string }[] = [];
   const outside: Relationship[] = [];
   for (const edge of model.relationships) {
     if (!state.proposed && edge.status === 'proposed') continue;
@@ -85,22 +90,47 @@ export function project(model: Model, state: ViewState): Projection {
     const source = representative(edge.source);
     const target = representative(edge.target);
     if (!source || !target || (source === target && edge.source !== edge.target)) continue;
+    claims.push({ edge, source, target });
+  }
+  // Summary mode rolls up a pair only where a collapsed representative stands in for an
+  // endpoint; a pair of exactly visible elements keeps every distinct claim.
+  const pairKey = (source: string, target: string, status: string): string =>
+    JSON.stringify([source, target, status]);
+  const rolledPairs = new Set(
+    summarize
+      ? claims
+          .filter(({ edge, source, target }) => source !== edge.source || target !== edge.target)
+          .map(({ edge, source, target }) => pairKey(source, target, edge.status))
+      : []
+  );
+  const groups = new Map<string, ProjectedEdge>();
+  for (const { edge, source, target } of claims) {
     // Different claims stay distinct, even when they roll up to the same endpoints.
-    const key = JSON.stringify([
-      source,
-      target,
-      edge.kind,
-      edge.status,
-      edge.title,
-      edge.description
-    ]);
+    const key = rolledPairs.has(pairKey(source, target, edge.status))
+      ? JSON.stringify(['summary', source, target, edge.status])
+      : JSON.stringify([source, target, edge.kind, edge.status, edge.title, edge.description]);
     const existing = groups.get(key);
     if (existing) existing.underlying.push(edge.id);
     else groups.set(key, { ...edge, source, target, underlying: [edge.id] });
   }
+  const edges = [...groups.values()].map((edge): ProjectedEdge => {
+    if (
+      !rolledPairs.has(pairKey(edge.source, edge.target, edge.status)) ||
+      edge.underlying.length < 2
+    )
+      return edge;
+    const kinds = new Set(edge.underlying.map((id) => relationshipsById.get(id)!.kind));
+    return {
+      ...edge,
+      kind: kinds.size === 1 ? edge.kind : 'relates',
+      title: `${edge.underlying.length} connections`,
+      description: `${edge.underlying.length} relationships between ${byId.get(edge.source)?.title} and ${byId.get(edge.target)?.title}.`,
+      rollup: true
+    };
+  });
   return {
     elements,
-    edges: [...groups.values()],
+    edges,
     outside,
     expanded: elements
       .filter(

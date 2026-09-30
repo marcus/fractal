@@ -55,7 +55,10 @@ appearance. Use `"$FRACTAL_ROOT/bin/fractal" themes --json` to inspect the shipp
 than copying palette values into a project model. Scenes may also set `"layout"` to a layout
 engine id from `"$FRACTAL_ROOT/bin/fractal" engines --json`; omit it for the default layered
 left-to-right layout, or set `"elk-layered-down"` for a top-to-bottom arrangement that reads
-better in a portrait page, a tall screen or a README embed.
+better in a portrait page, a tall screen or a README embed. Set `"edges": "summary"` on a
+collapsed overview scene whose parents share many relationships: it draws one counted connection
+per pair of collapsed cards instead of one labeled edge per claim, and the inspector still lists
+each claim. Keep the default `"detail"` wherever relationship titles matter.
 
 ## Deepen an existing model
 

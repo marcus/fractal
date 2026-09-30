@@ -33,6 +33,7 @@
   } from '@marcusv/roc/svelte/outline';
   import { THEMES, getTheme, isThemeId } from '$lib/core/themes';
   import { sequenceLink } from '$lib/core/links';
+  import { sceneOptions } from '$lib/core/scene';
   import { floatingInsets } from '$lib/ui/floating-panel';
   import { outwardView, showAllStructure, type Direction } from '$lib/core/navigation';
   import {
@@ -637,7 +638,8 @@
         lens: scene.lens,
         theme: initialTheme ?? scene.theme ?? view.theme,
         ...(scene.scope ? { scope: scene.scope } : {}),
-        ...(scene.layout ? { layout: scene.layout } : {})
+        ...(scene.layout ? { layout: scene.layout } : {}),
+        ...sceneOptions(scene)
       };
       initialView = null;
       initialTheme = null;
@@ -1201,7 +1203,8 @@
       lens: scene.lens,
       theme: scene.theme ?? view.theme,
       ...(scene.scope ? { scope: scene.scope } : {}),
-      ...(scene.layout ? { layout: scene.layout } : {})
+      ...(scene.layout ? { layout: scene.layout } : {}),
+      ...sceneOptions(scene)
     };
     menuOpen = false;
     renderView();
@@ -1292,6 +1295,14 @@
   function toggleFlow() {
     if (composition || !diagram || busy) return;
     view = { ...view, layout: flowDown ? undefined : 'elk-layered-down' };
+    sceneId = null;
+    renderView();
+  }
+  /** Summary edges are a presentation choice like flow: same model, fewer drawn connections. */
+  function setEdges(edges: 'detail' | 'summary') {
+    if (composition || !diagram || busy) return;
+    const { edges: _previous, ...rest } = view;
+    view = edges === 'summary' ? { ...rest, edges } : rest;
     sceneId = null;
     renderView();
   }
@@ -1545,6 +1556,9 @@
         break;
       case 'toggle-flow':
         toggleFlow();
+        break;
+      case 'toggle-edges':
+        setEdges(view.edges === 'summary' ? 'detail' : 'summary');
         break;
       case 'open-linked': {
         const link = linksForSelection()[0];
@@ -2117,6 +2131,8 @@
         lens={navigationView.lens}
         proposed={navigationView.proposed}
         onlens={lens}
+        edges={view.edges ?? 'detail'}
+        onedges={composition ? undefined : setEdges}
         onproposed={(proposed) => {
           if (composition) {
             const target = selectedCompositionModel ?? composition.state.root;

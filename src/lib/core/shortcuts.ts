@@ -8,6 +8,7 @@ export type CommandId =
   | 'info'
   | 'toggle-sidebar'
   | 'toggle-flow'
+  | 'toggle-edges'
   | 'open-linked'
   | 'reload-sources'
   | 'toggle-presentation'
@@ -80,6 +81,13 @@ export const SHORTCUTS = [
     label: 'Flow top to bottom',
     group: 'View',
     keys: ['f'],
+    contexts: ['studio', 'presentation']
+  },
+  {
+    id: 'toggle-edges',
+    label: 'Summarize collapsed connections',
+    group: 'View',
+    keys: ['e'],
     contexts: ['studio', 'presentation']
   },
   {
@@ -261,6 +269,7 @@ export function shortcutsForSurface(
     (command) =>
       command.id !== 'info' &&
       command.id !== 'toggle-flow' &&
+      command.id !== 'toggle-edges' &&
       command.id !== 'open-linked' &&
       command.id !== 'reload-sources'
   ).map((command) => ({

@@ -1,3 +1,4 @@
+import { sceneOptions } from './scene';
 import type { Element, Model, Status, ViewState } from './types';
 
 export interface SearchResult {
@@ -225,7 +226,8 @@ export function revealSearchResult(
         lens: scene.lens,
         ...(scene.scope ? { scope: scene.scope } : {}),
         ...((scene.theme ?? currentView.theme) ? { theme: scene.theme ?? currentView.theme } : {}),
-        ...(scene.layout ? { layout: scene.layout } : {})
+        ...(scene.layout ? { layout: scene.layout } : {}),
+        ...sceneOptions(scene)
       },
       selected: null
     };

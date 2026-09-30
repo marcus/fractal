@@ -171,6 +171,13 @@ Each scene stores a named perspective on the same model:
   left-to-right layered layout (`elk-layered`); `elk-layered-down` lays the same view out top to
   bottom, which suits portrait pages, tall screens and README embeds. An unknown id fails
   validation.
+- `edges`: optional `detail` (the default) or `summary`. Detail draws every distinct claim between
+  the visible elements, so relationships with different titles stay separate even when they roll up
+  to the same pair of collapsed cards. Summary draws one edge per visible source, target and status
+  wherever a collapsed element stands in for an endpoint, labeled with a count such as
+  "7 connections". Every underlying relationship stays listed in the inspector and in `underlying`.
+  A pair with a single claim keeps its own title, and pairs of exactly visible elements are never
+  rolled up. Use it for overview scenes; leave detail for expanded views where titles matter.
 
 A scope must exist and be visible under the scene's proposed setting. Expanded
 nodes must be the scope itself or its descendants. Include each ancestor needed to

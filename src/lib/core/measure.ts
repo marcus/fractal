@@ -72,7 +72,7 @@ export function measure(projection: Projection): MeasuredGraph {
   visit(null, 0);
   const edges: MeasuredEdge[] = projection.edges.map((edge) => {
     const labelLines = wrapText(
-      `${edge.title}${edge.underlying.length > 1 ? ` ×${edge.underlying.length}` : ''}`,
+      `${edge.title}${edge.underlying.length > 1 && !edge.rollup ? ` ×${edge.underlying.length}` : ''}`,
       EDGE_LABEL_WIDTH,
       EDGE_LABEL_SIZE
     );

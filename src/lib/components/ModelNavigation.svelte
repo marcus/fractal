@@ -65,6 +65,8 @@
     proposed = false,
     onlens,
     onproposed,
+    edges = 'detail',
+    onedges,
     sourceLabel = '.c4',
     sections,
     structureProjects,
@@ -100,6 +102,8 @@
     proposed?: boolean;
     onlens?: (lens: 'structure' | 'trust') => void;
     onproposed?: (proposed: boolean) => void;
+    edges?: 'detail' | 'summary';
+    onedges?: (edges: 'detail' | 'summary') => void;
     sourceLabel?: string;
     /** Surface-specific navigation, shown where the architecture outline sits. */
     sections?: Snippet;
@@ -306,6 +310,18 @@
             onchange={(e) => onproposed?.(e.currentTarget.checked)}
           /><span class="toggle-track"></span>Proposed</label
         >
+        {#if onedges}<label
+            class="view-toggle"
+            use:tip={{
+              title: 'Summarize connections',
+              text: 'Where a collapsed element stands in for others, draw one counted connection instead of every distinct claim. The inspector still lists each one.'
+            }}
+            ><input
+              type="checkbox"
+              checked={edges === 'summary'}
+              onchange={(e) => onedges?.(e.currentTarget.checked ? 'summary' : 'detail')}
+            /><span class="toggle-track"></span>Summarize</label
+          >{/if}
       {/if}
       <button
         class="icon-button jump-button"

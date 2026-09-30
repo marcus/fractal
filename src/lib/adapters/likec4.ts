@@ -219,6 +219,14 @@ export async function parseModelWithOrigins(
         scene.layout === undefined
           ? undefined
           : getLayoutEngineInfo(string(scene.layout, `${path}.layout`)).id;
+      const edges =
+        scene.edges === undefined
+          ? undefined
+          : scene.edges === 'detail' || scene.edges === 'summary'
+            ? scene.edges
+            : (() => {
+                throw new Error(`${path}.edges must be detail or summary`);
+              })();
       if (scope !== undefined) {
         const scopedElement = elements.find((element) => element.id === scope);
         if (!scopedElement) throw new Error(`${path}.scope references unknown element ${scope}`);
@@ -256,7 +264,8 @@ export async function parseModelWithOrigins(
         lens: scene.lens,
         ...(scope ? { scope } : {}),
         ...(theme ? { theme } : {}),
-        ...(layout ? { layout } : {})
+        ...(layout ? { layout } : {}),
+        ...(edges ? { edges } : {})
       };
     });
     unique(

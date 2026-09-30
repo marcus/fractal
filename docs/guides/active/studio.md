@@ -16,6 +16,10 @@ or install the [local service](local-service.md). Every action here has a keyboa
   information icon, or **I**) explains the legend, counts and boundaries and opens external
   connections. These describe the model, not enforced permissions.
 - Enable **Proposed** to include planned elements and relationships.
+- Enable **Summarize** (or press **E**) when a collapsed overview draws too many connections. Wherever
+  a collapsed element stands in for others, one edge per source, target and status carries a count
+  such as "7 connections"; the inspector still lists every underlying claim. Expanded, exactly
+  visible pairs keep their own claims. The choice rides in the view link and in exports.
 - Use the **Flow** arrow in the bar, beside the theme, or **F**, to lay the view out top to bottom
   instead of left to right. The direction rides in the view link and in exports, like the theme does.
 - Choose a saved perspective, then **Present**. Left/right arrows step through scenes; Escape exits.

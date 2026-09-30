@@ -15,6 +15,7 @@
   import { tip } from '../ui/tooltip.svelte';
   import { ArrowRight, ArrowDown } from '@marcusv/roc/svelte/outline';
   import { outwardView, showAllStructure } from '../core/navigation';
+  import { sceneOptions } from '../core/scene';
   import { searchModel, revealSearchResult } from '../core/search';
   import { layout } from '../core/layout';
   import { isLayoutEngineId } from '../core/layout-engines';
@@ -115,7 +116,8 @@
       lens: next.lens,
       scope: next.scope,
       theme: next.theme ?? view.theme,
-      layout: next.layout
+      layout: next.layout,
+      ...sceneOptions(next)
     };
     navOpen = false;
     void render().then(() => canvas?.fit());
@@ -251,6 +253,10 @@
         if (journey) return;
         toggleFlow();
         break;
+      case 'toggle-edges':
+        if (journey) return;
+        setEdges(view.edges === 'summary' ? 'detail' : 'summary');
+        break;
       case 'copy-link':
         void copyLink();
         break;
@@ -287,7 +293,8 @@
           lens: nextScene.lens,
           scope: nextScene.scope,
           theme: nextScene.theme,
-          layout: nextScene.layout
+          layout: nextScene.layout,
+          ...sceneOptions(nextScene)
         };
       }
       if (hash.has('view')) {
@@ -299,6 +306,7 @@
           !['structure', 'trust'].includes(next.lens) ||
           (next.theme !== undefined && !isThemeId(next.theme)) ||
           (next.layout !== undefined && !isLayoutEngineId(next.layout)) ||
+          (next.edges !== undefined && !['detail', 'summary'].includes(next.edges)) ||
           (next.scope !== undefined && !model.elements.some((item) => item.id === next.scope))
         )
           throw new Error('Invalid view');
@@ -338,6 +346,11 @@
   /** Flow direction is a presentation choice, beside the theme, and rides in the saved link. */
   function toggleFlow() {
     view = { ...view, layout: flowDown ? undefined : 'elk-layered-down' };
+    void render();
+  }
+  function setEdges(edges: 'detail' | 'summary') {
+    const { edges: _previous, ...rest } = view;
+    view = edges === 'summary' ? { ...rest, edges } : rest;
     void render();
   }
   onMount(() => {
@@ -482,6 +495,12 @@
                 void render();
               }}
             />Proposed</label
+          ><label
+            ><input
+              type="checkbox"
+              checked={view.edges === 'summary'}
+              onchange={(e) => setEdges(e.currentTarget.checked ? 'summary' : 'detail')}
+            />Summarize connections</label
           >
         </div>
         <button

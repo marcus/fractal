@@ -3,6 +3,8 @@ export type Lens = 'structure' | 'trust';
 export type ThemeId = 'grove' | 'graphite' | 'midnight';
 /** Registered layout engines; `core/layout-engines.ts` carries their metadata. */
 export type LayoutEngineId = 'elk-layered' | 'elk-layered-down';
+/** `detail` draws every distinct claim; `summary` rolls collapsed connections up into counts. */
+export type EdgeDetail = 'detail' | 'summary';
 export interface Theme {
   readonly id: ThemeId;
   readonly name: string;
@@ -71,6 +73,8 @@ export interface ViewState {
   theme?: ThemeId;
   /** Which engine places the view; absent means the default, so existing links keep their look. */
   layout?: LayoutEngineId;
+  /** How collapsed connections draw; absent means `detail`, so existing links keep their look. */
+  edges?: EdgeDetail;
 }
 export interface Scene extends ViewState {
   id: string;
@@ -90,6 +94,8 @@ export interface Model {
 }
 export interface ProjectedEdge extends Relationship {
   underlying: string[];
+  /** Set on an edge that stands for several claims rolled up into one counted connection. */
+  rollup?: true;
 }
 export interface Projection {
   elements: Element[];
