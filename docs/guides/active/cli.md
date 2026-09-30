@@ -12,6 +12,10 @@ and keeps stdout free of the npm banner; `service` is routed to
 `scripts/service.mjs`, everything else to `scripts/fractal.ts`. Errors are JSON on stderr with
 a nonzero exit.
 
+Relative `--directory`, `--output`, `--catalog` and `--composition-state` paths
+(and relative `FRACTAL_CATALOG` and `FRACTAL_MODELS_DIR` values)
+resolve against the directory the command was run from, not the Fractal checkout.
+
 ## fractal
 
 ```text
@@ -68,13 +72,6 @@ Options:
   --query TEXT                   Search titles, identifiers and descriptions
   --format svg|png|html          Export format (HTML includes the full model, or a linked set with --include; a root owning links.json exports a linked document with a root-only included set by default; PNG needs Chromium)
   --include ID,ID                HTML export: embed these linked projects with the root
-  --output PATH                  Write result to a file
-
-Examples:
-  npm run cli -- projects --json
-  npm run cli -- links --model sidecar --json
-  npm run cli -- validate --model delivery --json
-  npm run cli -- layout --model host --composition plugins
   npm run cli -- export --scene execution --theme midnight --output artifacts/execution.svg
 ```
 

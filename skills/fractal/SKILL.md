@@ -161,8 +161,11 @@ For a self-contained browser document, use `export --format html --output archit
 Keep exports with the modeled project or in a temporary review directory. Open and visually inspect
 the actual export before handoff: check title and subtitle, current/proposed labeling, clipped or
 tiny text, node containment, crossings, spacing, and the story's reading order. Revise the model or
-scene when the result is not presentation-ready, then export and inspect again. PNG export requires
-Playwright Chromium; install it from the Fractal repository only if it is missing.
+scene when the result is not presentation-ready, then export and inspect again.
+
+Relative `--directory` and `--output` paths resolve against the directory you run `bin/fractal`
+from, not the Fractal checkout. PNG export requires Playwright Chromium; install it from the Fractal
+repository only if it is missing.
 
 ## Register and open an interactive model
 

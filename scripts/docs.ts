@@ -90,6 +90,10 @@ export function renderCliReference(group: HelpGroup, generator = 'scripts/docs.t
     '`scripts/service.mjs`, everything else to `scripts/fractal.ts`. Errors are JSON on stderr with',
     'a nonzero exit.',
     '',
+    'Relative `--directory`, `--output`, `--catalog` and `--composition-state` paths',
+    '(and relative `FRACTAL_CATALOG` and `FRACTAL_MODELS_DIR` values)',
+    'resolve against the directory the command was run from, not the Fractal checkout.',
+    '',
     ...renderGroup(group),
     ''
   ].join('\n');
