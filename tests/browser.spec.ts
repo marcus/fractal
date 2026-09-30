@@ -418,16 +418,17 @@ test('Summarize and E roll collapsed connections up into counts', async ({ page 
   await ready(page);
   await scene(page, 'Where responsibility changes');
   const labels = page.locator('.edge-label');
+  await expect(labels.first()).toBeVisible();
   const before = await labels.count();
+  const viewParam = () => JSON.parse(new URL(page.url()).searchParams.get('view')!);
   await page.getByRole('checkbox', { name: 'Summarize', exact: true }).check();
-  await ready(page);
-  expect(JSON.parse(new URL(page.url()).searchParams.get('view')!).edges).toBe('summary');
-  expect(await labels.count()).toBeLessThan(before);
+  await expect.poll(() => viewParam().edges).toBe('summary');
   await expect(page.locator('.edge-label', { hasText: /\d+ connections/ }).first()).toBeVisible();
+  await expect.poll(() => labels.count()).toBeLessThan(before);
   await page.locator('[data-node-id="core"]').focus();
   await page.keyboard.press('e');
-  await ready(page);
-  expect(JSON.parse(new URL(page.url()).searchParams.get('view')!).edges).toBeUndefined();
+  await expect.poll(() => viewParam().edges).toBeUndefined();
+  await expect.poll(() => labels.count()).toBe(before);
 });
 
 test('render and export refuse a stale source revision; invalid scopes fail', async ({
