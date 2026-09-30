@@ -138,7 +138,10 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
     expect(collapsed.scale).toBeCloseTo(before.scale, 5);
 
     await page
-      .getByRole('button', { name: 'Expand Delivery Operations in outline', exact: true })
+      .getByRole('button', {
+        name: 'Expand Delivery Operations in Fictional Delivery Service outline',
+        exact: true
+      })
       .click();
     await ready(page);
     await page.waitForTimeout(750);
@@ -160,7 +163,10 @@ test('zoom out never zooms in after following a collapsed component', async ({ p
   await page.getByRole('application').focus();
   for (let i = 0; i < 20; i++) await page.keyboard.press('-');
   await page
-    .getByRole('button', { name: 'Collapse Delivery Operations in outline', exact: true })
+    .getByRole('button', {
+      name: 'Collapse Delivery Operations in Fictional Delivery Service outline',
+      exact: true
+    })
     .click();
   await ready(page);
   const title = page.locator('[data-node-id="core"] .node-title').first();
